@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { clampProgress, formatElapsed, formatProgress, phaseLabel, taskStatusLabel } from './format';
+import {
+  clampProgress,
+  formatElapsed,
+  formatProgress,
+  phaseLabel,
+  taskStatusLabel,
+} from './format';
 
 describe('node telemetry presentation', () => {
   it('never renders progress outside the valid range', () => {

@@ -21,7 +21,10 @@ export class MemoryCache {
 
     const request = loader()
       .then((value) => {
-        this.entries.set(key, { value, expiresAt: Date.now() + Math.max(0, options.ttl ?? 15_000) });
+        this.entries.set(key, {
+          value,
+          expiresAt: Date.now() + Math.max(0, options.ttl ?? 15_000),
+        });
         return value;
       })
       .finally(() => this.pending.delete(key));

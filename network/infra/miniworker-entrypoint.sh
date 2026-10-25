@@ -44,7 +44,7 @@ pair_account() {
 		  SILICIUM_DATA_DIR="${SILICIUM_DATA_DIR:-/data}" \
 		  /usr/local/bin/p2p_node --sign-device-link > "$proof_file" 2>/dev/null; then
 		  pairing_status=''
-		  for attempt in $(seq 1 10); do
+		  for _attempt in $(seq 1 10); do
 		    pairing_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
 		      --max-time 5 --header 'Content-Type: application/json' \
 		      --data-binary "@$proof_file" "$pairing_api_url" 2>/dev/null || true)"

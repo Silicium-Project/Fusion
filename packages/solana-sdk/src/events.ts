@@ -1,6 +1,6 @@
-import * as anchor from "@coral-xyz/anchor";
-import { PublicKey } from "@solana/web3.js";
-import { SDK_EVENT_NAMES, SdkEventName } from "./types";
+import * as anchor from '@coral-xyz/anchor';
+import { PublicKey } from '@solana/web3.js';
+import { SDK_EVENT_NAMES, SdkEventName } from './types';
 
 export type EventCallback<T = unknown> = (event: T, slot: number, signature: string) => void;
 
@@ -9,7 +9,6 @@ export interface EventSubscription {
   listenerId: number;
   remove(): Promise<void>;
 }
-
 
 export interface JobStorageDeclaredEvent {
   job: PublicKey;
@@ -140,7 +139,10 @@ export interface SiliciumEventMap {
 export class SiliciumEventClient {
   constructor(private readonly program: anchor.Program<any>) {}
 
-  on<K extends SdkEventName>(eventName: K, callback: EventCallback<K extends keyof SiliciumEventMap ? SiliciumEventMap[K] : unknown>): EventSubscription {
+  on<K extends SdkEventName>(
+    eventName: K,
+    callback: EventCallback<K extends keyof SiliciumEventMap ? SiliciumEventMap[K] : unknown>,
+  ): EventSubscription {
     const listenerId = this.program.addEventListener(
       eventName,
       (event: unknown, slot: number, signature: string) => callback(event as any, slot, signature),
@@ -155,8 +157,12 @@ export class SiliciumEventClient {
     };
   }
 
-  onAll(callback: (name: SdkEventName, event: unknown, slot: number, signature: string) => void): EventSubscription[] {
-    return SDK_EVENT_NAMES.map((name) => this.on(name, (event, slot, signature) => callback(name, event, slot, signature)));
+  onAll(
+    callback: (name: SdkEventName, event: unknown, slot: number, signature: string) => void,
+  ): EventSubscription[] {
+    return SDK_EVENT_NAMES.map((name) =>
+      this.on(name, (event, slot, signature) => callback(name, event, slot, signature)),
+    );
   }
 
   async remove(subscription: EventSubscription): Promise<void> {
@@ -165,5 +171,5 @@ export class SiliciumEventClient {
 }
 
 export function pubkey(value: PublicKey | string): PublicKey {
-  return typeof value === "string" ? new PublicKey(value) : value;
+  return typeof value === 'string' ? new PublicKey(value) : value;
 }

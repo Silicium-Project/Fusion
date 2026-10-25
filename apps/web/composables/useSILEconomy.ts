@@ -40,7 +40,10 @@ const SPL_TOKEN_PROGRAM_ID = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
 const ASSOCIATED_TOKEN_PROGRAM_ID = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL';
 const PYTH_RECEIVER_PROGRAM_ID = 'rec2HHDDnjLfj4kE7VyEtFA1HPGQLK33259532cRyHp';
 const PYTH_SOL_USD_ACCOUNT_ID = '7AviUf9nL62mcxNbQGKm4nKDQnPjswo6c5MX4D57HmyE';
-const PYTH_SOL_USD_FEED = Buffer.from('ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d', 'hex');
+const PYTH_SOL_USD_FEED = Buffer.from(
+  'ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d',
+  'hex',
+);
 const FEE_DENOMINATOR = BigInt(1_000_000);
 const ZERO = BigInt(0);
 const BPS_DENOMINATOR = BigInt(10_000);
@@ -63,9 +66,12 @@ function tokenAmount(
   tokenProgram: SolanaPublicKey,
   PublicKey: typeof import('@solana/web3.js').PublicKey,
 ): bigint {
-  if (!account.owner.equals(tokenProgram) || account.data.length < 165
-    || !publicKeyAt(account.data, 0, PublicKey).equals(mint)
-    || !publicKeyAt(account.data, 32, PublicKey).equals(authority)) {
+  if (
+    !account.owner.equals(tokenProgram) ||
+    account.data.length < 165 ||
+    !publicKeyAt(account.data, 0, PublicKey).equals(mint) ||
+    !publicKeyAt(account.data, 32, PublicKey).equals(authority)
+  ) {
     throw new Error('The SIL/SOL pool vault does not match its on-chain mint or authority.');
   }
   return account.data.readBigUInt64LE(TOKEN_ACCOUNT_AMOUNT_OFFSET);
@@ -90,7 +96,13 @@ function parsePyth(
   const ageSeconds = Math.floor(Date.now() / 1000) - publishedAt;
   const price = Number(rawPrice) * 10 ** exponent;
   const confidence = Number(rawConfidence) * 10 ** exponent;
-  if (rawPrice <= ZERO || ageSeconds < 0 || ageSeconds > MAX_PYTH_AGE_SECONDS || confidence / price > 0.01) return null;
+  if (
+    rawPrice <= ZERO ||
+    ageSeconds < 0 ||
+    ageSeconds > MAX_PYTH_AGE_SECONDS ||
+    confidence / price > 0.01
+  )
+    return null;
   return { price, publishedAt, ageSeconds };
 }
 
@@ -128,7 +140,9 @@ export function useSILEconomy() {
   const swapError = ref('');
 
   function rpcForDevnet(): string {
-    const cluster = String(runtime.public.solanaCluster || 'devnet').trim().toLowerCase();
+    const cluster = String(runtime.public.solanaCluster || 'devnet')
+      .trim()
+      .toLowerCase();
     const rpc = resolveSolanaRpcEndpoint(runtime.public.solanaRpc);
     if (cluster !== 'devnet' || !rpc || new URL(rpc).hostname.toLowerCase().includes('mainnet')) {
       throw new Error('SIL exchange is available only on Solana Devnet.');
@@ -153,7 +167,9 @@ export function useSILEconomy() {
       const tokenProgram = new PublicKey(SPL_TOKEN_PROGRAM_ID);
       const associatedProgram = new PublicKey(ASSOCIATED_TOKEN_PROGRAM_ID);
       const pythProgram = new PublicKey(PYTH_RECEIVER_PROGRAM_ID);
-      const poolId = new PublicKey(String(runtime.public.silPoolId || '66Un5iGRBuzE4kcVQkDkKrtZUVnTiXnxpUHoFL3mEsdS'));
+      const poolId = new PublicKey(
+        String(runtime.public.silPoolId || '66Un5iGRBuzE4kcVQkDkKrtZUVnTiXnxpUHoFL3mEsdS'),
+      );
       const poolResult = await connection.getAccountInfoAndContext(poolId, 'confirmed');
       const pool = poolResult.value;
       if (!pool || !pool.owner.equals(devnetProgram) || pool.data.length !== 637) {
@@ -173,14 +189,18 @@ export function useSILEconomy() {
         devnetProgram,
       )[0];
       const configId = publicKeyAt(poolData, 8, PublicKey);
-      const [solVault, silVault, configAccount, pythAccount] = await connection.getMultipleAccountsInfo([
-        vaultSol,
-        vaultSil,
-        configId,
-        new PublicKey(PYTH_SOL_USD_ACCOUNT_ID),
-      ], 'confirmed');
-      if (!solVault || !silVault || !configAccount || !configAccount.owner.equals(devnetProgram)
-        || configAccount.data.length < 20) {
+      const [solVault, silVault, configAccount, pythAccount] =
+        await connection.getMultipleAccountsInfo(
+          [vaultSol, vaultSil, configId, new PublicKey(PYTH_SOL_USD_ACCOUNT_ID)],
+          'confirmed',
+        );
+      if (
+        !solVault ||
+        !silVault ||
+        !configAccount ||
+        !configAccount.owner.equals(devnetProgram) ||
+        configAccount.data.length < 20
+      ) {
         throw new Error('The SIL/SOL pool reserves could not be read from Devnet.');
       }
 
@@ -188,16 +208,24 @@ export function useSILEconomy() {
       const rawSil = tokenAmount(silVault, silMint, poolAuthority, tokenProgram, PublicKey);
       // The pool keeps protocol and fund fees in its vaults; subtract those amounts
       // so the displayed spot price follows tradable reserves.
-      const owedSol = poolData.readBigUInt64LE(341) + poolData.readBigUInt64LE(357) + poolData.readBigUInt64LE(397);
-      const owedSil = poolData.readBigUInt64LE(349) + poolData.readBigUInt64LE(365) + poolData.readBigUInt64LE(405);
+      const owedSol =
+        poolData.readBigUInt64LE(341) +
+        poolData.readBigUInt64LE(357) +
+        poolData.readBigUInt64LE(397);
+      const owedSil =
+        poolData.readBigUInt64LE(349) +
+        poolData.readBigUInt64LE(365) +
+        poolData.readBigUInt64LE(405);
       const solReserveRaw = rawSol > owedSol ? rawSol - owedSol : ZERO;
       const silReserveRaw = rawSil > owedSil ? rawSil - owedSil : ZERO;
       const solReserve = decimalAmount(solReserveRaw, 9);
       const silReserve = decimalAmount(silReserveRaw, 6);
-      if (solReserve <= 0 || silReserve <= 0) throw new Error('The SIL/SOL Devnet pool has no active liquidity.');
+      if (solReserve <= 0 || silReserve <= 0)
+        throw new Error('The SIL/SOL Devnet pool has no active liquidity.');
 
       const feeRate = Number(configAccount.data.readBigUInt64LE(12));
-      const creatorFeeRate = poolData[390] === 1 ? Number(configAccount.data.readBigUInt64LE(108)) : 0;
+      const creatorFeeRate =
+        poolData[390] === 1 ? Number(configAccount.data.readBigUInt64LE(108)) : 0;
       const pyth = parsePyth(pythAccount, pythProgram);
       const silPerSol = silReserve / solReserve;
       market.value = {
@@ -218,7 +246,8 @@ export function useSILEconomy() {
       marketFetchedAt.value = Date.now();
     } catch (failure) {
       market.value = null;
-      marketError.value = failure instanceof Error ? failure.message : 'The Devnet SIL market is unavailable.';
+      marketError.value =
+        failure instanceof Error ? failure.message : 'The Devnet SIL market is unavailable.';
     } finally {
       marketLoading.value = false;
     }
@@ -231,16 +260,20 @@ export function useSILEconomy() {
       const buying = direction === 'buy';
       const inDecimals = buying ? 9 : 6;
       const outDecimals = buying ? 6 : 9;
-      const reserveIn = BigInt(Math.round((buying ? current.solReserve : current.silReserve) * 10 ** inDecimals));
-      const reserveOut = BigInt(Math.round((buying ? current.silReserve : current.solReserve) * 10 ** outDecimals));
+      const reserveIn = BigInt(
+        Math.round((buying ? current.solReserve : current.silReserve) * 10 ** inDecimals),
+      );
+      const reserveOut = BigInt(
+        Math.round((buying ? current.silReserve : current.solReserve) * 10 ** outDecimals),
+      );
       const amountIn = rawAmount(input, inDecimals);
       const rateRaw = BigInt(Math.round(current.tradeFeeBps * 100));
-      const amountAfterFee = amountIn * (FEE_DENOMINATOR - rateRaw) / FEE_DENOMINATOR;
-      const amountOut = amountAfterFee * reserveOut / (reserveIn + amountAfterFee);
+      const amountAfterFee = (amountIn * (FEE_DENOMINATOR - rateRaw)) / FEE_DENOMINATOR;
+      const amountOut = (amountAfterFee * reserveOut) / (reserveIn + amountAfterFee);
       if (amountOut <= ZERO) return null;
-      const spotOut = Number(amountIn) / Number(reserveIn) * Number(reserveOut);
+      const spotOut = (Number(amountIn) / Number(reserveIn)) * Number(reserveOut);
       const priceImpactPercent = Math.max(0, (1 - Number(amountOut) / spotOut) * 100);
-      const minimum = amountOut * BigInt(10_000 - SWAP_SLIPPAGE_BPS) / BPS_DENOMINATOR;
+      const minimum = (amountOut * BigInt(10_000 - SWAP_SLIPPAGE_BPS)) / BPS_DENOMINATOR;
       return {
         input,
         output: decimalAmount(amountOut, outDecimals),
@@ -253,12 +286,17 @@ export function useSILEconomy() {
     }
   }
 
-  async function swap(input: number, direction: SILSwapDirection, linkedWallet: string): Promise<string> {
+  async function swap(
+    input: number,
+    direction: SILSwapDirection,
+    linkedWallet: string,
+  ): Promise<string> {
     swapError.value = '';
     swapLoading.value = true;
     try {
       const rpc = rpcForDevnet();
-      const { Connection, PublicKey, Transaction, VersionedTransaction } = await import('@solana/web3.js');
+      const { Connection, PublicKey, Transaction, VersionedTransaction } =
+        await import('@solana/web3.js');
       const connection = new Connection(rpc, 'confirmed');
       const devnetSilMint = new PublicKey(DEVNET_SIL_MINT_ID);
       const wsolMint = new PublicKey(WSOL_MINT_ID);
@@ -268,7 +306,8 @@ export function useSILEconomy() {
       if (!provider?.signTransaction) throw new Error('Install Phantom to sign the swap.');
       const connected = await provider.connect();
       const owner = new PublicKey(connected.publicKey.toString());
-      if (!linkedWallet || owner.toBase58() !== linkedWallet) throw new Error('Connect the wallet linked to this account.');
+      if (!linkedWallet || owner.toBase58() !== linkedWallet)
+        throw new Error('Connect the wallet linked to this account.');
       const buying = direction === 'buy';
       const inputMint = buying ? wsolMint : devnetSilMint;
       const outputMint = buying ? devnetSilMint : wsolMint;
@@ -284,10 +323,27 @@ export function useSILEconomy() {
       const quoteResponse = await fetch(`${api}/compute/swap-base-in?${params.toString()}`);
       if (!quoteResponse.ok) throw new Error('Raydium Devnet could not produce a swap quote.');
       const swapQuote = await quoteResponse.json();
-      if (!swapQuote.success || !swapQuote.data) throw new Error('No executable SIL/SOL route is available yet.');
+      if (!swapQuote.success || !swapQuote.data)
+        throw new Error('No executable SIL/SOL route is available yet.');
 
-      const inputAccount = buying ? undefined : associatedTokenAddress(owner, devnetSilMint, PublicKey, tokenProgram, associatedProgram).toBase58();
-      const outputAccount = buying ? associatedTokenAddress(owner, devnetSilMint, PublicKey, tokenProgram, associatedProgram).toBase58() : undefined;
+      const inputAccount = buying
+        ? undefined
+        : associatedTokenAddress(
+            owner,
+            devnetSilMint,
+            PublicKey,
+            tokenProgram,
+            associatedProgram,
+          ).toBase58();
+      const outputAccount = buying
+        ? associatedTokenAddress(
+            owner,
+            devnetSilMint,
+            PublicKey,
+            tokenProgram,
+            associatedProgram,
+          ).toBase58()
+        : undefined;
       const buildResponse = await fetch(`${api}/transaction/swap-base-in`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -302,13 +358,17 @@ export function useSILEconomy() {
           outputAccount,
         }),
       });
-      if (!buildResponse.ok) throw new Error('Raydium Devnet could not build the swap transaction.');
+      if (!buildResponse.ok)
+        throw new Error('Raydium Devnet could not build the swap transaction.');
       const buildResult = await buildResponse.json();
       if (!buildResult.success) throw new Error('Raydium Devnet rejected the swap request.');
-      const transactionRows = Array.isArray(buildResult.data) ? buildResult.data : [buildResult.data];
+      const transactionRows = Array.isArray(buildResult.data)
+        ? buildResult.data
+        : [buildResult.data];
       const signatures: string[] = [];
       for (const row of transactionRows) {
-        if (typeof row?.transaction !== 'string') throw new Error('Raydium returned an invalid swap transaction.');
+        if (typeof row?.transaction !== 'string')
+          throw new Error('Raydium returned an invalid swap transaction.');
         const serialized = Buffer.from(row.transaction, 'base64');
         let transaction: SolanaTransaction | SolanaVersionedTransaction;
         try {
@@ -329,12 +389,22 @@ export function useSILEconomy() {
       await refreshMarket(true);
       return signatures.at(-1)!;
     } catch (failure) {
-      swapError.value = failure instanceof Error ? failure.message : 'The SIL/SOL swap could not be completed.';
+      swapError.value =
+        failure instanceof Error ? failure.message : 'The SIL/SOL swap could not be completed.';
       throw failure;
     } finally {
       swapLoading.value = false;
     }
   }
 
-  return { market, marketLoading, marketError, swapLoading, swapError, refreshMarket, quoteSwap, swap };
+  return {
+    market,
+    marketLoading,
+    marketError,
+    swapLoading,
+    swapError,
+    refreshMarket,
+    quoteSwap,
+    swap,
+  };
 }

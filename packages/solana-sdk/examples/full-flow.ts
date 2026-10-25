@@ -1,23 +1,8 @@
-import * as anchor from "@coral-xyz/anchor";
-import { Program } from "@coral-xyz/anchor";
-import {
-  Keypair,
-  LAMPORTS_PER_SOL,
-  PublicKey,
-  TransactionSignature,
-} from "@solana/web3.js";
-import {
-  createAccount,
-  createMint,
-  getAccount,
-  mintTo,
-} from "@solana/spl-token";
-import {
-  EventSubscription,
-  SiliciumLayerSdk,
-  SdkEventName,
-  maxDevnetSilLeaves,
-} from "../src";
+import * as anchor from '@coral-xyz/anchor';
+import { Program } from '@coral-xyz/anchor';
+import { Keypair, LAMPORTS_PER_SOL, PublicKey, TransactionSignature } from '@solana/web3.js';
+import { createAccount, createMint, getAccount, mintTo } from '@solana/spl-token';
+import { EventSubscription, SiliciumLayerSdk, SdkEventName, maxDevnetSilLeaves } from '../src';
 
 type NodeWalletWithPayer = anchor.Wallet & { payer: Keypair };
 
@@ -38,7 +23,7 @@ async function confirm(
       blockhash: latest.blockhash,
       lastValidBlockHeight: latest.lastValidBlockHeight,
     },
-    "confirmed",
+    'confirmed',
   );
 
   console.log(`✅ ${label}: ${signature}`);
@@ -49,10 +34,7 @@ async function airdropSol(
   pubkey: PublicKey,
   sol = 3,
 ): Promise<void> {
-  const signature = await provider.connection.requestAirdrop(
-    pubkey,
-    sol * LAMPORTS_PER_SOL,
-  );
+  const signature = await provider.connection.requestAirdrop(pubkey, sol * LAMPORTS_PER_SOL);
 
   await confirm(provider, signature, `airdrop ${sol} SOL to ${pubkey.toBase58()}`);
 }
@@ -76,12 +58,12 @@ async function main(): Promise<void> {
   const payer = (provider.wallet as NodeWalletWithPayer).payer;
 
   if (!payer) {
-    throw new Error("This script expects AnchorProvider.env() with a local NodeWallet payer.");
+    throw new Error('This script expects AnchorProvider.env() with a local NodeWallet payer.');
   }
 
-  console.log("\n=== Silicium SDK full local flow ===");
-  console.log("Wallet:", provider.wallet.publicKey.toBase58());
-  console.log("Program:", sdk.program.programId.toBase58());
+  console.log('\n=== Silicium SDK full local flow ===');
+  console.log('Wallet:', provider.wallet.publicKey.toBase58());
+  console.log('Program:', sdk.program.programId.toBase58());
 
   const subscriptions: EventSubscription[] = sdk.events.onAll(
     (eventName: SdkEventName, event: unknown, slot: number, signature: string) => {
@@ -98,17 +80,11 @@ async function main(): Promise<void> {
   await airdropSol(provider, verifier1.publicKey, 3);
   await airdropSol(provider, verifier2.publicKey, 3);
 
-  console.log("\n--- SPL token setup ---");
+  console.log('\n--- SPL token setup ---');
 
-  const mint = await createMint(
-    provider.connection,
-    payer,
-    payer.publicKey,
-    null,
-    6,
-  );
+  const mint = await createMint(provider.connection, payer, payer.publicKey, null, 6);
 
-  console.log("Mint:", mint.toBase58());
+  console.log('Mint:', mint.toBase58());
 
   const clientToken = await createAccount(
     provider.connection,
@@ -124,31 +100,21 @@ async function main(): Promise<void> {
     computeWorker.publicKey,
   );
 
-  const verifier1Token = await createAccount(
-    provider.connection,
-    payer,
-    mint,
-    verifier1.publicKey,
-  );
+  const verifier1Token = await createAccount(provider.connection, payer, mint, verifier1.publicKey);
 
-  const verifier2Token = await createAccount(
-    provider.connection,
-    payer,
-    mint,
-    verifier2.publicKey,
-  );
+  const verifier2Token = await createAccount(provider.connection, payer, mint, verifier2.publicKey);
 
   await mintTo(provider.connection, payer, mint, clientToken, payer, 10_000_000);
   await mintTo(provider.connection, payer, mint, computeWorkerToken, payer, 1_000_000);
   await mintTo(provider.connection, payer, mint, verifier1Token, payer, 1_000_000);
   await mintTo(provider.connection, payer, mint, verifier2Token, payer, 1_000_000);
 
-  await printTokenBalance("Client token balance", clientToken, provider);
-  await printTokenBalance("Compute worker token balance", computeWorkerToken, provider);
-  await printTokenBalance("Verifier 1 token balance", verifier1Token, provider);
-  await printTokenBalance("Verifier 2 token balance", verifier2Token, provider);
+  await printTokenBalance('Client token balance', clientToken, provider);
+  await printTokenBalance('Compute worker token balance', computeWorkerToken, provider);
+  await printTokenBalance('Verifier 1 token balance', verifier1Token, provider);
+  await printTokenBalance('Verifier 2 token balance', verifier2Token, provider);
 
-  console.log("\n--- Worker and verifier registration/staking ---");
+  console.log('\n--- Worker and verifier registration/staking ---');
 
   await confirm(
     provider,
@@ -156,7 +122,7 @@ async function main(): Promise<void> {
       worker: computeWorker.publicKey,
       signers: [computeWorker],
     }),
-    "register compute worker",
+    'register compute worker',
   );
 
   await confirm(
@@ -165,7 +131,7 @@ async function main(): Promise<void> {
       worker: verifier1.publicKey,
       signers: [verifier1],
     }),
-    "register verifier 1",
+    'register verifier 1',
   );
 
   await confirm(
@@ -174,7 +140,7 @@ async function main(): Promise<void> {
       worker: verifier2.publicKey,
       signers: [verifier2],
     }),
-    "register verifier 2",
+    'register verifier 2',
   );
 
   await confirm(
@@ -186,7 +152,7 @@ async function main(): Promise<void> {
       amount: 100,
       signers: [computeWorker],
     }),
-    "stake compute worker",
+    'stake compute worker',
   );
 
   await confirm(
@@ -198,7 +164,7 @@ async function main(): Promise<void> {
       amount: 100,
       signers: [verifier1],
     }),
-    "stake verifier 1",
+    'stake verifier 1',
   );
 
   await confirm(
@@ -210,10 +176,10 @@ async function main(): Promise<void> {
       amount: 100,
       signers: [verifier2],
     }),
-    "stake verifier 2",
+    'stake verifier 2',
   );
 
-  console.log("\n--- Job / fragment / verification flow ---");
+  console.log('\n--- Job / fragment / verification flow ---');
 
   const escrow = Keypair.generate();
   const jobId = new anchor.BN(Date.now());
@@ -232,13 +198,13 @@ async function main(): Promise<void> {
   const totalJobDeposit =
     maxDevnetSilLeaves(expectedFragments) * rewardPerFragment + verifierRewardBudget;
 
-  console.log("Job deposit debug:");
-  console.log("expectedFragments:", expectedFragments);
-  console.log("rewardPerFragment:", rewardPerFragment);
-  console.log("verifierRewardPerVote:", verifierRewardPerVote);
-  console.log("fragmentQuorum:", fragmentQuorum);
-  console.log("verifierRewardBudget:", verifierRewardBudget);
-  console.log("totalJobDeposit:", totalJobDeposit);
+  console.log('Job deposit debug:');
+  console.log('expectedFragments:', expectedFragments);
+  console.log('rewardPerFragment:', rewardPerFragment);
+  console.log('verifierRewardPerVote:', verifierRewardPerVote);
+  console.log('fragmentQuorum:', fragmentQuorum);
+  console.log('verifierRewardBudget:', verifierRewardBudget);
+  console.log('totalJobDeposit:', totalJobDeposit);
 
   const created = await sdk.createJob({
     mint,
@@ -253,10 +219,10 @@ async function main(): Promise<void> {
     fragmentQuorum,
   });
 
-  await confirm(provider, created.signature, "create job");
+  await confirm(provider, created.signature, 'create job');
 
-  console.log("Job:", created.job.toBase58());
-  console.log("Escrow:", escrow.publicKey.toBase58());
+  console.log('Job:', created.job.toBase58());
+  console.log('Escrow:', escrow.publicKey.toBase58());
 
   const claimed = await sdk.claimFragment({
     worker: computeWorker.publicKey,
@@ -266,7 +232,7 @@ async function main(): Promise<void> {
     signers: [computeWorker],
   });
 
-  await confirm(provider, claimed.signature, "claim fragment 0");
+  await confirm(provider, claimed.signature, 'claim fragment 0');
 
   await confirm(
     provider,
@@ -279,7 +245,7 @@ async function main(): Promise<void> {
       proofRef: randomHash(90),
       signers: [computeWorker],
     }),
-    "submit fragment result",
+    'submit fragment result',
   );
 
   const vote1 = await sdk.voteFragment({
@@ -292,7 +258,7 @@ async function main(): Promise<void> {
     signers: [verifier1],
   });
 
-  await confirm(provider, vote1.signature, "vote fragment valid - verifier 1");
+  await confirm(provider, vote1.signature, 'vote fragment valid - verifier 1');
 
   const vote2 = await sdk.voteFragment({
     verifier: verifier2.publicKey,
@@ -304,7 +270,7 @@ async function main(): Promise<void> {
     signers: [verifier2],
   });
 
-  await confirm(provider, vote2.signature, "vote fragment valid - verifier 2");
+  await confirm(provider, vote2.signature, 'vote fragment valid - verifier 2');
 
   await confirm(
     provider,
@@ -316,7 +282,7 @@ async function main(): Promise<void> {
       verifierToken: verifier1Token,
       signers: [verifier1],
     }),
-    "claim verifier 1 reward",
+    'claim verifier 1 reward',
   );
 
   await confirm(
@@ -329,7 +295,7 @@ async function main(): Promise<void> {
       verifierToken: verifier2Token,
       signers: [verifier2],
     }),
-    "claim verifier 2 reward",
+    'claim verifier 2 reward',
   );
 
   const finalized = await sdk.finalizeJob({
@@ -337,31 +303,23 @@ async function main(): Promise<void> {
     escrow: escrow.publicKey,
     clientToken,
     finalHash: randomHash(140),
-    outputUri: "ipfs://silicium-local-demo-output",
+    outputUri: 'ipfs://silicium-local-demo-output',
   });
 
-  await confirm(provider, finalized.signature, "finalize job");
+  await confirm(provider, finalized.signature, 'finalize job');
 
-  console.log("Result account:", finalized.result.toBase58());
+  console.log('Result account:', finalized.result.toBase58());
 
-  await printTokenBalance("Client token balance after job", clientToken, provider);
+  await printTokenBalance('Client token balance after job', clientToken, provider);
   await printTokenBalance(
-    "Compute worker token balance after reward",
+    'Compute worker token balance after reward',
     computeWorkerToken,
     provider,
   );
-  await printTokenBalance(
-    "Verifier 1 token balance after reward",
-    verifier1Token,
-    provider,
-  );
-  await printTokenBalance(
-    "Verifier 2 token balance after reward",
-    verifier2Token,
-    provider,
-  );
+  await printTokenBalance('Verifier 1 token balance after reward', verifier1Token, provider);
+  await printTokenBalance('Verifier 2 token balance after reward', verifier2Token, provider);
 
-  console.log("\n--- Network staking flow ---");
+  console.log('\n--- Network staking flow ---');
 
   const stakeVault = Keypair.generate();
   const rewardVault = Keypair.generate();
@@ -372,9 +330,9 @@ async function main(): Promise<void> {
     rewardVault,
   });
 
-  await confirm(provider, poolCreated.signature, "init staking pool");
+  await confirm(provider, poolCreated.signature, 'init staking pool');
 
-  console.log("Staking pool:", poolCreated.pool.toBase58());
+  console.log('Staking pool:', poolCreated.pool.toBase58());
 
   const networkStakeAmount = 1_000_000;
 
@@ -384,16 +342,16 @@ async function main(): Promise<void> {
     amount: networkStakeAmount,
   });
 
-  await confirm(provider, networkStake.signature, "stake network");
+  await confirm(provider, networkStake.signature, 'stake network');
 
   await confirm(
     provider,
-  await sdk.fundStakingRewards({
-    mint,
-    funderToken: clientToken,
-    amount: 100_000,
-  }),
-    "fund staking rewards",
+    await sdk.fundStakingRewards({
+      mint,
+      funderToken: clientToken,
+      amount: 100_000,
+    }),
+    'fund staking rewards',
   );
 
   await confirm(
@@ -402,7 +360,7 @@ async function main(): Promise<void> {
       mint,
       ownerRewardToken: clientToken,
     }),
-    "claim staking reward",
+    'claim staking reward',
   );
 
   const unstakeRequested = await sdk.requestUnstake({
@@ -410,7 +368,7 @@ async function main(): Promise<void> {
     amount: 500_000,
   });
 
-  await confirm(provider, unstakeRequested.signature, "request unstake");
+  await confirm(provider, unstakeRequested.signature, 'request unstake');
 
   try {
     await confirm(
@@ -419,34 +377,34 @@ async function main(): Promise<void> {
         mint,
         ownerToken: clientToken,
       }),
-      "withdraw unstaked",
+      'withdraw unstaked',
     );
   } catch (error) {
-    console.log("ℹ️ withdrawUnstaked not executed yet. Cooldown is probably still active.");
-    console.log("   Re-run withdraw later, or reduce UNSTAKE_COOLDOWN_SECS for local tests.");
+    console.log('ℹ️ withdrawUnstaked not executed yet. Cooldown is probably still active.');
+    console.log('   Re-run withdraw later, or reduce UNSTAKE_COOLDOWN_SECS for local tests.');
   }
 
-  console.log("\n--- Final on-chain reads ---");
+  console.log('\n--- Final on-chain reads ---');
 
-  console.log("\nJob:");
+  console.log('\nJob:');
   console.dir(await sdk.fetchJob(created.job), { depth: null });
 
-  console.log("\nFragment:");
+  console.log('\nFragment:');
   console.dir(await sdk.fetchFragment(claimed.fragment), { depth: null });
 
-  console.log("\nCompute worker:");
+  console.log('\nCompute worker:');
   console.dir(await sdk.fetchWorker(computeWorker.publicKey), { depth: null });
 
-  console.log("\nVerifier 1:");
+  console.log('\nVerifier 1:');
   console.dir(await sdk.fetchWorker(verifier1.publicKey), { depth: null });
 
-  console.log("\nVerifier 2:");
+  console.log('\nVerifier 2:');
   console.dir(await sdk.fetchWorker(verifier2.publicKey), { depth: null });
 
-  console.log("\nStaking pool:");
+  console.log('\nStaking pool:');
   console.dir(await sdk.fetchStakingPool(poolCreated.pool), { depth: null });
 
-  console.log("\nNetwork staker:");
+  console.log('\nNetwork staker:');
   console.dir(await sdk.fetchNetworkStaker(provider.wallet.publicKey, mint), {
     depth: null,
   });
@@ -455,11 +413,11 @@ async function main(): Promise<void> {
     await sub.remove();
   }
 
-  console.log("\n✅ Full SDK flow completed.");
+  console.log('\n✅ Full SDK flow completed.');
 }
 
 main().catch((error) => {
-  console.error("\n❌ Full SDK flow failed:");
+  console.error('\n❌ Full SDK flow failed:');
   console.error(error);
   process.exit(1);
 });

@@ -8,8 +8,13 @@ export function useTelemetryHistory() {
     const last = samples.value.at(-1);
     // Identical timestamps are the same observation, not another measurement.
     if (last && sample.at <= last.at) return;
-    samples.value = [...samples.value.filter(item => item.at >= sample.at - 300_000), sample].slice(-120);
+    samples.value = [
+      ...samples.value.filter((item) => item.at >= sample.at - 300_000),
+      sample,
+    ].slice(-120);
   }
-  function clear(): void { samples.value = []; }
+  function clear(): void {
+    samples.value = [];
+  }
   return { samples, record, clear };
 }

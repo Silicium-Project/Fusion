@@ -1,5 +1,5 @@
-import * as anchor from "@coral-xyz/anchor";
-import { PublicKey, Signer } from "@solana/web3.js";
+import * as anchor from '@coral-xyz/anchor';
+import { PublicKey, Signer } from '@solana/web3.js';
 
 export type IdlProgram = anchor.Program<any>;
 export type Amount = anchor.BN | number | bigint | string;
@@ -42,7 +42,6 @@ export interface CreateJobParams {
   deadlineUnix: Amount;
   fragmentQuorum: number;
 }
-
 
 export interface DeclareJobStorageParams {
   client?: PublicKey;
@@ -205,7 +204,6 @@ export interface WithdrawUnstakedParams {
   signers?: Signer[];
 }
 
-
 export interface ProposeFragmentSplitParams {
   splitter?: PublicKey;
   job: PublicKey;
@@ -244,60 +242,60 @@ export interface CreateSubFragmentParams {
 }
 
 export type SdkEventName =
-  | "jobCreated"
-  | "jobStorageDeclared"
-  | "workerRegistered"
-  | "workerStaked"
-  | "treasuryInitialized"
-  | "fragmentClaimed"
-  | "fragmentReclaimed"
-  | "fragmentSubmitted"
-  | "fragmentVerified"
-  | "fragmentRejected"
-  | "verifierRewardClaimed"
-  | "jobFinalized"
-  | "jobCancelled"
-  | "voteSlashed"
-  | "dualReputationUpdated"
-  | "bayesianReputationUpdated"
-  | "fragmentSplitProposed"
-  | "fragmentSplitApproved"
-  | "fragmentSplitRejected"
-  | "subFragmentCreated"
-  | "fragmentSplitCompleted"
-  | "stakingPoolInitialized"
-  | "networkStakeDeposited"
-  | "stakingRewardsFunded"
-  | "stakingRewardClaimed"
-  | "networkUnstakeRequested"
-  | "networkUnstakeWithdrawn";
+  | 'jobCreated'
+  | 'jobStorageDeclared'
+  | 'workerRegistered'
+  | 'workerStaked'
+  | 'treasuryInitialized'
+  | 'fragmentClaimed'
+  | 'fragmentReclaimed'
+  | 'fragmentSubmitted'
+  | 'fragmentVerified'
+  | 'fragmentRejected'
+  | 'verifierRewardClaimed'
+  | 'jobFinalized'
+  | 'jobCancelled'
+  | 'voteSlashed'
+  | 'dualReputationUpdated'
+  | 'bayesianReputationUpdated'
+  | 'fragmentSplitProposed'
+  | 'fragmentSplitApproved'
+  | 'fragmentSplitRejected'
+  | 'subFragmentCreated'
+  | 'fragmentSplitCompleted'
+  | 'stakingPoolInitialized'
+  | 'networkStakeDeposited'
+  | 'stakingRewardsFunded'
+  | 'stakingRewardClaimed'
+  | 'networkUnstakeRequested'
+  | 'networkUnstakeWithdrawn';
 
 export const SDK_EVENT_NAMES: SdkEventName[] = [
-  "jobCreated",
-  "jobStorageDeclared",
-  "workerRegistered",
-  "workerStaked",
-  "treasuryInitialized",
-  "fragmentClaimed",
-  "fragmentReclaimed",
-  "fragmentSubmitted",
-  "fragmentVerified",
-  "fragmentRejected",
-  "verifierRewardClaimed",
-  "jobFinalized",
-  "jobCancelled",
-  "voteSlashed",
-  "dualReputationUpdated",
-  "bayesianReputationUpdated",
-  "fragmentSplitProposed",
-  "fragmentSplitApproved",
-  "fragmentSplitRejected",
-  "subFragmentCreated",
-  "fragmentSplitCompleted",
-  "stakingPoolInitialized",
-  "networkStakeDeposited",
-  "stakingRewardsFunded",
-  "stakingRewardClaimed",
-  "networkUnstakeRequested",
-  "networkUnstakeWithdrawn",
+  'jobCreated',
+  'jobStorageDeclared',
+  'workerRegistered',
+  'workerStaked',
+  'treasuryInitialized',
+  'fragmentClaimed',
+  'fragmentReclaimed',
+  'fragmentSubmitted',
+  'fragmentVerified',
+  'fragmentRejected',
+  'verifierRewardClaimed',
+  'jobFinalized',
+  'jobCancelled',
+  'voteSlashed',
+  'dualReputationUpdated',
+  'bayesianReputationUpdated',
+  'fragmentSplitProposed',
+  'fragmentSplitApproved',
+  'fragmentSplitRejected',
+  'subFragmentCreated',
+  'fragmentSplitCompleted',
+  'stakingPoolInitialized',
+  'networkStakeDeposited',
+  'stakingRewardsFunded',
+  'stakingRewardClaimed',
+  'networkUnstakeRequested',
+  'networkUnstakeWithdrawn',
 ];

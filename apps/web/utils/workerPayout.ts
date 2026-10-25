@@ -22,13 +22,16 @@ export interface WorkerPayoutTransaction {
 }
 
 function isRateLimitedRpcFailure(failure: unknown): boolean {
-  const error = failure as { message?: unknown; code?: unknown; cause?: { message?: unknown; code?: unknown } };
-  return /429|too many requests|rate limit/i.test([
-    error?.message,
-    error?.code,
-    error?.cause?.message,
-    error?.cause?.code,
-  ].filter(value => value !== undefined && value !== null).join(' '));
+  const error = failure as {
+    message?: unknown;
+    code?: unknown;
+    cause?: { message?: unknown; code?: unknown };
+  };
+  return /429|too many requests|rate limit/i.test(
+    [error?.message, error?.code, error?.cause?.message, error?.cause?.code]
+      .filter((value) => value !== undefined && value !== null)
+      .join(' '),
+  );
 }
 
 async function retryRateLimitedRpc<T>(operation: () => Promise<T>): Promise<T> {
@@ -39,19 +42,23 @@ async function retryRateLimitedRpc<T>(operation: () => Promise<T>): Promise<T> {
     } catch (failure) {
       if (!isRateLimitedRpcFailure(failure)) throw failure;
       if (attempt >= delays.length) throw new Error('SOLANA_RPC_RATE_LIMITED');
-      await new Promise(resolve => setTimeout(resolve, delays[attempt]! + Math.floor(Math.random() * 500)));
+      await new Promise((resolve) => {
+        setTimeout(resolve, delays[attempt]! + Math.floor(Math.random() * 500));
+      });
     }
   }
 }
 
 function isBlockhashFailure(failure: unknown): boolean {
   const error = failure as { message?: unknown; logs?: unknown; cause?: { message?: unknown } };
-  const logs = Array.isArray(error?.logs) ? error.logs.filter(line => typeof line === 'string') : [];
-  return /blockhash not found|block height exceeded|blockhash expired/i.test([
-    error?.message,
-    error?.cause?.message,
-    ...logs,
-  ].filter(value => value !== undefined && value !== null).join('\n'));
+  const logs = Array.isArray(error?.logs)
+    ? error.logs.filter((line) => typeof line === 'string')
+    : [];
+  return /blockhash not found|block height exceeded|blockhash expired/i.test(
+    [error?.message, error?.cause?.message, ...logs]
+      .filter((value) => value !== undefined && value !== null)
+      .join('\n'),
+  );
 }
 
 /** Sign and submit short batches so wallet approval cannot age every blockhash. */
@@ -60,21 +67,22 @@ export async function sendWorkerPayoutBatch(
   provider: PhantomProvider,
   transactions: WorkerPayoutTransaction[],
 ): Promise<string[]> {
-  if (!provider.signAllTransactions) throw new Error('Phantom must support signing worker-link transactions as a group.');
+  if (!provider.signAllTransactions)
+    throw new Error('Phantom must support signing worker-link transactions as a group.');
   const signatures: string[] = [];
   const maxBatchSize = 4;
   let batchSize = maxBatchSize;
   let blockhashRefreshes = 0;
-  let pending = transactions.map(item => item.transaction);
+  let pending = transactions.map((item) => item.transaction);
 
   while (pending.length) {
     const latest = await retryRateLimitedRpc(() => connection.getLatestBlockhash('confirmed'));
-    const batch = pending.slice(0, batchSize).map(transaction => (
+    const batch = pending.slice(0, batchSize).map((transaction) =>
       new Transaction({
         feePayer: transaction.feePayer || undefined,
         recentBlockhash: latest.blockhash,
-      }).add(...transaction.instructions)
-    ));
+      }).add(...transaction.instructions),
+    );
     let signed: Transaction[];
     try {
       signed = await provider.signAllTransactions(batch);
@@ -84,12 +92,19 @@ export async function sendWorkerPayoutBatch(
       batchSize = Math.max(1, Math.ceil(batchSize / 2));
       continue;
     }
-    if (signed.length !== batch.length) throw new Error('Phantom returned an incomplete transaction batch.');
+    if (signed.length !== batch.length)
+      throw new Error('Phantom returned an incomplete transaction batch.');
 
-    const results = await Promise.allSettled(signed.map(transaction => retryRateLimitedRpc(() => connection.sendRawTransaction(
-      transaction.serialize(),
-      { maxRetries: 3, preflightCommitment: 'confirmed' },
-    ))));
+    const results = await Promise.allSettled(
+      signed.map((transaction) =>
+        retryRateLimitedRpc(() =>
+          connection.sendRawTransaction(transaction.serialize(), {
+            maxRetries: 3,
+            preflightCommitment: 'confirmed',
+          }),
+        ),
+      ),
+    );
     const failed: unknown[] = [];
     const retryBatch: Transaction[] = [];
     results.forEach((result, index) => {
@@ -107,7 +122,7 @@ export async function sendWorkerPayoutBatch(
       continue;
     }
 
-    const nonBlockhashFailure = failed.find(failure => !isBlockhashFailure(failure));
+    const nonBlockhashFailure = failed.find((failure) => !isBlockhashFailure(failure));
     if (nonBlockhashFailure) throw nonBlockhashFailure;
     if (blockhashRefreshes >= 2) throw failed[0];
     blockhashRefreshes += 1;
@@ -125,9 +140,11 @@ export async function inspectWorkerPayouts(
 ): Promise<string[]> {
   const payoutWallet = new PublicKey(payoutWalletAddress);
   const mint = new PublicKey(mintAddress);
-  const candidates = devices.filter(device => device.solanaWallet && device.payoutWallet === payoutWalletAddress);
+  const candidates = devices.filter(
+    (device) => device.solanaWallet && device.payoutWallet === payoutWalletAddress,
+  );
   if (!candidates.length) return [];
-  const accountRows = candidates.map(device => {
+  const accountRows = candidates.map((device) => {
     const worker = new PublicKey(device.solanaWallet!);
     return {
       device,
@@ -141,26 +158,50 @@ export async function inspectWorkerPayouts(
       payoutToken: associatedTokenAddress(payoutWallet, mint),
     };
   });
-  const infos = await retryRateLimitedRpc(() => connection.getMultipleAccountsInfo(
-    accountRows.flatMap(row => [row.payout, row.workerAccount, row.workerToken, row.payoutToken]),
-    'confirmed',
-  ));
+  const infos = await retryRateLimitedRpc(() =>
+    connection.getMultipleAccountsInfo(
+      accountRows.flatMap((row) => [
+        row.payout,
+        row.workerAccount,
+        row.workerToken,
+        row.payoutToken,
+      ]),
+      'confirmed',
+    ),
+  );
   const ready: string[] = [];
   accountRows.forEach((row, index) => {
     const payoutInfo = infos[index * 4];
     const workerInfo = infos[index * 4 + 1];
     const workerTokenInfo = infos[index * 4 + 2];
     const payoutTokenInfo = infos[index * 4 + 3];
-    if (!payoutInfo?.owner.equals(SILICIUM_PROGRAM_ID) || payoutInfo.data.length < 73
-      || !payoutInfo.data.subarray(8, 40).equals(row.worker.toBuffer())
-      || !payoutInfo.data.subarray(40, 72).equals(payoutWallet.toBuffer())) return;
-    if (!workerInfo?.owner.equals(SILICIUM_PROGRAM_ID) || workerInfo.data.length < 199
-      || !workerInfo.data.subarray(8, 40).equals(row.worker.toBuffer())
-      || workerInfo.data[198] !== 0 || (workerInfo.data[196]! & 3) !== 3) return;
-    if (!workerTokenInfo?.owner.equals(TOKEN_PROGRAM_ID) || workerTokenInfo.data.length < 72
-      || !workerTokenInfo.data.subarray(0, 32).equals(mint.toBuffer())) return;
-    if (!payoutTokenInfo?.owner.equals(TOKEN_PROGRAM_ID) || payoutTokenInfo.data.length < 72
-      || !payoutTokenInfo.data.subarray(0, 32).equals(mint.toBuffer())) return;
+    if (
+      !payoutInfo?.owner.equals(SILICIUM_PROGRAM_ID) ||
+      payoutInfo.data.length < 73 ||
+      !payoutInfo.data.subarray(8, 40).equals(row.worker.toBuffer()) ||
+      !payoutInfo.data.subarray(40, 72).equals(payoutWallet.toBuffer())
+    )
+      return;
+    if (
+      !workerInfo?.owner.equals(SILICIUM_PROGRAM_ID) ||
+      workerInfo.data.length < 199 ||
+      !workerInfo.data.subarray(8, 40).equals(row.worker.toBuffer()) ||
+      workerInfo.data[198] !== 0 ||
+      (workerInfo.data[196]! & 3) !== 3
+    )
+      return;
+    if (
+      !workerTokenInfo?.owner.equals(TOKEN_PROGRAM_ID) ||
+      workerTokenInfo.data.length < 72 ||
+      !workerTokenInfo.data.subarray(0, 32).equals(mint.toBuffer())
+    )
+      return;
+    if (
+      !payoutTokenInfo?.owner.equals(TOKEN_PROGRAM_ID) ||
+      payoutTokenInfo.data.length < 72 ||
+      !payoutTokenInfo.data.subarray(0, 32).equals(mint.toBuffer())
+    )
+      return;
     ready.push(row.device.nodeId);
   });
   return ready;
@@ -170,7 +211,9 @@ const SILICIUM_PROGRAM_ID = new PublicKey('64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk
 const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
 const INSTRUCTIONS_SYSVAR_ID = new PublicKey('Sysvar1nstructions1111111111111111111111111');
-const REGISTER_WORKER_PAYOUT_DISCRIMINATOR = Uint8Array.from([0x29, 0x52, 0xa1, 0xb5, 0xd0, 0x41, 0xb0, 0x73]);
+const REGISTER_WORKER_PAYOUT_DISCRIMINATOR = Uint8Array.from([
+  0x29, 0x52, 0xa1, 0xb5, 0xd0, 0x41, 0xb0, 0x73,
+]);
 
 function concatBytes(...parts: Uint8Array[]): Uint8Array {
   const length = parts.reduce((sum, part) => sum + part.length, 0);
@@ -194,7 +237,7 @@ function decodeHex(value: string, expectedBytes: number): Uint8Array {
   if (!new RegExp(`^[0-9a-fA-F]{${expectedBytes * 2}}$`).test(value)) {
     throw new Error('The worker payout proof has an invalid signature.');
   }
-  return Uint8Array.from(value.match(/.{2}/g)!.map(byte => Number.parseInt(byte, 16)));
+  return Uint8Array.from(value.match(/.{2}/g)!.map((byte) => Number.parseInt(byte, 16)));
 }
 
 function associatedTokenAddress(owner: PublicKey, mint: PublicKey): PublicKey {
@@ -204,7 +247,12 @@ function associatedTokenAddress(owner: PublicKey, mint: PublicKey): PublicKey {
   )[0];
 }
 
-function createAssociatedTokenInstruction(payer: PublicKey, owner: PublicKey, mint: PublicKey, address: PublicKey): TransactionInstruction {
+function createAssociatedTokenInstruction(
+  payer: PublicKey,
+  owner: PublicKey,
+  mint: PublicKey,
+  address: PublicKey,
+): TransactionInstruction {
   return new TransactionInstruction({
     programId: ASSOCIATED_TOKEN_PROGRAM_ID,
     keys: [
@@ -230,12 +278,14 @@ function registerWorkerPayoutInstruction(
     [new TextEncoder().encode('worker_payout'), workerAccountForPayout(worker).toBytes()],
     SILICIUM_PROGRAM_ID,
   );
-  const data = Buffer.from(concatBytes(
-    REGISTER_WORKER_PAYOUT_DISCRIMINATOR,
-    anchorString(pairingCode),
-    anchorString(nodeId),
-    anchorString(peerId),
-  ));
+  const data = Buffer.from(
+    concatBytes(
+      REGISTER_WORKER_PAYOUT_DISCRIMINATOR,
+      anchorString(pairingCode),
+      anchorString(nodeId),
+      anchorString(peerId),
+    ),
+  );
   return new TransactionInstruction({
     programId: SILICIUM_PROGRAM_ID,
     keys: [
@@ -267,7 +317,7 @@ export async function buildWorkerPayoutTransactions(
   const payoutWallet = new PublicKey(payoutWalletAddress);
   const mint = new PublicKey(mintAddress);
   const tokenAddress = associatedTokenAddress(payoutWallet, mint);
-  const accountRows = devices.map(device => {
+  const accountRows = devices.map((device) => {
     if (!device.solanaWallet || !device.payoutWallet || !device.workerPayoutProof) {
       throw new Error(`Missing signed payout proof for ${device.nodeId}.`);
     }
@@ -276,14 +326,18 @@ export async function buildWorkerPayoutTransactions(
     }
     const worker = new PublicKey(device.solanaWallet);
     const messageLines = device.workerPayoutProof.message.split('\n');
-    if (messageLines.length !== 6
-      || messageLines[0] !== 'silicium-device-payout-v1'
-      || messageLines[2] !== device.nodeId
-      || messageLines[3] !== device.peerId
-      || messageLines[4] !== worker.toBase58()
-      || messageLines[5] !== payoutWalletAddress
-      || !/^[0-9a-fA-F]{64}$/.test(messageLines[1] || '')) {
-      throw new Error(`The signed payout proof for ${device.nodeId} does not match this device and account.`);
+    if (
+      messageLines.length !== 6 ||
+      messageLines[0] !== 'silicium-device-payout-v1' ||
+      messageLines[2] !== device.nodeId ||
+      messageLines[3] !== device.peerId ||
+      messageLines[4] !== worker.toBase58() ||
+      messageLines[5] !== payoutWalletAddress ||
+      !/^[0-9a-fA-F]{64}$/.test(messageLines[1] || '')
+    ) {
+      throw new Error(
+        `The signed payout proof for ${device.nodeId} does not match this device and account.`,
+      );
     }
     const workerAccount = workerAccountForPayout(worker);
     const [payout] = PublicKey.findProgramAddressSync(
@@ -301,10 +355,15 @@ export async function buildWorkerPayoutTransactions(
 
   // One RPC request replaces 3 account lookups per worker. The 20-worker pool
   // uses 61 addresses, below Solana's 100-account getMultipleAccounts limit.
-  const infos = await retryRateLimitedRpc(() => connection.getMultipleAccountsInfo([
-    tokenAddress,
-    ...accountRows.flatMap(row => [row.payout, row.workerAccount, row.workerTokenAddress]),
-  ], 'confirmed'));
+  const infos = await retryRateLimitedRpc(() =>
+    connection.getMultipleAccountsInfo(
+      [
+        tokenAddress,
+        ...accountRows.flatMap((row) => [row.payout, row.workerAccount, row.workerTokenAddress]),
+      ],
+      'confirmed',
+    ),
+  );
   const tokenAccountInfo = infos[0];
   const resolvedRows = accountRows.map((row, index) => {
     const info = infos[1 + index * 3];
@@ -312,14 +371,21 @@ export async function buildWorkerPayoutTransactions(
     const workerTokenInfo = infos[3 + index * 3];
     let alreadyLinked = false;
     if (info) {
-      if (!info.owner.equals(SILICIUM_PROGRAM_ID) || info.data.length < 73
-        || !new PublicKey(info.data.subarray(8, 40)).equals(row.worker)) {
-        throw new Error(`The on-chain payout record for ${row.device.nodeId} has an unexpected layout.`);
+      if (
+        !info.owner.equals(SILICIUM_PROGRAM_ID) ||
+        info.data.length < 73 ||
+        !new PublicKey(info.data.subarray(8, 40)).equals(row.worker)
+      ) {
+        throw new Error(
+          `The on-chain payout record for ${row.device.nodeId} has an unexpected layout.`,
+        );
       }
       const currentPayoutWallet = new PublicKey(info.data.subarray(40, 72));
       if (currentPayoutWallet.equals(payoutWallet)) alreadyLinked = true;
       else if (!currentPayoutWallet.equals(row.worker)) {
-        throw new Error(`The payout for ${row.device.nodeId} is already assigned to another wallet. Both wallet owners must authorize a change.`);
+        throw new Error(
+          `The payout for ${row.device.nodeId} is already assigned to another wallet. Both wallet owners must authorize a change.`,
+        );
       }
     }
     return { ...row, info, workerInfo, workerTokenInfo, alreadyLinked };
@@ -328,21 +394,26 @@ export async function buildWorkerPayoutTransactions(
   // Older versions could store the payout PDA without creating the Worker
   // profile. Re-submit the proof-bound instruction in that case so the
   // contract can accept this device in compute and verification calls.
-  const rows = resolvedRows.filter(row => !row.alreadyLinked || !row.workerInfo);
-  const alreadyLinked = resolvedRows.filter(row => row.alreadyLinked).length;
-  const tokenRows = resolvedRows.filter(row => !row.workerTokenInfo);
+  const rows = resolvedRows.filter((row) => !row.alreadyLinked || !row.workerInfo);
+  const alreadyLinked = resolvedRows.filter((row) => row.alreadyLinked).length;
+  const tokenRows = resolvedRows.filter((row) => !row.workerTokenInfo);
   const missingTokenAccount = tokenAccountInfo === null;
   if (!rows.length && !tokenRows.length && !missingTokenAccount) {
     return { transactions: [], registered: 0, alreadyLinked };
   }
 
   const pending: WorkerPayoutTransaction[] = [];
-  const registrationByWorker = new Map(rows.map(row => [row.worker.toBase58(), row]));
-  const rowsByWorker = new Map(resolvedRows.map(row => [row.worker.toBase58(), row]));
-  const transactionWorkers = new Set([...registrationByWorker.keys(), ...tokenRows.map(row => row.worker.toBase58())]);
+  const registrationByWorker = new Map(rows.map((row) => [row.worker.toBase58(), row]));
+  const rowsByWorker = new Map(resolvedRows.map((row) => [row.worker.toBase58(), row]));
+  const transactionWorkers = new Set([
+    ...registrationByWorker.keys(),
+    ...tokenRows.map((row) => row.worker.toBase58()),
+  ]);
   if (!transactionWorkers.size && missingTokenAccount) {
     const transaction = new Transaction({ feePayer: payoutWallet });
-    transaction.add(createAssociatedTokenInstruction(payoutWallet, payoutWallet, mint, tokenAddress));
+    transaction.add(
+      createAssociatedTokenInstruction(payoutWallet, payoutWallet, mint, tokenAddress),
+    );
     pending.push({ transaction });
   }
 
@@ -352,16 +423,15 @@ export async function buildWorkerPayoutTransactions(
     const registration = registrationByWorker.get(workerAddress);
     const transaction = new Transaction({ feePayer: payoutWallet });
     if (!payoutAtaAdded) {
-      transaction.add(createAssociatedTokenInstruction(payoutWallet, payoutWallet, mint, tokenAddress));
+      transaction.add(
+        createAssociatedTokenInstruction(payoutWallet, payoutWallet, mint, tokenAddress),
+      );
       payoutAtaAdded = true;
     }
-    if (tokenRows.some(tokenRow => tokenRow.worker.toBase58() === workerAddress)) {
-      transaction.add(createAssociatedTokenInstruction(
-        payoutWallet,
-        row.worker,
-        mint,
-        row.workerTokenAddress,
-      ));
+    if (tokenRows.some((tokenRow) => tokenRow.worker.toBase58() === workerAddress)) {
+      transaction.add(
+        createAssociatedTokenInstruction(payoutWallet, row.worker, mint, row.workerTokenAddress),
+      );
     }
     if (registration) {
       const proof = row.device.workerPayoutProof!;
@@ -386,7 +456,9 @@ export async function buildWorkerPayoutTransactions(
 
   if (missingTokenAccount && !payoutAtaAdded) {
     const transaction = new Transaction({ feePayer: payoutWallet });
-    transaction.add(createAssociatedTokenInstruction(payoutWallet, payoutWallet, mint, tokenAddress));
+    transaction.add(
+      createAssociatedTokenInstruction(payoutWallet, payoutWallet, mint, tokenAddress),
+    );
     pending.push({ transaction });
   }
 

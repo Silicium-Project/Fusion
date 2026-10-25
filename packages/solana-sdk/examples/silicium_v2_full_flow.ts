@@ -24,15 +24,15 @@
  * - SPLIT_MIN_COMPLEXITY is compatible with local test fragments, usually <= 3_000.
  */
 
-import * as anchor from "@coral-xyz/anchor";
-import { Program } from "@coral-xyz/anchor";
-import { PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY } from "@solana/web3.js";
+import * as anchor from '@coral-xyz/anchor';
+import { Program } from '@coral-xyz/anchor';
+import { PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js';
 import {
   TOKEN_PROGRAM_ID,
   createAssociatedTokenAccount,
   createMint,
   mintTo,
-} from "@solana/spl-token";
+} from '@solana/spl-token';
 
 const provider = anchor.AnchorProvider.env();
 anchor.setProvider(provider);
@@ -66,88 +66,90 @@ function u16le(n: number): Buffer {
 
 function jobPda(client: PublicKey, jobId: anchor.BN): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("job"), client.toBuffer(), jobId.toArrayLike(Buffer, "le", 8)],
+    [Buffer.from('job'), client.toBuffer(), jobId.toArrayLike(Buffer, 'le', 8)],
     program.programId,
   )[0];
 }
 
 function escrowAuthPda(job: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("escrow_auth"), job.toBuffer()],
+    [Buffer.from('escrow_auth'), job.toBuffer()],
     program.programId,
   )[0];
 }
 
 function fragmentPda(job: PublicKey, fragmentIndex: number): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("fragment"), job.toBuffer(), u32le(fragmentIndex)],
+    [Buffer.from('fragment'), job.toBuffer(), u32le(fragmentIndex)],
     program.programId,
   )[0];
 }
 
 function splitProposalPda(parentFragment: PublicKey, round: number): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("split_proposal"), parentFragment.toBuffer(), u16le(round)],
+    [Buffer.from('split_proposal'), parentFragment.toBuffer(), u16le(round)],
     program.programId,
   )[0];
 }
 
 function workerPda(worker: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("worker"), worker.toBuffer()],
+    [Buffer.from('worker'), worker.toBuffer()],
     program.programId,
   )[0];
 }
 
 function workerPayoutPda(workerAccount: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("worker_payout"), workerAccount.toBuffer()],
+    [Buffer.from('worker_payout'), workerAccount.toBuffer()],
     programAny.programId,
   )[0];
 }
 
 function stakeAuthPda(workerAccount: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("stake_auth"), workerAccount.toBuffer()],
+    [Buffer.from('stake_auth'), workerAccount.toBuffer()],
     program.programId,
   )[0];
 }
 
 function stakeVaultPda(worker: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("stake_vault"), worker.toBuffer()],
+    [Buffer.from('stake_vault'), worker.toBuffer()],
     program.programId,
   )[0];
 }
 
 function votePda(fragment: PublicKey, verifier: PublicKey, round: number): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("fragment_vote"), fragment.toBuffer(), verifier.toBuffer(), u16le(round)],
+    [Buffer.from('fragment_vote'), fragment.toBuffer(), verifier.toBuffer(), u16le(round)],
     program.programId,
   )[0];
 }
 
 function roundResolutionPda(fragment: PublicKey, round: number): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("fragment_resolution"), fragment.toBuffer(), u16le(round)],
+    [Buffer.from('fragment_resolution'), fragment.toBuffer(), u16le(round)],
     program.programId,
   )[0];
 }
 
 function resultPda(job: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("result"), job.toBuffer()],
+    [Buffer.from('result'), job.toBuffer()],
     program.programId,
   )[0];
 }
 
 async function sleep(ms: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, ms));
+  await new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 async function airdrop(pubkey: PublicKey, lamports = 2_000_000_000) {
   const sig = await provider.connection.requestAirdrop(pubkey, lamports);
-  await provider.connection.confirmTransaction(sig, "confirmed");
+  await provider.connection.confirmTransaction(sig, 'confirmed');
   await sleep(400);
 }
 
@@ -160,7 +162,7 @@ async function registerWorker(worker: anchor.web3.Keypair): Promise<PublicKey> {
       worker: worker.publicKey,
       workerAccount,
       workerPayout: PublicKey.findProgramAddressSync(
-        [Buffer.from("worker_payout"), workerAccount.toBuffer()],
+        [Buffer.from('worker_payout'), workerAccount.toBuffer()],
         programAny.programId,
       )[0],
       systemProgram: SystemProgram.programId,
@@ -168,7 +170,7 @@ async function registerWorker(worker: anchor.web3.Keypair): Promise<PublicKey> {
     .signers([worker])
     .rpc();
 
-  console.log("registered worker", worker.publicKey.toBase58(), sig);
+  console.log('registered worker', worker.publicKey.toBase58(), sig);
   return workerAccount;
 }
 
@@ -180,21 +182,9 @@ async function createFundedTokenAccount(
   const payer = provider.wallet.payer as anchor.web3.Keypair;
   const mintAuthority = provider.wallet.publicKey;
 
-  const tokenAccount = await createAssociatedTokenAccount(
-    provider.connection,
-    payer,
-    mint,
-    owner,
-  );
+  const tokenAccount = await createAssociatedTokenAccount(provider.connection, payer, mint, owner);
 
-  await mintTo(
-    provider.connection,
-    payer,
-    mint,
-    tokenAccount,
-    mintAuthority,
-    amount,
-  );
+  await mintTo(provider.connection, payer, mint, tokenAccount, mintAuthority, amount);
 
   return tokenAccount;
 }
@@ -225,7 +215,7 @@ async function stakeWorker(params: {
     .signers([params.worker])
     .rpc();
 
-  console.log("staked worker", params.worker.publicKey.toBase58(), sig);
+  console.log('staked worker', params.worker.publicKey.toBase58(), sig);
   return { stakeAuth, stakeVault };
 }
 
@@ -276,12 +266,13 @@ async function createJob(params: {
   const deadlineUnix = new anchor.BN(Math.floor(Date.now() / 1000) + 3600);
   const maxLeafFragments = Math.min(
     params.expectedFragments * 16,
-    params.expectedFragments * (1 + Math.floor(Math.floor((1_000 - params.expectedFragments) / params.expectedFragments) / 2)),
+    params.expectedFragments *
+      (1 +
+        Math.floor(Math.floor((1_000 - params.expectedFragments) / params.expectedFragments) / 2)),
     1_000,
   );
 
-  const topUp = REWARD_PER_FRAGMENT
-    .mul(new anchor.BN(maxLeafFragments))
+  const topUp = REWARD_PER_FRAGMENT.mul(new anchor.BN(maxLeafFragments))
     .add(VERIFIER_REWARD_BUDGET)
     .add(new anchor.BN(2_000_000));
 
@@ -318,7 +309,7 @@ async function createJob(params: {
     .signers([escrow])
     .rpc();
 
-  console.log("created job", {
+  console.log('created job', {
     signature: sig,
     job: job.toBase58(),
     escrow: escrow.publicKey.toBase58(),
@@ -348,7 +339,7 @@ async function claimFragment(
     .signers([worker.keypair])
     .rpc();
 
-  console.log("claimed fragment", fragmentIndex, fragment.toBase58(), sig);
+  console.log('claimed fragment', fragmentIndex, fragment.toBase58(), sig);
   return fragment;
 }
 
@@ -361,11 +352,7 @@ async function submitFragment(
   const fragment = fragmentPda(job, fragmentIndex);
 
   const sig = await programAny.methods
-    .submitFragmentResult(
-      fragmentIndex,
-      Array(32).fill(resultByte),
-      Array(32).fill(resultByte + 1),
-    )
+    .submitFragmentResult(fragmentIndex, Array(32).fill(resultByte), Array(32).fill(resultByte + 1))
     .accounts({
       worker: worker.keypair.publicKey,
       workerAccount: worker.workerAccount,
@@ -376,7 +363,7 @@ async function submitFragment(
     .signers([worker.keypair])
     .rpc();
 
-  console.log("submitted fragment", fragmentIndex, sig);
+  console.log('submitted fragment', fragmentIndex, sig);
   return fragment;
 }
 
@@ -416,7 +403,7 @@ async function voteOnFragment(params: {
     .signers([params.verifier.keypair])
     .rpc();
 
-  console.log("voted", params.choice ? "YES" : "NO", params.fragment.toBase58(), sig);
+  console.log('voted', params.choice ? 'YES' : 'NO', params.fragment.toBase58(), sig);
   return { vote, roundResolution };
 }
 
@@ -455,7 +442,7 @@ async function verifyFragmentWithTwoVotes(params: {
     throw new Error(`Fragment ${params.fragmentIndex} was not verified`);
   }
 
-  console.log("verified fragment", params.fragmentIndex);
+  console.log('verified fragment', params.fragmentIndex);
   return fragment;
 }
 
@@ -490,7 +477,7 @@ async function claimVerifierReward(params: {
     .signers([params.verifier.keypair])
     .rpc();
 
-  console.log("claimed verifier reward", params.verifier.keypair.publicKey.toBase58(), sig);
+  console.log('claimed verifier reward', params.verifier.keypair.publicKey.toBase58(), sig);
 }
 
 async function proposeAndCreateSplit(params: {
@@ -506,7 +493,7 @@ async function proposeAndCreateSplit(params: {
 
   const manifestHash = Array(32).fill(77);
 
-  logStep("Propose split");
+  logStep('Propose split');
   const proposeSig = await programAny.methods
     .proposeFragmentSplit(manifestHash, params.childIndexes.length)
     .accounts({
@@ -521,9 +508,9 @@ async function proposeAndCreateSplit(params: {
     .signers([params.splitter.keypair])
     .rpc();
 
-  console.log("proposed split", { splitProposal: splitProposal.toBase58(), proposeSig });
+  console.log('proposed split', { splitProposal: splitProposal.toBase58(), proposeSig });
 
-  logStep("Approve split");
+  logStep('Approve split');
   const approveSig = await programAny.methods
     .approveFragmentSplit(true)
     .accounts({
@@ -534,9 +521,9 @@ async function proposeAndCreateSplit(params: {
     })
     .rpc();
 
-  console.log("approved split", approveSig);
+  console.log('approved split', approveSig);
 
-  logStep("Create sub-fragments");
+  logStep('Create sub-fragments');
   const childFragments: PublicKey[] = [];
 
   for (let i = 0; i < params.childIndexes.length; i++) {
@@ -561,7 +548,7 @@ async function proposeAndCreateSplit(params: {
       })
       .rpc();
 
-    console.log("created sub-fragment", childIndex, childFragment.toBase58(), createSig);
+    console.log('created sub-fragment', childIndex, childFragment.toBase58(), createSig);
     childFragments.push(childFragment);
   }
 
@@ -569,42 +556,37 @@ async function proposeAndCreateSplit(params: {
   const proposalAfter = await programAny.account.splitProposal.fetch(splitProposal);
   const jobAfter = await programAny.account.job.fetch(params.job);
 
-  console.log("parent status after split:", parentAfter.status);
-  console.log("proposal createdChildren:", Number(proposalAfter.createdChildren));
-  console.log("job expectedFragments after split:", Number(jobAfter.expectedFragments));
+  console.log('parent status after split:', parentAfter.status);
+  console.log('proposal createdChildren:', Number(proposalAfter.createdChildren));
+  console.log('job expectedFragments after split:', Number(jobAfter.expectedFragments));
 
   return childFragments;
 }
 
 async function main() {
-  logStep("Provider");
-  console.log("wallet", provider.wallet.publicKey.toBase58());
-  console.log("program", program.programId.toBase58());
+  logStep('Provider');
+  console.log('wallet', provider.wallet.publicKey.toBase58());
+  console.log('program', program.programId.toBase58());
 
-  logStep("Create mint and client token account");
+  logStep('Create mint and client token account');
   const payer = provider.wallet.payer as anchor.web3.Keypair;
   const client = provider.wallet.publicKey;
 
   const mint = await createMint(provider.connection, payer, client, null, 6);
-  const clientToken = await createAssociatedTokenAccount(
-    provider.connection,
-    payer,
-    mint,
-    client,
-  );
+  const clientToken = await createAssociatedTokenAccount(provider.connection, payer, mint, client);
 
   await mintTo(provider.connection, payer, mint, clientToken, client, 100_000_000);
 
-  console.log("mint", mint.toBase58());
-  console.log("clientToken", clientToken.toBase58());
+  console.log('mint', mint.toBase58());
+  console.log('clientToken', clientToken.toBase58());
 
-  logStep("Create ready participants");
-  const splitter = await createReadyWorker(mint, "splitter");
-  const computeWorker = await createReadyWorker(mint, "computeWorker");
-  const verifier1 = await createReadyWorker(mint, "verifier1");
-  const verifier2 = await createReadyWorker(mint, "verifier2");
+  logStep('Create ready participants');
+  const splitter = await createReadyWorker(mint, 'splitter');
+  const computeWorker = await createReadyWorker(mint, 'computeWorker');
+  const verifier1 = await createReadyWorker(mint, 'verifier1');
+  const verifier2 = await createReadyWorker(mint, 'verifier2');
 
-  logStep("Create V2 mixed job");
+  logStep('Create V2 mixed job');
   const jobId = new anchor.BN(Date.now());
   const { job, escrow } = await createJob({
     mint,
@@ -613,7 +595,7 @@ async function main() {
     expectedFragments: 2,
   });
 
-  logStep("Claim parent fragment 0 by splitter");
+  logStep('Claim parent fragment 0 by splitter');
   const parentFragment = await claimFragment(splitter, job, 0);
 
   const childIndexes = [2, 3];
@@ -624,7 +606,7 @@ async function main() {
     childIndexes,
   });
 
-  logStep("Process normal V1 leaf fragment 1");
+  logStep('Process normal V1 leaf fragment 1');
   const normalLeaf = await verifyFragmentWithTwoVotes({
     computeWorker,
     verifier1,
@@ -635,7 +617,7 @@ async function main() {
     resultByte: 41,
   });
 
-  logStep("Process V2 sub-fragment 2");
+  logStep('Process V2 sub-fragment 2');
   const child2 = await verifyFragmentWithTwoVotes({
     computeWorker,
     verifier1,
@@ -646,7 +628,7 @@ async function main() {
     resultByte: 42,
   });
 
-  logStep("Process V2 sub-fragment 3");
+  logStep('Process V2 sub-fragment 3');
   const child3 = await verifyFragmentWithTwoVotes({
     computeWorker,
     verifier1,
@@ -657,7 +639,7 @@ async function main() {
     resultByte: 43,
   });
 
-  logStep("Check job before verifier reward claims");
+  logStep('Check job before verifier reward claims');
   const jobBeforeRewards = await programAny.account.job.fetch(job);
   console.log({
     expectedFragments: Number(jobBeforeRewards.expectedFragments),
@@ -667,16 +649,16 @@ async function main() {
     status: jobBeforeRewards.status,
   });
 
-  logStep("Claim verifier rewards");
+  logStep('Claim verifier rewards');
   for (const fragment of [normalLeaf, child2, child3]) {
     await claimVerifierReward({ verifier: verifier1, job, fragment, escrow });
     await claimVerifierReward({ verifier: verifier2, job, fragment, escrow });
   }
 
-  logStep("Finalize job");
+  logStep('Finalize job');
   const result = resultPda(job);
   const finalizeSig = await programAny.methods
-    .finalizeJob(Array(32).fill(123), Buffer.from("ipfs://silicium-v2-full-flow-result"))
+    .finalizeJob(Array(32).fill(123), Buffer.from('ipfs://silicium-v2-full-flow-result'))
     .accounts({
       client,
       job,
@@ -692,36 +674,36 @@ async function main() {
   const finalJob = await programAny.account.job.fetch(job);
   const finalResult = await programAny.account.jobResult.fetch(result);
 
-  console.log("finalize tx", finalizeSig);
-  console.log("final job", {
+  console.log('finalize tx', finalizeSig);
+  console.log('final job', {
     status: finalJob.status,
     expectedFragments: Number(finalJob.expectedFragments),
     verifiedFragments: Number(finalJob.verifiedFragments),
     paidAmount: Number(finalJob.paidAmount),
     claimedVerifierRewardsTotal: Number(finalJob.claimedVerifierRewardsTotal),
   });
-  console.log("final result", {
+  console.log('final result', {
     result: result.toBase58(),
     finalHash: finalResult.finalHash,
   });
 
   if (!finalJob.status.finalized) {
-    throw new Error("Full V2 flow finished but job is not finalized");
+    throw new Error('Full V2 flow finished but job is not finalized');
   }
 
   if (Number(finalJob.expectedFragments) !== 3 || Number(finalJob.verifiedFragments) !== 3) {
-    throw new Error("Full V2 flow finished with unexpected fragment counters");
+    throw new Error('Full V2 flow finished with unexpected fragment counters');
   }
 
-  console.log("\n✅ Full V2 flow completed successfully");
-  console.log("Job:", job.toBase58());
-  console.log("Parent fragment:", parentFragment.toBase58());
-  console.log("Child fragments:", childFragments.map((p) => p.toBase58()).join(", "));
-  console.log("Result:", result.toBase58());
+  console.log('\n✅ Full V2 flow completed successfully');
+  console.log('Job:', job.toBase58());
+  console.log('Parent fragment:', parentFragment.toBase58());
+  console.log('Child fragments:', childFragments.map((p) => p.toBase58()).join(', '));
+  console.log('Result:', result.toBase58());
 }
 
 main().catch((error) => {
-  console.error("\n❌ Full V2 flow failed");
+  console.error('\n❌ Full V2 flow failed');
   console.error(error);
   process.exit(1);
 });

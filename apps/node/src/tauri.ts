@@ -197,7 +197,15 @@ export type UpdateStatus = {
   latestVersion: string;
   latestBuild: string;
   latestContentId: string;
-  state: 'unknown' | 'checking' | 'current' | 'available' | 'waiting_for_idle' | 'downloading' | 'installing' | 'error';
+  state:
+    | 'unknown'
+    | 'checking'
+    | 'current'
+    | 'available'
+    | 'waiting_for_idle'
+    | 'downloading'
+    | 'installing'
+    | 'error';
   updateAvailable: boolean;
   automatic: boolean;
   lastCheckedUtc: string;

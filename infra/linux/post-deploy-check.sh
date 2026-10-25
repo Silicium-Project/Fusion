@@ -13,15 +13,12 @@ channel_orchestrator_port="$(channel_field orchestrator_port)"
 channel_backend_http_port="$(channel_field backend_http_port)"
 channel_frontend_http_port="$(channel_field frontend_http_port)"
 channel_reputation_http_port="$(channel_field reputation_http_port)"
-channel_proxy_http_port="$(channel_field proxy_http_port)"
 channel_public_base_url="$(channel_field public_base_url)"
 channel_vpn_interface=""
-channel_vpn_network=""
 channel_vpn_server_address=""
 channel_vpn_listen_port=""
 if [[ "$RELEASE_CHANNEL" == "dev" ]]; then
   channel_vpn_interface="$(channel_field vpn_interface)"
-  channel_vpn_network="$(channel_field vpn_network)"
   channel_vpn_server_address="$(channel_field vpn_server_address)"
   channel_vpn_listen_port="$(channel_field vpn_listen_port)"
 fi
@@ -45,10 +42,14 @@ fi
 [[ -s "$RELEASE_MARKER" ]] || { echo "Missing release marker: $RELEASE_MARKER" >&2; exit 1; }
 
 set -a
+# Configuration provisionnée sur le serveur, absente du dépôt.
+# shellcheck source=/dev/null
 . "$ORCHESTRATOR_ENV"
 set +a
 
 set -a
+# Configuration provisionnée sur le serveur, absente du dépôt.
+# shellcheck source=/dev/null
 . "$RELEASE_MARKER"
 set +a
 if [[ "${SILICIUM_RELEASE_CHANNEL:-}" != "$RELEASE_CHANNEL" ]]; then
@@ -64,14 +65,20 @@ done
 
 if [[ -f "$UPDATE_CHANNELS_ENV" ]]; then
   set -a
+# Configuration provisionnée sur le serveur, absente du dépôt.
+# shellcheck source=/dev/null
   . "$UPDATE_CHANNELS_ENV"
   set +a
 fi
 
 set -a
+# Configuration provisionnée sur le serveur, absente du dépôt.
+# shellcheck source=/dev/null
 . "$COMPOSE_ENV"
 # The checked-in compose example contains production defaults. The deployment
 # scripts export the channel-specific values before invoking this check.
+# Configuration provisionnée sur le serveur, absente du dépôt.
+# shellcheck source=/dev/null
 . "$RELEASE_MARKER"
 set +a
 channel_or_legacy_default() {

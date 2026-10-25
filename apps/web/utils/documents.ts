@@ -34,13 +34,18 @@ export const mergeDocumentSelection = (current: File[], added: File[]): File[] =
 /** Why a selection cannot be sent, in the user's words; '' when it can. */
 export const documentSelectionError = (files: File[]): string => {
   if (!files.length) return translate('documents.selection.none');
-  if (files.length > MAX_DOCUMENT_FILES) return translate('documents.selection.tooMany', { max: MAX_DOCUMENT_FILES });
+  if (files.length > MAX_DOCUMENT_FILES)
+    return translate('documents.selection.tooMany', { max: MAX_DOCUMENT_FILES });
   const archives = files.filter((file) => extensionOf(file.name) === 'zip');
   if (archives.length && files.length > 1) return translate('documents.selection.zipAndFiles');
-  const unsupported = files.find((file) => extensionOf(file.name) !== 'zip' && !DOCUMENT_EXTENSIONS.includes(extensionOf(file.name)));
+  const unsupported = files.find(
+    (file) =>
+      extensionOf(file.name) !== 'zip' && !DOCUMENT_EXTENSIONS.includes(extensionOf(file.name)),
+  );
   if (unsupported) return translate('documents.selection.unsupported', { name: unsupported.name });
   if (files.some((file) => file.size === 0)) return translate('documents.selection.empty');
-  if (files.reduce((total, file) => total + file.size, 0) > MAX_DOCUMENT_BYTES) return translate('documents.selection.tooLarge');
+  if (files.reduce((total, file) => total + file.size, 0) > MAX_DOCUMENT_BYTES)
+    return translate('documents.selection.tooLarge');
   return '';
 };
 
@@ -90,31 +95,84 @@ export const passageSource = (hit: Pick<DocumentHit, 'document' | 'page'>): stri
 export const uniqueDocuments = (documents: CollectionDocument[]): CollectionDocument[] => {
   const seen = new Set<string>();
   return documents
-    .filter((document) => document && typeof document.name === 'string' && !seen.has(document.name) && seen.add(document.name))
-    .sort((a, b) => documentName(a.name).localeCompare(documentName(b.name), undefined, { numeric: true, sensitivity: 'base' }));
+    .filter(
+      (document) =>
+        document &&
+        typeof document.name === 'string' &&
+        !seen.has(document.name) &&
+        seen.add(document.name),
+    )
+    .sort((a, b) =>
+      documentName(a.name).localeCompare(documentName(b.name), undefined, {
+        numeric: true,
+        sensitivity: 'base',
+      }),
+    );
 };
 
 /** Passages read so far, from the parts of the job (`items` per part). */
-export const passageProgress = (fragments: { status?: unknown; items?: unknown }[], isDone: (status: unknown) => boolean): { done: number; total: number } =>
-  fragments.reduce((progress, fragment) => {
-    const count = Number(fragment.items) || 0;
-    return { done: progress.done + (isDone(fragment.status) ? count : 0), total: progress.total + count };
-  }, { done: 0, total: 0 });
+export const passageProgress = (
+  fragments: { status?: unknown; items?: unknown }[],
+  isDone: (status: unknown) => boolean,
+): { done: number; total: number } =>
+  fragments.reduce(
+    (progress, fragment) => {
+      const count = Number(fragment.items) || 0;
+      return {
+        done: progress.done + (isDone(fragment.status) ? count : 0),
+        total: progress.total + count,
+      };
+    },
+    { done: 0, total: 0 },
+  );
 
 /** Words too common to be worth highlighting. */
-const STOP_WORDS = new Set(['les', 'des', 'une', 'est', 'que', 'qui', 'pour', 'par', 'sur', 'dans', 'avec', 'pas', 'plus', 'comment', 'quoi', 'quel', 'quelle', 'the', 'and', 'for', 'how', 'what']);
+const STOP_WORDS = new Set([
+  'les',
+  'des',
+  'une',
+  'est',
+  'que',
+  'qui',
+  'pour',
+  'par',
+  'sur',
+  'dans',
+  'avec',
+  'pas',
+  'plus',
+  'comment',
+  'quoi',
+  'quel',
+  'quelle',
+  'the',
+  'and',
+  'for',
+  'how',
+  'what',
+]);
 
 /** Lowercase without accents, character by character. */
-const fold = (character: string): string => character.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const fold = (character: string): string =>
+  character.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 /**
  * The text cut into pieces, the pieces matching a word of the query (or a
  * word starting like it: "résilier" matches "résiliation") marked, accents
  * and case ignored.
  */
-export const highlightSegments = (text: string, query: string): { text: string; match: boolean }[] => {
-  const terms = [...new Set(query.split(/[^\p{L}\p{N}]+/u).map((word) => [...word].map(fold).join('')).filter((word) => word.length >= 3 && !STOP_WORDS.has(word)))]
-    .map((word) => (word.length >= 8 ? word.slice(0, word.length - 2) : word));
+export const highlightSegments = (
+  text: string,
+  query: string,
+): { text: string; match: boolean }[] => {
+  const terms = [
+    ...new Set(
+      query
+        .split(/[^\p{L}\p{N}]+/u)
+        .map((word) => [...word].map(fold).join(''))
+        .filter((word) => word.length >= 3 && !STOP_WORDS.has(word)),
+    ),
+  ].map((word) => (word.length >= 8 ? word.slice(0, word.length - 2) : word));
   if (!terms.length) return [{ text, match: false }];
   const segments: { text: string; match: boolean }[] = [];
   const words = text.split(/([\p{L}\p{N}]+)/u);

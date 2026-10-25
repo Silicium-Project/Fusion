@@ -38,12 +38,42 @@ pub(crate) struct OllamaAsset {
 
 /// Archives of [`OLLAMA_VERSION`] (`sha256sum.txt` of the GitHub release).
 pub(crate) const OLLAMA_ASSETS: &[OllamaAsset] = &[
-    OllamaAsset { os: "windows", arch: "x86_64", name: "ollama-windows-amd64.zip", sha256: "7485a1172f8527db4342a63521b9342fc466185ff0855da378cc864ecf6354cf" },
-    OllamaAsset { os: "windows", arch: "aarch64", name: "ollama-windows-arm64.zip", sha256: "1fe50fb62ddcfc5fe102322e4a35043ccbf4e821adfa4ef41eee21af0aa158a7" },
-    OllamaAsset { os: "linux", arch: "x86_64", name: "ollama-linux-amd64.tar.zst", sha256: "15f31e9576d15a481e099b4145dba6e9f8c1f295927d6b8895300ae30ed3740a" },
-    OllamaAsset { os: "linux", arch: "aarch64", name: "ollama-linux-arm64.tar.zst", sha256: "1a314ac530d2c23bf6d2aaaf4a4aba8cc0b2a4ee8bc8fae3f3aa88bff7f7177b" },
-    OllamaAsset { os: "macos", arch: "x86_64", name: "ollama-darwin.tgz", sha256: "a4ceae4b2aaf18df37ebcbfb56ba3a37a87838631112d66c2be07268693c8d58" },
-    OllamaAsset { os: "macos", arch: "aarch64", name: "ollama-darwin.tgz", sha256: "a4ceae4b2aaf18df37ebcbfb56ba3a37a87838631112d66c2be07268693c8d58" },
+    OllamaAsset {
+        os: "windows",
+        arch: "x86_64",
+        name: "ollama-windows-amd64.zip",
+        sha256: "7485a1172f8527db4342a63521b9342fc466185ff0855da378cc864ecf6354cf",
+    },
+    OllamaAsset {
+        os: "windows",
+        arch: "aarch64",
+        name: "ollama-windows-arm64.zip",
+        sha256: "1fe50fb62ddcfc5fe102322e4a35043ccbf4e821adfa4ef41eee21af0aa158a7",
+    },
+    OllamaAsset {
+        os: "linux",
+        arch: "x86_64",
+        name: "ollama-linux-amd64.tar.zst",
+        sha256: "15f31e9576d15a481e099b4145dba6e9f8c1f295927d6b8895300ae30ed3740a",
+    },
+    OllamaAsset {
+        os: "linux",
+        arch: "aarch64",
+        name: "ollama-linux-arm64.tar.zst",
+        sha256: "1a314ac530d2c23bf6d2aaaf4a4aba8cc0b2a4ee8bc8fae3f3aa88bff7f7177b",
+    },
+    OllamaAsset {
+        os: "macos",
+        arch: "x86_64",
+        name: "ollama-darwin.tgz",
+        sha256: "a4ceae4b2aaf18df37ebcbfb56ba3a37a87838631112d66c2be07268693c8d58",
+    },
+    OllamaAsset {
+        os: "macos",
+        arch: "aarch64",
+        name: "ollama-darwin.tgz",
+        sha256: "a4ceae4b2aaf18df37ebcbfb56ba3a37a87838631112d66c2be07268693c8d58",
+    },
 ];
 
 /// The archive for this machine, if Ollama ships one.
@@ -129,7 +159,10 @@ fn write_progress(state: &str, message: &str) {
     let progress = InstallProgress {
         state: state.to_string(),
         message: message.to_string(),
-        updated_unix: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
+        updated_unix: SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
     };
     if fs::create_dir_all(ai_dir()).is_ok() {
         if let Ok(text) = serde_json::to_string(&progress) {
@@ -147,7 +180,11 @@ fn read_progress() -> InstallProgress {
 
 /// The Ollama executable of the installed release, if any.
 pub(crate) fn ollama_binary() -> Option<PathBuf> {
-    let name = if cfg!(target_os = "windows") { "ollama.exe" } else { "ollama" };
+    let name = if cfg!(target_os = "windows") {
+        "ollama.exe"
+    } else {
+        "ollama"
+    };
     let root = install_dir();
     [root.join(name), root.join("bin").join(name)]
         .into_iter()
@@ -197,7 +234,11 @@ pub(crate) fn ai_status() -> AiStatus {
     (status.catalog_runtime, status.catalog_runtime_message) = ai_runtime_state();
     if ollama_asset().is_none() {
         status.state = "unsupported".into();
-        status.message = format!("Ollama n'est pas disponible pour {} {}", env::consts::OS, env::consts::ARCH);
+        status.message = format!(
+            "Ollama n'est pas disponible pour {} {}",
+            env::consts::OS,
+            env::consts::ARCH
+        );
         return status;
     }
     if !enabled {
@@ -330,7 +371,11 @@ fn download_and_unpack(asset: OllamaAsset, dir: &Path) -> Result<(), String> {
 /// zip archives; GNU tar on Linux needs zstd for `.tar.zst`).
 fn unpack(archive: &Path, target: &Path) -> Result<(), String> {
     let name = archive.to_string_lossy().to_string();
-    let mut command = Command::new(if cfg!(target_os = "windows") { "tar.exe" } else { "tar" });
+    let mut command = Command::new(if cfg!(target_os = "windows") {
+        "tar.exe"
+    } else {
+        "tar"
+    });
     if name.ends_with(".tar.zst") {
         command.arg("--zstd").arg("-xf");
     } else if name.ends_with(".tgz") {
@@ -346,7 +391,9 @@ fn unpack(archive: &Path, target: &Path) -> Result<(), String> {
         .stdout(Stdio::null())
         .stderr(Stdio::piped());
     configure_detached_process(&mut command);
-    let output = command.output().map_err(|error| format!("tar_start_failed:{error}"))?;
+    let output = command
+        .output()
+        .map_err(|error| format!("tar_start_failed:{error}"))?;
     if !output.status.success() {
         return Err(format!(
             "ollama_unpack_failed:{}",
@@ -358,7 +405,9 @@ fn unpack(archive: &Path, target: &Path) -> Result<(), String> {
 
 fn remove_older_releases(dir: &Path) {
     let current = format!("ollama-{OLLAMA_VERSION}");
-    let Ok(entries) = fs::read_dir(dir) else { return };
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
         if name.starts_with("ollama-") && name != current && entry.path().is_dir() {
@@ -395,10 +444,16 @@ pub(crate) fn ensure_ollama(repo_root: &Path) {
         .env("OLLAMA_KEEP_ALIVE", "10m")
         .env("OLLAMA_NUM_PARALLEL", "1")
         .env("OLLAMA_MAX_LOADED_MODELS", "1");
-    match spawn_detached_with_log(command, repo_root, "silicium-ollama.out.log", "silicium-ollama.err.log") {
+    match spawn_detached_with_log(
+        command,
+        repo_root,
+        "silicium-ollama.out.log",
+        "silicium-ollama.err.log",
+    ) {
         Ok(child) => {
             let _ = fs::write(ollama_pid_path(), child.id().to_string());
-            let _ = append_supervisor_log(repo_root, &format!("ollama_started pid={}\n", child.id()));
+            let _ =
+                append_supervisor_log(repo_root, &format!("ollama_started pid={}\n", child.id()));
         }
         Err(error) => {
             let _ = append_supervisor_log(repo_root, &format!("ollama_start_failed: {error}\n"));
@@ -407,7 +462,11 @@ pub(crate) fn ensure_ollama(repo_root: &Path) {
 }
 
 fn ollama_pid() -> Option<u32> {
-    fs::read_to_string(ollama_pid_path()).ok()?.trim().parse().ok()
+    fs::read_to_string(ollama_pid_path())
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
 }
 
 /// Stops the app's Ollama, if it runs.

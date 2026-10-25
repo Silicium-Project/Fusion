@@ -6,7 +6,8 @@ import { resolveSolanaRpcEndpoint } from '~/utils/solanaRpc';
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';
-  for (let index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index]!);
+  for (let index = 0; index < bytes.length; index += 1)
+    binary += String.fromCharCode(bytes[index]!);
   return window.btoa(binary);
 }
 
@@ -21,7 +22,10 @@ export function useWallet() {
 
   async function balanceFor(address: string): Promise<number> {
     const { Connection, PublicKey, LAMPORTS_PER_SOL } = await import('@solana/web3.js');
-    const connection = new Connection(resolveSolanaRpcEndpoint(config.public.solanaRpc), 'confirmed');
+    const connection = new Connection(
+      resolveSolanaRpcEndpoint(config.public.solanaRpc),
+      'confirmed',
+    );
     return (await connection.getBalance(new PublicKey(address))) / LAMPORTS_PER_SOL;
   }
 
@@ -29,7 +33,10 @@ export function useWallet() {
     const mintAddress = String(config.public.silMint || '').trim();
     if (!mintAddress) return null;
     const { Connection, PublicKey } = await import('@solana/web3.js');
-    const connection = new Connection(resolveSolanaRpcEndpoint(config.public.solanaRpc), 'confirmed');
+    const connection = new Connection(
+      resolveSolanaRpcEndpoint(config.public.solanaRpc),
+      'confirmed',
+    );
     const accounts = await connection.getParsedTokenAccountsByOwner(
       new PublicKey(address),
       { mint: new PublicKey(mintAddress) },
@@ -42,16 +49,17 @@ export function useWallet() {
       rawAmount += BigInt(tokenAmount.amount || '0');
       decimals = Number(tokenAmount.decimals ?? decimals);
     }
-    return Number(rawAmount) / (10 ** decimals);
+    return Number(rawAmount) / 10 ** decimals;
   }
 
   async function refreshBalances(address: string): Promise<void> {
     const [sol, sil] = await Promise.allSettled([balanceFor(address), silBalanceFor(address)]);
     balance.value = sol.status === 'fulfilled' ? sol.value : null;
     silBalance.value = sil.status === 'fulfilled' ? sil.value : null;
-    balanceError.value = sil.status === 'rejected' || sil.status === 'fulfilled' && sil.value === null
-      ? translate('errors.walletBalanceUnavailable')
-      : '';
+    balanceError.value =
+      sil.status === 'rejected' || (sil.status === 'fulfilled' && sil.value === null)
+        ? translate('errors.walletBalanceUnavailable')
+        : '';
   }
 
   async function connect(): Promise<string> {
@@ -67,12 +75,20 @@ export function useWallet() {
       const connection = await provider.connect();
       const walletAddress = connection.publicKey.toString();
       const challenge = await authorizedFetch<WalletChallenge>('/user/wallet/challenge', {
-        method: 'POST', body: { walletAddress },
+        method: 'POST',
+        body: { walletAddress },
       });
-      const signed = await provider.signMessage(new TextEncoder().encode(challenge.message), 'utf8');
+      const signed = await provider.signMessage(
+        new TextEncoder().encode(challenge.message),
+        'utf8',
+      );
       await authorizedFetch('/user/wallet', {
         method: 'POST',
-        body: { walletAddress, challenge: challenge.challenge, signature: bytesToBase64(signed.signature) },
+        body: {
+          walletAddress,
+          challenge: challenge.challenge,
+          signature: bytesToBase64(signed.signature),
+        },
       });
       await refreshBalances(walletAddress);
       await loadUser(true);

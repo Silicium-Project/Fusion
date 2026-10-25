@@ -6,7 +6,7 @@ export const PACKAGE_BASES: Record<PackageChannel, string> = {
   dev: 'https://10.77.0.1:8443/downloads',
 };
 
-/** These paths match the files emitted by publish-package-repositories.sh. */
+/** These paths match the files emitted by tools/ci/package-repositories.py. */
 export function repositoryCommands(manager: PackageManager, channel: PackageChannel) {
   const base = PACKAGE_BASES[channel];
   const prefix = 'silicium-' + channel;

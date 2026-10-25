@@ -71,7 +71,7 @@ const ready = ref(false);
 const fallback = ref(false);
 
 const activeNodeLabel = computed(() => {
-  return props.nodes.find(node => node.id === props.activeNodeId)?.label || t('graph3d.network');
+  return props.nodes.find((node) => node.id === props.activeNodeId)?.label || t('graph3d.network');
 });
 
 type NodeRuntime = {
@@ -108,7 +108,12 @@ const edgeDefinitions: Array<[string, string, number]> = [
 
 const nodeRuntimes = new Map<string, NodeRuntime>();
 const edgeRuntimes: EdgeRuntime[] = [];
-const particles: Array<{ mesh: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>; edge: EdgeRuntime; phase: number; speed: number }> = [];
+const particles: Array<{
+  mesh: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>;
+  edge: EdgeRuntime;
+  phase: number;
+  speed: number;
+}> = [];
 const labelElements = new Map<string, HTMLElement>();
 
 let scene: THREE.Scene | null = null;
@@ -185,7 +190,11 @@ function createParticle(edge: EdgeRuntime, index: number) {
   if (!graphRoot) return;
   const mesh = new THREE.Mesh(
     new THREE.SphereGeometry(index % 2 ? 0.045 : 0.06, 8, 8),
-    new THREE.MeshBasicMaterial({ color: index % 3 ? 0x13bfae : 0x7669e8, transparent: true, opacity: 0.92 }),
+    new THREE.MeshBasicMaterial({
+      color: index % 3 ? 0x13bfae : 0x7669e8,
+      transparent: true,
+      opacity: 0.92,
+    }),
   );
   graphRoot.add(mesh);
   particles.push({ mesh, edge, phase: (index * 0.17) % 1, speed: 0.055 + (index % 3) * 0.014 });
@@ -202,7 +211,12 @@ function setupScene() {
     camera = new THREE.PerspectiveCamera(34, 1, 0.1, 60);
     camera.position.copy(currentCameraPosition);
 
-    renderer = new THREE.WebGLRenderer({ canvas: canvas.value, antialias: true, alpha: true, powerPreference: 'high-performance' });
+    renderer = new THREE.WebGLRenderer({
+      canvas: canvas.value,
+      antialias: true,
+      alpha: true,
+      powerPreference: 'high-performance',
+    });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setClearColor(0x000000, 0);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -253,7 +267,7 @@ function setupScene() {
       createParticle(edge, edgeIndex);
     });
 
-    props.nodes.forEach(node => {
+    props.nodes.forEach((node) => {
       const element = root.value?.querySelector<HTMLElement>(`[data-node-label="${node.id}"]`);
       if (element) labelElements.set(node.id, element);
     });
@@ -300,7 +314,11 @@ function updateLabels() {
     const runtime = nodeRuntimes.get(id);
     if (!runtime) return;
     projectedPoint.copy(runtime.position).project(camera!);
-    const visible = projectedPoint.z > -1 && projectedPoint.z < 1 && Math.abs(projectedPoint.x) < 1.08 && Math.abs(projectedPoint.y) < 1.08;
+    const visible =
+      projectedPoint.z > -1 &&
+      projectedPoint.z < 1 &&
+      Math.abs(projectedPoint.x) < 1.08 &&
+      Math.abs(projectedPoint.y) < 1.08;
     const x = (projectedPoint.x * 0.5 + 0.5) * width;
     const y = (-projectedPoint.y * 0.5 + 0.5) * height;
     element.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -50%)`;
@@ -310,7 +328,7 @@ function updateLabels() {
 }
 
 function updateMaterials() {
-  edgeRuntimes.forEach(edge => {
+  edgeRuntimes.forEach((edge) => {
     const active = edge.phase === props.activePhase;
     const reached = edge.phase < props.activePhase;
     edge.tube.material.opacity = active ? 0.72 : reached ? 0.4 : 0.17;
@@ -319,7 +337,7 @@ function updateMaterials() {
 
   nodeRuntimes.forEach((node, id) => {
     const active = id === props.activeNodeId;
-    const phase = props.nodes.find(item => item.id === id)?.phase ?? Number.POSITIVE_INFINITY;
+    const phase = props.nodes.find((item) => item.id === id)?.phase ?? Number.POSITIVE_INFINITY;
     const reached = phase < props.activePhase;
     node.body.material.emissiveIntensity = active ? 0.46 : reached ? 0.2 : 0.07;
     node.body.material.opacity = active ? 1 : reached ? 0.95 : 0.78;
@@ -349,16 +367,30 @@ function animate(timestamp: number) {
   camera.lookAt(currentCameraLook);
 
   const distance = currentCameraPosition.distanceTo(desiredCameraPosition);
-  const moving = !reducedMotion && (distance > 0.07 || currentCameraLook.distanceTo(desiredCameraLook) > 0.07 || pointer.length() > 0.018);
+  const moving =
+    !reducedMotion &&
+    (distance > 0.07 ||
+      currentCameraLook.distanceTo(desiredCameraLook) > 0.07 ||
+      pointer.length() > 0.018);
   root.value.dataset.cameraMoving = moving ? 'true' : 'false';
-  root.value.dataset.cameraPosition = [currentCameraPosition.x, currentCameraPosition.y, currentCameraPosition.z].map(value => value.toFixed(2)).join(',');
+  root.value.dataset.cameraPosition = [
+    currentCameraPosition.x,
+    currentCameraPosition.y,
+    currentCameraPosition.z,
+  ]
+    .map((value) => value.toFixed(2))
+    .join(',');
   root.value.dataset.cameraX = currentCameraPosition.x.toFixed(2);
   root.value.dataset.cameraY = currentCameraPosition.y.toFixed(2);
   root.value.dataset.cameraZ = currentCameraPosition.z.toFixed(2);
   root.value.dataset.cameraDistance = distance.toFixed(3);
-  const hub = graphRoot?.children.find(child => child.type === 'Group' && child.userData.nodeId === undefined);
+  const hub = graphRoot?.children.find(
+    (child) => child.type === 'Group' && child.userData.nodeId === undefined,
+  );
   if (hub) {
-    const ring = hub.children.find(child => child instanceof THREE.Mesh && child.geometry instanceof THREE.TorusGeometry);
+    const ring = hub.children.find(
+      (child) => child instanceof THREE.Mesh && child.geometry instanceof THREE.TorusGeometry,
+    );
     if (ring) ring.rotation.z += delta * 0.18;
   }
   particles.forEach((particle, index) => {
@@ -395,10 +427,10 @@ onBeforeUnmount(() => {
   cancelAnimationFrame(animationFrame);
   resizeObserver?.disconnect();
   renderer?.dispose();
-  scene?.traverse(object => {
+  scene?.traverse((object) => {
     if (object instanceof THREE.Mesh) {
       object.geometry.dispose();
-      if (Array.isArray(object.material)) object.material.forEach(material => material.dispose());
+      if (Array.isArray(object.material)) object.material.forEach((material) => material.dispose());
       else object.material.dispose();
     }
   });
@@ -410,6 +442,269 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.process-graph-3d{position:relative;width:100%;height:100%;min-height:31rem;overflow:hidden;border:1px solid rgba(255,255,255,.82);border-radius:2rem;background:radial-gradient(circle at 50% 42%,rgba(255,255,255,.96),rgba(224,245,240,.48) 46%,rgba(212,224,246,.36) 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,.98),inset 0 0 0 1px rgba(25,51,73,.06),0 32px 62px rgba(25,51,73,.14);isolation:isolate}.process-graph-3d::before{position:absolute;inset:0;z-index:-1;background:radial-gradient(circle at 22% 78%,rgba(118,105,232,.12),transparent 28%),radial-gradient(circle at 78% 20%,rgba(19,191,174,.16),transparent 32%);content:'';pointer-events:none}.process-graph-3d__canvas{position:absolute;inset:0;display:block;width:100%;height:100%;outline:none;transition:filter .25s ease}.process-graph-3d__labels{position:absolute;inset:0;pointer-events:none}.process-graph-3d__label{position:absolute;top:0;left:0;display:flex;align-items:center;gap:.38rem;padding:.36rem .56rem;border:1px solid rgba(255,255,255,.86);border-radius:999px;background:rgba(255,255,255,.67);box-shadow:inset 0 1px 0 rgba(255,255,255,.96),0 9px 24px rgba(25,51,73,.12);color:#244055;font-family:var(--font-mono);font-size:.9375rem;font-weight:650;letter-spacing:.025em;white-space:nowrap;backdrop-filter:blur(14px);transform:translate(-50%,-50%);transition:opacity .22s ease}.process-graph-3d__label i{width:.38rem;height:.38rem;border-radius:50%;background:var(--mint-500);box-shadow:0 0 0 .22rem rgba(19,191,174,.11)}.process-graph-3d__label[data-node-label=relay-a] i,.process-graph-3d__label[data-node-label=compute-b] i{background:var(--violet-500);box-shadow:0 0 0 .22rem rgba(118,105,232,.11)}.process-graph-3d__label[data-node-label=compute-a] i{background:#4c86dc;box-shadow:0 0 0 .22rem rgba(76,134,220,.11)}.process-graph-3d__label[data-node-label=result] i{background:#d89a45;box-shadow:0 0 0 .22rem rgba(216,154,69,.13)}.process-graph-3d__readout{position:absolute;right:1.1rem;bottom:1rem;display:flex;align-items:center;gap:.55rem;padding:.55rem .7rem;border:1px solid rgba(255,255,255,.74);border-radius:1rem;background:rgba(255,255,255,.58);box-shadow:inset 0 1px 0 rgba(255,255,255,.92),0 12px 28px rgba(25,51,73,.1);backdrop-filter:blur(16px)}.process-graph-3d__readout-dot{width:.48rem;height:.48rem;border-radius:50%;background:var(--mint-500);box-shadow:0 0 0 .28rem rgba(19,191,174,.12);animation:graph-pulse 1.8s ease-in-out infinite}.process-graph-3d__readout small,.process-graph-3d__readout strong{display:block}.process-graph-3d__readout small{color:#6f7f87;font-family:var(--font-mono);font-size:.9375rem;letter-spacing:.06em;text-transform:uppercase}.process-graph-3d__readout strong{margin-top:.15rem;color:#244055;font-size:.9375rem;letter-spacing:-.025em}.process-graph-3d__loading,.process-graph-3d__fallback{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;gap:.6rem;color:#5d747d;font-family:var(--font-mono);font-size:.9375rem;text-align:center}.process-graph-3d__loading-orbit{width:2rem;height:2rem;border:1px solid rgba(19,191,174,.2);border-top-color:var(--mint-500);border-radius:50%;animation:graph-spin 1.1s linear infinite}.process-graph-3d__fallback{padding:2rem;color:#516a75}.process-graph-3d__fallback strong{font-family:var(--font-sans);font-size:.966rem}.process-graph-3d__fallback span{max-width:18rem;line-height:1.6}@keyframes graph-spin{to{transform:rotate(360deg)}}@keyframes graph-pulse{0%,100%{opacity:.48;transform:scale(.85)}50%{opacity:1;transform:scale(1.12)}}@media(max-width:760px){.process-graph-3d{min-height:22rem;border-radius:1.45rem}.process-graph-3d__readout{right:.65rem;bottom:.65rem;padding:.45rem .55rem}.process-graph-3d__readout small{font-size:.9375rem}.process-graph-3d__readout strong{font-size:.9375rem}.process-graph-3d__label{padding:.27rem .42rem;font-size:.9375rem}.process-graph-3d__label i{width:.31rem;height:.31rem}}@media(max-width:420px){.process-graph-3d{min-height:18rem}.process-graph-3d__label{font-size:.9375rem}.process-graph-3d__readout{display:none}}@media(prefers-reduced-motion:reduce){.process-graph-3d__canvas{filter:none!important}.process-graph-3d__readout-dot,.process-graph-3d__loading-orbit{animation:none}}
-.process-graph-3d{contain:layout paint;border-color:var(--glass-edge);border-radius:var(--radius-lg);background:var(--glass-card);box-shadow:var(--glass-inset),var(--glass-shadow)}.process-graph-3d::before{background:radial-gradient(circle at 22% 78%,rgba(118,105,232,.08),transparent 28%),radial-gradient(circle at 78% 20%,rgba(19,191,174,.1),transparent 32%)}.process-graph-3d__canvas{transition:none}.process-graph-3d__labels{contain:layout paint}.process-graph-3d__label{border-color:var(--glass-edge);background:rgba(255,255,255,.66);box-shadow:var(--shadow-xs);color:var(--ink-800);backdrop-filter:blur(10px)}.process-graph-3d__readout{border-color:var(--glass-edge);background:rgba(255,255,255,.58);box-shadow:var(--shadow-xs);backdrop-filter:blur(12px)}.process-graph-3d__readout small{color:var(--ink-500)}.process-graph-3d__readout strong{color:var(--ink-800)}@media(max-width:760px){.process-graph-3d{border-radius:var(--radius-lg)}}
+.process-graph-3d {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 31rem;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  border-radius: 2rem;
+  background: radial-gradient(
+    circle at 50% 42%,
+    rgba(255, 255, 255, 0.96),
+    rgba(224, 245, 240, 0.48) 46%,
+    rgba(212, 224, 246, 0.36) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.98),
+    inset 0 0 0 1px rgba(25, 51, 73, 0.06),
+    0 32px 62px rgba(25, 51, 73, 0.14);
+  isolation: isolate;
+}
+.process-graph-3d::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(circle at 22% 78%, rgba(118, 105, 232, 0.12), transparent 28%),
+    radial-gradient(circle at 78% 20%, rgba(19, 191, 174, 0.16), transparent 32%);
+  content: '';
+  pointer-events: none;
+}
+.process-graph-3d__canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+  transition: filter 0.25s ease;
+}
+.process-graph-3d__labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.process-graph-3d__label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.38rem;
+  padding: 0.36rem 0.56rem;
+  border: 1px solid rgba(255, 255, 255, 0.86);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.67);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.96),
+    0 9px 24px rgba(25, 51, 73, 0.12);
+  color: #244055;
+  font-family: var(--font-mono);
+  font-size: 0.9375rem;
+  font-weight: 650;
+  letter-spacing: 0.025em;
+  white-space: nowrap;
+  backdrop-filter: blur(14px);
+  transform: translate(-50%, -50%);
+  transition: opacity 0.22s ease;
+}
+.process-graph-3d__label i {
+  width: 0.38rem;
+  height: 0.38rem;
+  border-radius: 50%;
+  background: var(--mint-500);
+  box-shadow: 0 0 0 0.22rem rgba(19, 191, 174, 0.11);
+}
+.process-graph-3d__label[data-node-label='relay-a'] i,
+.process-graph-3d__label[data-node-label='compute-b'] i {
+  background: var(--violet-500);
+  box-shadow: 0 0 0 0.22rem rgba(118, 105, 232, 0.11);
+}
+.process-graph-3d__label[data-node-label='compute-a'] i {
+  background: #4c86dc;
+  box-shadow: 0 0 0 0.22rem rgba(76, 134, 220, 0.11);
+}
+.process-graph-3d__label[data-node-label='result'] i {
+  background: #d89a45;
+  box-shadow: 0 0 0 0.22rem rgba(216, 154, 69, 0.13);
+}
+.process-graph-3d__readout {
+  position: absolute;
+  right: 1.1rem;
+  bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.74);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.58);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 12px 28px rgba(25, 51, 73, 0.1);
+  backdrop-filter: blur(16px);
+}
+.process-graph-3d__readout-dot {
+  width: 0.48rem;
+  height: 0.48rem;
+  border-radius: 50%;
+  background: var(--mint-500);
+  box-shadow: 0 0 0 0.28rem rgba(19, 191, 174, 0.12);
+  animation: graph-pulse 1.8s ease-in-out infinite;
+}
+.process-graph-3d__readout small,
+.process-graph-3d__readout strong {
+  display: block;
+}
+.process-graph-3d__readout small {
+  color: #6f7f87;
+  font-family: var(--font-mono);
+  font-size: 0.9375rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.process-graph-3d__readout strong {
+  margin-top: 0.15rem;
+  color: #244055;
+  font-size: 0.9375rem;
+  letter-spacing: -0.025em;
+}
+.process-graph-3d__loading,
+.process-graph-3d__fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 0.6rem;
+  color: #5d747d;
+  font-family: var(--font-mono);
+  font-size: 0.9375rem;
+  text-align: center;
+}
+.process-graph-3d__loading-orbit {
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid rgba(19, 191, 174, 0.2);
+  border-top-color: var(--mint-500);
+  border-radius: 50%;
+  animation: graph-spin 1.1s linear infinite;
+}
+.process-graph-3d__fallback {
+  padding: 2rem;
+  color: #516a75;
+}
+.process-graph-3d__fallback strong {
+  font-family: var(--font-sans);
+  font-size: 0.966rem;
+}
+.process-graph-3d__fallback span {
+  max-width: 18rem;
+  line-height: 1.6;
+}
+@keyframes graph-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes graph-pulse {
+  0%,
+  100% {
+    opacity: 0.48;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+}
+@media (max-width: 760px) {
+  .process-graph-3d {
+    min-height: 22rem;
+    border-radius: 1.45rem;
+  }
+  .process-graph-3d__readout {
+    right: 0.65rem;
+    bottom: 0.65rem;
+    padding: 0.45rem 0.55rem;
+  }
+  .process-graph-3d__readout small {
+    font-size: 0.9375rem;
+  }
+  .process-graph-3d__readout strong {
+    font-size: 0.9375rem;
+  }
+  .process-graph-3d__label {
+    padding: 0.27rem 0.42rem;
+    font-size: 0.9375rem;
+  }
+  .process-graph-3d__label i {
+    width: 0.31rem;
+    height: 0.31rem;
+  }
+}
+@media (max-width: 420px) {
+  .process-graph-3d {
+    min-height: 18rem;
+  }
+  .process-graph-3d__label {
+    font-size: 0.9375rem;
+  }
+  .process-graph-3d__readout {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .process-graph-3d__canvas {
+    filter: none !important;
+  }
+  .process-graph-3d__readout-dot,
+  .process-graph-3d__loading-orbit {
+    animation: none;
+  }
+}
+.process-graph-3d {
+  contain: layout paint;
+  border-color: var(--glass-edge);
+  border-radius: var(--radius-lg);
+  background: var(--glass-card);
+  box-shadow: var(--glass-inset), var(--glass-shadow);
+}
+.process-graph-3d::before {
+  background:
+    radial-gradient(circle at 22% 78%, rgba(118, 105, 232, 0.08), transparent 28%),
+    radial-gradient(circle at 78% 20%, rgba(19, 191, 174, 0.1), transparent 32%);
+}
+.process-graph-3d__canvas {
+  transition: none;
+}
+.process-graph-3d__labels {
+  contain: layout paint;
+}
+.process-graph-3d__label {
+  border-color: var(--glass-edge);
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: var(--shadow-xs);
+  color: var(--ink-800);
+  backdrop-filter: blur(10px);
+}
+.process-graph-3d__readout {
+  border-color: var(--glass-edge);
+  background: rgba(255, 255, 255, 0.58);
+  box-shadow: var(--shadow-xs);
+  backdrop-filter: blur(12px);
+}
+.process-graph-3d__readout small {
+  color: var(--ink-500);
+}
+.process-graph-3d__readout strong {
+  color: var(--ink-800);
+}
+@media (max-width: 760px) {
+  .process-graph-3d {
+    border-radius: var(--radius-lg);
+  }
+}
 </style>

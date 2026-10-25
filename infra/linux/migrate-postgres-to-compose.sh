@@ -27,6 +27,8 @@ fi
 
 set -a
 # shellcheck disable=SC1091
+# Configuration provisionnée sur le serveur, absente du dépôt.
+# shellcheck source=/dev/null
 source "$COMPOSE_ENV"
 # shellcheck disable=SC1091
 set +a
@@ -83,6 +85,8 @@ elif systemctl is-active --quiet postgresql; then
     sudo -u postgres psql -Atqc "SELECT datname FROM pg_database WHERE datistemplate = false" >&2 || true
     exit 1
   fi
+  # This script already requires root; the backup is intentionally written by root.
+  # shellcheck disable=SC2024
   sudo -u postgres pg_dump --dbname="$SOURCE_POSTGRES_DB" --format=custom > "$BACKUP_FILE"
 elif [[ -n "$(docker ps --filter ancestor=postgres --format '{{.ID}}' | head -n 1)" ]]; then
   echo "A PostgreSQL container was detected, but automatic credentials are not guessed." >&2

@@ -1,13 +1,13 @@
-import * as anchor from "@coral-xyz/anchor";
-import { Program } from "@coral-xyz/anchor";
-import { PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY } from "@solana/web3.js";
-import { assert } from "chai";
+import * as anchor from '@coral-xyz/anchor';
+import { Program } from '@coral-xyz/anchor';
+import { PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js';
+import { assert } from 'chai';
 import {
   TOKEN_PROGRAM_ID,
   createMint,
   createAssociatedTokenAccount,
   mintTo,
-} from "@solana/spl-token";
+} from '@solana/spl-token';
 
 export const provider = anchor.AnchorProvider.env();
 anchor.setProvider(provider);
@@ -32,83 +32,87 @@ export function u16le(n: number): Buffer {
 
 export function jobPda(client: PublicKey, jobId: anchor.BN): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("job"), client.toBuffer(), jobId.toArrayLike(Buffer, "le", 8)],
-    program.programId
+    [Buffer.from('job'), client.toBuffer(), jobId.toArrayLike(Buffer, 'le', 8)],
+    program.programId,
   )[0];
 }
 
 export function escrowAuthPda(job: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("escrow_auth"), job.toBuffer()],
-    program.programId
+    [Buffer.from('escrow_auth'), job.toBuffer()],
+    program.programId,
   )[0];
 }
 
 export function fragmentPda(job: PublicKey, fragmentIndex: number): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("fragment"), job.toBuffer(), u32le(fragmentIndex)],
-    program.programId
+    [Buffer.from('fragment'), job.toBuffer(), u32le(fragmentIndex)],
+    program.programId,
   )[0];
 }
 
 export function splitProposalPda(parentFragment: PublicKey, round: number): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("split_proposal"), parentFragment.toBuffer(), u16le(round)],
-    program.programId
+    [Buffer.from('split_proposal'), parentFragment.toBuffer(), u16le(round)],
+    program.programId,
   )[0];
 }
 
 export function workerPda(worker: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("worker"), worker.toBuffer()],
-    program.programId
+    [Buffer.from('worker'), worker.toBuffer()],
+    program.programId,
   )[0];
 }
 
 export function workerPayoutPda(workerAccount: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("worker_payout"), workerAccount.toBuffer()],
-    program.programId
+    [Buffer.from('worker_payout'), workerAccount.toBuffer()],
+    program.programId,
   )[0];
 }
 
 export function stakeAuthPda(workerAccount: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("stake_auth"), workerAccount.toBuffer()],
-    program.programId
+    [Buffer.from('stake_auth'), workerAccount.toBuffer()],
+    program.programId,
   )[0];
 }
 
 export function stakeVaultPda(worker: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("stake_vault"), worker.toBuffer()],
-    program.programId
+    [Buffer.from('stake_vault'), worker.toBuffer()],
+    program.programId,
   )[0];
 }
 
 export function votePda(fragment: PublicKey, verifier: PublicKey, round: number): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("fragment_vote"), fragment.toBuffer(), verifier.toBuffer(), u16le(round)],
-    program.programId
+    [Buffer.from('fragment_vote'), fragment.toBuffer(), verifier.toBuffer(), u16le(round)],
+    program.programId,
   )[0];
 }
 
 export function roundResolutionPda(fragment: PublicKey, round: number): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("fragment_resolution"), fragment.toBuffer(), u16le(round)],
-    program.programId
+    [Buffer.from('fragment_resolution'), fragment.toBuffer(), u16le(round)],
+    program.programId,
   )[0];
 }
 
 export function maxLeafFragments(initialFragments: number): number {
   const childSlotsPerRoot = Math.floor((1_000 - initialFragments) / initialFragments);
-  return Math.min(initialFragments * 16, initialFragments * (1 + Math.floor(childSlotsPerRoot / 2)), 1_000);
+  return Math.min(
+    initialFragments * 16,
+    initialFragments * (1 + Math.floor(childSlotsPerRoot / 2)),
+    1_000,
+  );
 }
 
 export function minimumVerifierRewardBudget(
   initialFragments: number,
   fragmentQuorum: number,
-  rewardPerVote = VERIFIER_REWARD_PER_VOTE
+  rewardPerVote = VERIFIER_REWARD_PER_VOTE,
 ): anchor.BN {
   return new anchor.BN(maxLeafFragments(initialFragments))
     .mul(new anchor.BN(fragmentQuorum))
@@ -117,20 +121,20 @@ export function minimumVerifierRewardBudget(
 
 export function resultPda(job: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("result"), job.toBuffer()],
-    program.programId
+    [Buffer.from('result'), job.toBuffer()],
+    program.programId,
   )[0];
 }
 
 export async function airdrop(pubkey: PublicKey, lamports = 2_000_000_000) {
   const signature = await provider.connection.requestAirdrop(pubkey, lamports);
-  await provider.connection.confirmTransaction(signature, "confirmed");
+  await provider.connection.confirmTransaction(signature, 'confirmed');
 }
 
 export function assertAnchorError(error: any, expectedCode: string) {
   const text = String(error);
   if (!text.includes(expectedCode)) {
-    console.error("Unexpected Anchor error:", text);
+    console.error('Unexpected Anchor error:', text);
   }
   assert.include(text, expectedCode);
 }
@@ -156,17 +160,12 @@ export async function registerWorker(workerKeypair: anchor.web3.Keypair): Promis
 export async function createWorkerToken(
   mint: PublicKey,
   owner: PublicKey,
-  amount = 10_000_000
+  amount = 10_000_000,
 ): Promise<PublicKey> {
   const payer = provider.wallet.payer as anchor.web3.Keypair;
   const authority = provider.wallet.publicKey;
 
-  const token = await createAssociatedTokenAccount(
-    provider.connection,
-    payer,
-    mint,
-    owner
-  );
+  const token = await createAssociatedTokenAccount(provider.connection, payer, mint, owner);
 
   await mintTo(provider.connection, payer, mint, token, authority, amount);
   return token;
@@ -177,7 +176,7 @@ export async function stakeRegisteredWorker(
   workerKeypair: anchor.web3.Keypair,
   workerAccount: PublicKey,
   workerToken: PublicKey,
-  amount = 1_000_000
+  amount = 1_000_000,
 ) {
   const stakeAuth = stakeAuthPda(workerAccount);
   const stakeVault = stakeVaultPda(workerKeypair.publicKey);
@@ -207,13 +206,7 @@ export async function createReadyWorker(mint: PublicKey, stakeAmount = 1_000_000
 
   const workerAccount = await registerWorker(keypair);
   const workerToken = await createWorkerToken(mint, keypair.publicKey);
-  const stake = await stakeRegisteredWorker(
-    mint,
-    keypair,
-    workerAccount,
-    workerToken,
-    stakeAmount
-  );
+  const stake = await stakeRegisteredWorker(mint, keypair, workerAccount, workerToken, stakeAmount);
 
   return {
     keypair,
@@ -243,8 +236,8 @@ export async function createTestJob(
   verifierRewardBudget = minimumVerifierRewardBudget(
     expectedFragments,
     fragmentQuorum,
-    verifierRewardPerVote
-  )
+    verifierRewardPerVote,
+  ),
 ) {
   const client = provider.wallet.publicKey;
   const payer = provider.wallet.payer as anchor.web3.Keypair;
@@ -258,14 +251,7 @@ export async function createTestJob(
     .add(verifierRewardBudget)
     .add(new anchor.BN(1_000_000));
 
-  await mintTo(
-    provider.connection,
-    payer,
-    mint,
-    clientToken,
-    client,
-    Number(topUp.toString())
-  );
+  await mintTo(provider.connection, payer, mint, clientToken, client, Number(topUp.toString()));
 
   await program.methods
     .createJob(
@@ -275,7 +261,7 @@ export async function createTestJob(
       verifierRewardPerVote,
       verifierRewardBudget,
       deadlineUnix,
-      fragmentQuorum
+      fragmentQuorum,
     )
     .accounts({
       client,
@@ -299,7 +285,7 @@ export async function claimFragment(
   workerAccount: PublicKey,
   workerToken: PublicKey,
   job: PublicKey,
-  fragmentIndex: number
+  fragmentIndex: number,
 ): Promise<PublicKey> {
   const fragment = fragmentPda(job, fragmentIndex);
 
@@ -326,16 +312,12 @@ export async function submitFragment(
   job: PublicKey,
   fragmentIndex: number,
   resultByte: number,
-  proofByte: number
+  proofByte: number,
 ): Promise<PublicKey> {
   const fragment = fragmentPda(job, fragmentIndex);
 
   await program.methods
-    .submitFragmentResult(
-      fragmentIndex,
-      Array(32).fill(resultByte),
-      Array(32).fill(proofByte)
-    )
+    .submitFragmentResult(fragmentIndex, Array(32).fill(resultByte), Array(32).fill(proofByte))
     .accounts({
       worker: worker.publicKey,
       workerAccount,
@@ -356,7 +338,7 @@ export async function voteOnFragment(
   fragment: PublicKey,
   escrow: PublicKey,
   workerToken: PublicKey,
-  choice: boolean
+  choice: boolean,
 ) {
   const fragmentBefore = await program.account.fragment.fetch(fragment);
   const vote = votePda(fragment, verifier.publicKey, fragmentBefore.round);
@@ -394,7 +376,7 @@ export async function claimVerifierReward(
   verifierToken: PublicKey,
   job: PublicKey,
   fragment: PublicKey,
-  escrow: PublicKey
+  escrow: PublicKey,
 ) {
   const fragmentState = await program.account.fragment.fetch(fragment);
   const round = fragmentState.round;
@@ -429,14 +411,14 @@ export async function verifyFragmentWithTwoVotes(
   job: PublicKey,
   escrow: PublicKey,
   fragmentIndex: number,
-  resultByte: number
+  resultByte: number,
 ): Promise<PublicKey> {
   const fragment = await claimFragment(
     computeWorker.keypair,
     computeWorker.workerAccount,
     computeWorker.workerToken,
     job,
-    fragmentIndex
+    fragmentIndex,
   );
 
   await submitFragment(
@@ -446,7 +428,7 @@ export async function verifyFragmentWithTwoVotes(
     job,
     fragmentIndex,
     resultByte,
-    resultByte + 1
+    resultByte + 1,
   );
 
   await voteOnFragment(
@@ -456,7 +438,7 @@ export async function verifyFragmentWithTwoVotes(
     fragment,
     escrow,
     computeWorker.workerToken,
-    true
+    true,
   );
 
   await voteOnFragment(
@@ -466,7 +448,7 @@ export async function verifyFragmentWithTwoVotes(
     fragment,
     escrow,
     computeWorker.workerToken,
-    true
+    true,
   );
 
   const fragmentAfter = await program.account.fragment.fetch(fragment);
@@ -480,7 +462,7 @@ export async function proposeSplit(
   job: PublicKey,
   parentFragment: PublicKey,
   manifestByte = 7,
-  childCount = 2
+  childCount = 2,
 ): Promise<PublicKey> {
   const parentBefore = await program.account.fragment.fetch(parentFragment);
   const jobAccount = await program.account.job.fetch(job);
@@ -503,7 +485,12 @@ export async function proposeSplit(
   return proposal;
 }
 
-export async function approveSplit(job: PublicKey, parentFragment: PublicKey, proposal: PublicKey, approve = true) {
+export async function approveSplit(
+  job: PublicKey,
+  parentFragment: PublicKey,
+  proposal: PublicKey,
+  approve = true,
+) {
   await program.methods
     .approveFragmentSplit(approve)
     .accounts({
@@ -523,7 +510,7 @@ export async function createSubFragment(
   requiredReputation = 1_500,
   requiredStake = 1,
   complexityScore = 3_000,
-  inputByte = 44
+  inputByte = 44,
 ): Promise<PublicKey> {
   const child = fragmentPda(job, childIndex);
 
@@ -533,7 +520,7 @@ export async function createSubFragment(
       new anchor.BN(requiredReputation),
       new anchor.BN(requiredStake),
       complexityScore,
-      Array(32).fill(inputByte)
+      Array(32).fill(inputByte),
     )
     .accounts({
       payer: provider.wallet.publicKey,
@@ -548,14 +535,19 @@ export async function createSubFragment(
   return child;
 }
 
-export async function setupClaimedParent(mint: PublicKey, clientToken: PublicKey, jobIdNumber: number, expectedFragments = 1) {
+export async function setupClaimedParent(
+  mint: PublicKey,
+  clientToken: PublicKey,
+  jobIdNumber: number,
+  expectedFragments = 1,
+) {
   const splitter = await createReadyWorker(mint, 1_000_000);
   const { job, escrow } = await createTestJob(
     mint,
     clientToken,
     new anchor.BN(jobIdNumber),
     expectedFragments,
-    DEFAULT_FRAGMENT_QUORUM
+    DEFAULT_FRAGMENT_QUORUM,
   );
 
   const parentFragment = await claimFragment(
@@ -563,9 +555,8 @@ export async function setupClaimedParent(mint: PublicKey, clientToken: PublicKey
     splitter.workerAccount,
     splitter.workerToken,
     job,
-    0
+    0,
   );
 
   return { splitter, job, escrow, parentFragment };
 }
-

@@ -26,6 +26,8 @@ done
 [[ -n "$node_binary" ]] || { echo "Missing Rust p2p_node binary under $ROOT/network" >&2; exit 1; }
 
 set -a
+# Configuration provisionnée sur le serveur, absente du dépôt.
+# shellcheck source=/dev/null
 . "$ENV_FILE"
 set +a
 

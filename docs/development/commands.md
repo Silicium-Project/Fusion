@@ -21,6 +21,11 @@ Sous Windows : `.\dev.ps1 doctor --profile node`. Un terminal Git Bash est
 nécessaire pour les scénarios shell ; les tests natifs utilisent Windows.
 Les rapports et sorties temporaires sont dans `.artifacts`, ignoré par Git.
 
+Le [guide de qualité](quality.md) décrit le formatage, les analyses et les
+versions verrouillées. `dev format --write` reformate les sources ; sans cette
+option, la commande les vérifie. Exécuter `npm ci --prefix tools/quality
+--ignore-scripts --no-audit --no-fund` une première fois pour ces outils.
+
 ## Suites
 
 La liste exacte est donnée par `dev capabilities`. Les suites incluent :

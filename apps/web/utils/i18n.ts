@@ -37,8 +37,11 @@ export const activeLocale = ref<Locale>(DEFAULT_LOCALE);
 
 /** A supported language from a cookie or a tag ("en-US" → en), else French. */
 export function normalizeLocale(value: unknown): Locale {
-  const tag = String(value || '').trim().toLowerCase().slice(0, 2);
-  return LOCALES.some(locale => locale.code === tag) ? tag as Locale : DEFAULT_LOCALE;
+  const tag = String(value || '')
+    .trim()
+    .toLowerCase()
+    .slice(0, 2);
+  return LOCALES.some((locale) => locale.code === tag) ? (tag as Locale) : DEFAULT_LOCALE;
 }
 
 let serverLocale: (() => Locale | undefined) | undefined;
@@ -59,11 +62,17 @@ export function currentLocale(): Locale {
 
 /** The `Intl` locale of a language, for dates and numbers. */
 export function intlLocale(locale: Locale = currentLocale()): string {
-  return LOCALES.find(item => item.code === locale)?.intl || 'fr-FR';
+  return LOCALES.find((item) => item.code === locale)?.intl || 'fr-FR';
 }
 
 function lookup(catalog: unknown, key: string): unknown {
-  return key.split('.').reduce<unknown>((node, part) => (node && typeof node === 'object' ? (node as Record<string, unknown>)[part] : undefined), catalog);
+  return key
+    .split('.')
+    .reduce<unknown>(
+      (node, part) =>
+        node && typeof node === 'object' ? (node as Record<string, unknown>)[part] : undefined,
+      catalog,
+    );
 }
 
 function messageFor(key: string, locale: Locale): unknown {
@@ -72,24 +81,36 @@ function messageFor(key: string, locale: Locale): unknown {
 }
 
 /** The message `key` in the current language, with its placeholders filled. */
-export function translate(key: string, params: MessageParams = {}, locale: Locale = currentLocale()): string {
+export function translate(
+  key: string,
+  params: MessageParams = {},
+  locale: Locale = currentLocale(),
+): string {
   const value = messageFor(key, locale);
   // A plural is a function; what it returns may hold placeholders too.
-  const text = typeof value === 'function' ? (value as (params: MessageParams) => string)(params) : value;
+  const text =
+    typeof value === 'function' ? (value as (params: MessageParams) => string)(params) : value;
   if (typeof text !== 'string') return key;
-  return text.replace(/\{(\w+)\}/g, (match, name: string) => (name in params ? String(params[name]) : match));
+  return text.replace(/\{(\w+)\}/g, (match, name: string) =>
+    name in params ? String(params[name]) : match,
+  );
 }
 
 /** A list of the catalog (steps, cards…) in the current language. */
 export function translateList<T = string>(key: string, locale: Locale = currentLocale()): T[] {
   const value = messageFor(key, locale);
-  return Array.isArray(value) ? value as T[] : [];
+  return Array.isArray(value) ? (value as T[]) : [];
 }
 
 /** A size in bytes, in the units of the current language (Ko / KB…). */
 export function formatBytes(bytes: number): string {
-  const number = (value: number) => new Intl.NumberFormat(intlLocale(), { maximumFractionDigits: 1, minimumFractionDigits: 1 }).format(value);
+  const number = (value: number) =>
+    new Intl.NumberFormat(intlLocale(), {
+      maximumFractionDigits: 1,
+      minimumFractionDigits: 1,
+    }).format(value);
   if (bytes < 1024) return translate('units.bytes', { value: bytes });
-  if (bytes < 1024 * 1024) return translate('units.kb', { value: number(Math.max(0.1, bytes / 1024)) });
+  if (bytes < 1024 * 1024)
+    return translate('units.kb', { value: number(Math.max(0.1, bytes / 1024)) });
   return translate('units.mb', { value: number(bytes / 1024 / 1024) });
 }

@@ -1,13 +1,13 @@
-import * as anchor from "@coral-xyz/anchor";
-import { Program } from "@coral-xyz/anchor";
-import { PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY } from "@solana/web3.js";
-import { assert } from "chai";
+import * as anchor from '@coral-xyz/anchor';
+import { Program } from '@coral-xyz/anchor';
+import { PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js';
+import { assert } from 'chai';
 import {
   TOKEN_PROGRAM_ID,
   createMint,
   createAssociatedTokenAccount,
   mintTo,
-} from "@solana/spl-token";
+} from '@solana/spl-token';
 
 import {
   provider,
@@ -46,10 +46,10 @@ import {
   proposeSplit,
   approveSplit,
   createSubFragment,
-  setupClaimedParent
-} from "./support/split-fixtures";
+  setupClaimedParent,
+} from './support/split-fixtures';
 
-describe("silicium v2 - complete sub-fragment verification", () => {
+describe('silicium v2 - complete sub-fragment verification', () => {
   let mint: PublicKey;
   let clientToken: PublicKey;
 
@@ -58,17 +58,12 @@ describe("silicium v2 - complete sub-fragment verification", () => {
     const payer = provider.wallet.payer as anchor.web3.Keypair;
 
     mint = await createMint(provider.connection, payer, client, null, 6);
-    clientToken = await createAssociatedTokenAccount(
-      provider.connection,
-      payer,
-      mint,
-      client
-    );
+    clientToken = await createAssociatedTokenAccount(provider.connection, payer, mint, client);
 
     await mintTo(provider.connection, payer, mint, clientToken, client, 200_000_000);
   });
 
-  it("rejects split with empty manifest hash", async () => {
+  it('rejects split with empty manifest hash', async () => {
     const { splitter, job, parentFragment } = await setupClaimedParent(mint, clientToken, 2000);
     const parent = await program.account.fragment.fetch(parentFragment);
     const jobAccount = await program.account.job.fetch(job);
@@ -88,13 +83,13 @@ describe("silicium v2 - complete sub-fragment verification", () => {
         })
         .signers([splitter.keypair])
         .rpc();
-      assert.fail("empty manifest hash should be rejected");
+      assert.fail('empty manifest hash should be rejected');
     } catch (e: any) {
-      assertAnchorError(e, "InvalidSplitManifest");
+      assertAnchorError(e, 'InvalidSplitManifest');
     }
   });
 
-  it("rejects split with less than two children", async () => {
+  it('rejects split with less than two children', async () => {
     const { splitter, job, parentFragment } = await setupClaimedParent(mint, clientToken, 2001);
     const parent = await program.account.fragment.fetch(parentFragment);
     const jobAccount = await program.account.job.fetch(job);
@@ -114,13 +109,13 @@ describe("silicium v2 - complete sub-fragment verification", () => {
         })
         .signers([splitter.keypair])
         .rpc();
-      assert.fail("child_count=1 should be rejected");
+      assert.fail('child_count=1 should be rejected');
     } catch (e: any) {
-      assertAnchorError(e, "SplitChildLimitExceeded");
+      assertAnchorError(e, 'SplitChildLimitExceeded');
     }
   });
 
-  it("rejects split with too many children", async () => {
+  it('rejects split with too many children', async () => {
     const { splitter, job, parentFragment } = await setupClaimedParent(mint, clientToken, 2002);
     const parent = await program.account.fragment.fetch(parentFragment);
     const jobAccount = await program.account.job.fetch(job);
@@ -140,13 +135,13 @@ describe("silicium v2 - complete sub-fragment verification", () => {
         })
         .signers([splitter.keypair])
         .rpc();
-      assert.fail("child_count > MAX_CHILDREN_PER_SPLIT should be rejected");
+      assert.fail('child_count > MAX_CHILDREN_PER_SPLIT should be rejected');
     } catch (e: any) {
-      assertAnchorError(e, "SplitChildLimitExceeded");
+      assertAnchorError(e, 'SplitChildLimitExceeded');
     }
   });
 
-  it("rejects split from a worker that did not claim the parent", async () => {
+  it('rejects split from a worker that did not claim the parent', async () => {
     const { job, parentFragment } = await setupClaimedParent(mint, clientToken, 2003);
     const unauthorizedSplitter = await createReadyWorker(mint, 1_000_000);
     const parent = await program.account.fragment.fetch(parentFragment);
@@ -167,13 +162,13 @@ describe("silicium v2 - complete sub-fragment verification", () => {
         })
         .signers([unauthorizedSplitter.keypair])
         .rpc();
-      assert.fail("non-assigned worker should not split the parent");
+      assert.fail('non-assigned worker should not split the parent');
     } catch (e: any) {
-      assertAnchorError(e, "NotAuthorized");
+      assertAnchorError(e, 'NotAuthorized');
     }
   });
 
-  it("does not let an unstaked worker split a parent claimed by another worker", async () => {
+  it('does not let an unstaked worker split a parent claimed by another worker', async () => {
     const { job, parentFragment } = await setupClaimedParent(mint, clientToken, 2004);
     const unstaked = await createRegisteredUnstakedWorker(mint);
     const parent = await program.account.fragment.fetch(parentFragment);
@@ -194,13 +189,13 @@ describe("silicium v2 - complete sub-fragment verification", () => {
         })
         .signers([unstaked.keypair])
         .rpc();
-      assert.fail("unstaked worker should not propose split");
+      assert.fail('unstaked worker should not propose split');
     } catch (e: any) {
-      assertAnchorError(e, "NotAuthorized");
+      assertAnchorError(e, 'NotAuthorized');
     }
   });
 
-  it("auto-approves a qualifying split for peer-to-peer delegation", async () => {
+  it('auto-approves a qualifying split for peer-to-peer delegation', async () => {
     const { splitter, job, parentFragment } = await setupClaimedParent(mint, clientToken, 2005);
     const proposal = await proposeSplit(splitter, job, parentFragment, 10, 2);
     const proposalState = await program.account.splitProposal.fetch(proposal);
@@ -209,14 +204,14 @@ describe("silicium v2 - complete sub-fragment verification", () => {
     assert.deepEqual(parentAfterProposal.status, { splitApproved: {} });
   });
 
-  it("keeps legacy approval calls idempotent after network auto-approval", async () => {
+  it('keeps legacy approval calls idempotent after network auto-approval', async () => {
     const { splitter, job, parentFragment } = await setupClaimedParent(mint, clientToken, 2006);
     const proposal = await proposeSplit(splitter, job, parentFragment, 11, 2);
     await approveSplit(job, parentFragment, proposal, true);
     await approveSplit(job, parentFragment, proposal, true);
   });
 
-  it("rejects an index outside the parent subtree without changing the proposal", async () => {
+  it('rejects an index outside the parent subtree without changing the proposal', async () => {
     const { splitter, job, parentFragment } = await setupClaimedParent(mint, clientToken, 2007);
     const proposal = await proposeSplit(splitter, job, parentFragment, 12, 2);
     await approveSplit(job, parentFragment, proposal, true);
@@ -226,13 +221,13 @@ describe("silicium v2 - complete sub-fragment verification", () => {
       await createSubFragment(job, parentFragment, proposal, 3, 1_500, 1, 3_003, 53);
       assert.fail("index 3 is outside parent 0's direct children");
     } catch (e: any) {
-      assertAnchorError(e, "InvalidChildFragmentIndex");
+      assertAnchorError(e, 'InvalidChildFragmentIndex');
     }
     const after = await program.account.splitProposal.fetch(proposal);
     assert.equal(after.createdChildren, before.createdChildren);
   });
 
-  it("seals the parent after exactly the declared number of children", async () => {
+  it('seals the parent after exactly the declared number of children', async () => {
     const { splitter, job, parentFragment } = await setupClaimedParent(mint, clientToken, 20070);
     const proposal = await proposeSplit(splitter, job, parentFragment, 120, 2);
     await approveSplit(job, parentFragment, proposal, true);
@@ -249,7 +244,7 @@ describe("silicium v2 - complete sub-fragment verification", () => {
     assert.equal(complete.createdChildren, 2);
   });
 
-  it("rejects claiming a child whose required reputation is too high", async () => {
+  it('rejects claiming a child whose required reputation is too high', async () => {
     const { splitter, job, parentFragment } = await setupClaimedParent(mint, clientToken, 2008);
     const lowRepWorker = await createReadyWorker(mint, 1_000_000);
     const proposal = await proposeSplit(splitter, job, parentFragment, 13, 2);
@@ -265,15 +260,15 @@ describe("silicium v2 - complete sub-fragment verification", () => {
         lowRepWorker.workerAccount,
         lowRepWorker.workerToken,
         job,
-        highRepChildIndex
+        highRepChildIndex,
       );
-      assert.fail("worker with reputation 5000 should not claim child requiring 9001");
+      assert.fail('worker with reputation 5000 should not claim child requiring 9001');
     } catch (e: any) {
-      assertAnchorError(e, "ReputationTooLow");
+      assertAnchorError(e, 'ReputationTooLow');
     }
   });
 
-  it("rejects claiming a split parent directly", async () => {
+  it('rejects claiming a split parent directly', async () => {
     const { splitter, job, parentFragment } = await setupClaimedParent(mint, clientToken, 2009);
     const otherWorker = await createReadyWorker(mint, 1_000_000);
     const proposal = await proposeSplit(splitter, job, parentFragment, 14, 2);
@@ -294,13 +289,13 @@ describe("silicium v2 - complete sub-fragment verification", () => {
         })
         .signers([otherWorker.keypair])
         .rpc();
-      assert.fail("split parent should not be claimable");
+      assert.fail('split parent should not be claimable');
     } catch (e: any) {
-      assertAnchorError(e, "BadFragmentState");
+      assertAnchorError(e, 'BadFragmentState');
     }
   });
 
-  it("finalizes a mixed V1/V2 job after all leaf fragments and verifier rewards are complete", async () => {
+  it('finalizes a mixed V1/V2 job after all leaf fragments and verifier rewards are complete', async () => {
     const splitter = await createReadyWorker(mint, 1_000_000);
     const computeWorker = await createReadyWorker(mint, 1_000_000);
     const verifier1 = await createReadyWorker(mint, 1_000_000);
@@ -314,7 +309,7 @@ describe("silicium v2 - complete sub-fragment verification", () => {
       DEFAULT_FRAGMENT_QUORUM,
       DEFAULT_REWARD_PER_FRAGMENT,
       VERIFIER_REWARD_PER_VOTE,
-      minimumVerifierRewardBudget(2, DEFAULT_FRAGMENT_QUORUM)
+      minimumVerifierRewardBudget(2, DEFAULT_FRAGMENT_QUORUM),
     );
 
     const parentFragment = await claimFragment(
@@ -322,7 +317,7 @@ describe("silicium v2 - complete sub-fragment verification", () => {
       splitter.workerAccount,
       splitter.workerToken,
       job,
-      0
+      0,
     );
 
     const proposal = await proposeSplit(splitter, job, parentFragment, 15, 2);
@@ -344,28 +339,12 @@ describe("silicium v2 - complete sub-fragment verification", () => {
       job,
       escrow,
       1,
-      91
+      91,
     );
 
-    await verifyFragmentWithTwoVotes(
-      computeWorker,
-      verifier1,
-      verifier2,
-      job,
-      escrow,
-      2,
-      92
-    );
+    await verifyFragmentWithTwoVotes(computeWorker, verifier1, verifier2, job, escrow, 2, 92);
 
-    await verifyFragmentWithTwoVotes(
-      computeWorker,
-      verifier1,
-      verifier2,
-      job,
-      escrow,
-      3,
-      93
-    );
+    await verifyFragmentWithTwoVotes(computeWorker, verifier1, verifier2, job, escrow, 3, 93);
 
     const jobBeforeRewards = await program.account.job.fetch(job);
     assert.equal(jobBeforeRewards.verifiedFragments, 3);
@@ -374,7 +353,7 @@ describe("silicium v2 - complete sub-fragment verification", () => {
 
     try {
       await program.methods
-        .finalizeJob(Array(32).fill(99), Buffer.from("ipfs://should-fail-before-rewards"))
+        .finalizeJob(Array(32).fill(99), Buffer.from('ipfs://should-fail-before-rewards'))
         .accounts({
           client: provider.wallet.publicKey,
           job,
@@ -386,9 +365,9 @@ describe("silicium v2 - complete sub-fragment verification", () => {
           systemProgram: SystemProgram.programId,
         })
         .rpc();
-      assert.fail("finalization should fail while verifier rewards are unclaimed");
+      assert.fail('finalization should fail while verifier rewards are unclaimed');
     } catch (e: any) {
-      assertAnchorError(e, "OutstandingVerifierClaims");
+      assertAnchorError(e, 'OutstandingVerifierClaims');
     }
 
     for (const fragment of [normalLeaf, child2, child3]) {
@@ -398,7 +377,7 @@ describe("silicium v2 - complete sub-fragment verification", () => {
         verifier1.workerToken,
         job,
         fragment,
-        escrow
+        escrow,
       );
       await claimVerifierReward(
         verifier2.keypair,
@@ -406,12 +385,12 @@ describe("silicium v2 - complete sub-fragment verification", () => {
         verifier2.workerToken,
         job,
         fragment,
-        escrow
+        escrow,
       );
     }
 
     await program.methods
-      .finalizeJob(Array(32).fill(100), Buffer.from("ipfs://mixed-v2-final-result"))
+      .finalizeJob(Array(32).fill(100), Buffer.from('ipfs://mixed-v2-final-result'))
       .accounts({
         client: provider.wallet.publicKey,
         job,

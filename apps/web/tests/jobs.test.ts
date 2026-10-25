@@ -1,21 +1,48 @@
 import { describe, expect, it } from 'vitest';
-import { clampJobPage, compactJobError, extractJobError, jobPartCount, fragmentStateLabel, fragmentVisualState, isHashWorkload, isImageWorkload, isJobCancellable, parseHashReport, resultExtension, shouldRefreshJob } from '../utils/jobs';
+import {
+  clampJobPage,
+  compactJobError,
+  extractJobError,
+  jobPartCount,
+  fragmentStateLabel,
+  fragmentVisualState,
+  isHashWorkload,
+  isImageWorkload,
+  isJobCancellable,
+  parseHashReport,
+  resultExtension,
+  shouldRefreshJob,
+} from '../utils/jobs';
 
 describe('job dashboard helpers', () => {
   it('preserves multiline traceback details while bounding oversized payloads', () => {
-    const message = 'RuntimeError: worker failed\nTraceback (most recent call last):\n  worker.py:42\nValueError: invalid scene';
+    const message =
+      'RuntimeError: worker failed\nTraceback (most recent call last):\n  worker.py:42\nValueError: invalid scene';
     expect(compactJobError(message)).toBe(message);
     expect(compactJobError('x'.repeat(20_000), 180)).toContain('détail d’erreur tronqué');
   });
 
   it('extracts structured submit failures without dropping the traceback', () => {
-    expect(extractJobError({ data: { error: 'worker failed', traceback: 'Traceback\nValueError: bad scene' } })).toBe('worker failed\n\nTraceback\nValueError: bad scene');
+    expect(
+      extractJobError({
+        data: { error: 'worker failed', traceback: 'Traceback\nValueError: bad scene' },
+      }),
+    ).toBe('worker failed\n\nTraceback\nValueError: bad scene');
     expect(extractJobError({ data: 'plain backend error' })).toBe('plain backend error');
-    const nginx = '<html>\r\n<head><title>500 Internal Server Error</title></head>\r\n<body></body>\r\n</html>\r\n<!-- a padding -->';
-    expect(extractJobError({ data: nginx, statusCode: 500 })).toContain('Réessayez dans quelques minutes');
-    expect(extractJobError({ data: nginx })).toBe('La tâche ne peut pas être soumise pour le moment.');
-    expect(extractJobError({ response: { _data: '<!DOCTYPE html><p>x</p>', status: 413 } })).toBe('Le fichier est trop volumineux pour être envoyé.');
-    expect(extractJobError({ data: { message: 'Nom trop long.' }, statusCode: 400 })).toBe('Nom trop long.');
+    const nginx =
+      '<html>\r\n<head><title>500 Internal Server Error</title></head>\r\n<body></body>\r\n</html>\r\n<!-- a padding -->';
+    expect(extractJobError({ data: nginx, statusCode: 500 })).toContain(
+      'Réessayez dans quelques minutes',
+    );
+    expect(extractJobError({ data: nginx })).toBe(
+      'La tâche ne peut pas être soumise pour le moment.',
+    );
+    expect(extractJobError({ response: { _data: '<!DOCTYPE html><p>x</p>', status: 413 } })).toBe(
+      'Le fichier est trop volumineux pour être envoyé.',
+    );
+    expect(extractJobError({ data: { message: 'Nom trop long.' }, statusCode: 400 })).toBe(
+      'Nom trop long.',
+    );
   });
 
   it('only offers cancellation for non-terminal jobs', () => {
@@ -61,12 +88,22 @@ describe('job dashboard helpers', () => {
     expect(resultExtension('application/json; charset=utf-8')).toBe('json');
     expect(resultExtension('image/x-portable-pixmap')).toBe('ppm');
     expect(resultExtension('application/octet-stream')).toBe('bin');
-    expect(resultExtension('application/octet-stream', 'inline; filename="result.png"')).toBe('png');
+    expect(resultExtension('application/octet-stream', 'inline; filename="result.png"')).toBe(
+      'png',
+    );
     expect(resultExtension('image/png', null)).toBe('png');
   });
 
   it('reads the SHA-256 report written by the node', () => {
-    const report = { workload: 'calcul/integrity/sha256', algorithm: 'sha256', size_bytes: 3, chunk_count: 1, chunk_list_sha256: 'l', input_hash: 'h', chunks: [{ index: 0, offset: 0, length: 3, sha256: 'h' }] };
+    const report = {
+      workload: 'calcul/integrity/sha256',
+      algorithm: 'sha256',
+      size_bytes: 3,
+      chunk_count: 1,
+      chunk_list_sha256: 'l',
+      input_hash: 'h',
+      chunks: [{ index: 0, offset: 0, length: 3, sha256: 'h' }],
+    };
     expect(parseHashReport(report)?.input_hash).toBe('h');
     expect(parseHashReport({ chunks: 'nope' })).toBeNull();
     expect(parseHashReport(null)).toBeNull();

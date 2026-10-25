@@ -2,7 +2,8 @@ import type { CollectionDocument, DocumentIndexSummary } from '~/utils/documents
 import type { BatchAIDashboard } from '~/utils/batchAI';
 import type { CatalogDashboard } from '~/utils/hfCatalog';
 
-export type JobStatus = 'queued' | 'running' | 'cancelling' | 'completed' | 'failed' | 'cancelled' | 'expired' | string;
+export type JobStatus =
+  'queued' | 'running' | 'cancelling' | 'completed' | 'failed' | 'cancelled' | 'expired' | string;
 
 export interface User {
   id: number;
@@ -82,7 +83,11 @@ export interface NetworkPeer {
   reputation?: number;
   telemetry?: NetworkRuntimeTelemetry;
   metrics?: NetworkPeerMetrics;
-  activity?: { active_tasks?: Record<string, unknown>[]; telemetry?: NetworkRuntimeTelemetry; [key: string]: unknown };
+  activity?: {
+    active_tasks?: Record<string, unknown>[];
+    telemetry?: NetworkRuntimeTelemetry;
+    [key: string]: unknown;
+  };
   task_queue?: Record<string, unknown>[];
   [key: string]: unknown;
 }
@@ -198,7 +203,13 @@ export interface NetworkTasksResponse {
     online_compute_workers?: number;
     compatible_workers?: number;
     workloads?: string[];
-    reason?: 'no_compute_workers' | 'no_compatible_workers' | 'workers_not_claiming' | 'network_state_unavailable' | 'mixed_workload_blockers' | string;
+    reason?:
+      | 'no_compute_workers'
+      | 'no_compatible_workers'
+      | 'workers_not_claiming'
+      | 'network_state_unavailable'
+      | 'mixed_workload_blockers'
+      | string;
     workload_diagnostics?: NetworkQueueWorkloadDiagnostic[];
   };
 }

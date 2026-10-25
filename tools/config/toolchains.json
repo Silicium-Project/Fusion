@@ -7,7 +7,7 @@
   "rust_solana": "1.89.0",
   "anchor": "0.32.1",
   "solana": "2.3.0",
-  "python": "3.11",
+  "python": "3.11.17",
   "yarn": "1.22.22",
   "actionlint": "1.7.12",
   "gitleaks": "8.30.1",

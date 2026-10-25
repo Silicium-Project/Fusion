@@ -10,7 +10,8 @@ addEventListener('message', (event: MessageEvent<PreviewRequest>) => {
   current = request.id;
   void runPreview(
     request,
-    (reply: PreviewReply) => postMessage(reply, reply.kind === 'image' ? { transfer: [reply.pixels.buffer] } : {}),
+    (reply: PreviewReply) =>
+      postMessage(reply, reply.kind === 'image' ? { transfer: [reply.pixels.buffer] } : {}),
     () => current === request.id,
   );
 });

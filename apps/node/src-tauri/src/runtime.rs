@@ -52,7 +52,11 @@ pub(crate) fn validate_repo_root(repo_root: &Path) -> Result<(), String> {
     if !repo_root.join("Network").is_dir() {
         return Err("network_directory_not_found".to_string());
     }
-    let suffix = if cfg!(target_os = "windows") { ".exe" } else { "" };
+    let suffix = if cfg!(target_os = "windows") {
+        ".exe"
+    } else {
+        ""
+    };
     for binary in ["p2p_node", "compute_daemon"] {
         let path = repo_root
             .join("Network")

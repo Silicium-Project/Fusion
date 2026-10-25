@@ -11,14 +11,16 @@ export default defineConfig({
     },
     trace: 'retain-on-failure',
   },
-  webServer: process.env.PLAYWRIGHT_BASE_URL ? undefined : {
-    command: 'node .output/server/index.mjs',
-    url: 'http://127.0.0.1:4173',
-    reuseExistingServer: true,
-    timeout: 120_000,
-    env: {
-      NITRO_PORT: '4173',
-      HOST: '127.0.0.1',
-    },
-  },
+  webServer: process.env.PLAYWRIGHT_BASE_URL
+    ? undefined
+    : {
+        command: 'node .output/server/index.mjs',
+        url: 'http://127.0.0.1:4173',
+        reuseExistingServer: true,
+        timeout: 120_000,
+        env: {
+          NITRO_PORT: '4173',
+          HOST: '127.0.0.1',
+        },
+      },
 });

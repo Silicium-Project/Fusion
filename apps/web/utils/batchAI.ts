@@ -27,10 +27,19 @@ export const BATCH_AI_LIMITS = {
 } as const;
 
 export type BatchTask = 'summarize' | 'translate' | 'classify' | 'extract' | 'free';
-export const BATCH_TASKS: readonly BatchTask[] = ['summarize', 'translate', 'classify', 'extract', 'free'];
+export const BATCH_TASKS: readonly BatchTask[] = [
+  'summarize',
+  'translate',
+  'classify',
+  'extract',
+  'free',
+];
 
 /** What an answer is, for each kind of task, and how long it may be. */
-export const TASK_OUTPUT: Record<BatchTask, { kind: 'text' | 'label' | 'fields'; maxTokens: number }> = {
+export const TASK_OUTPUT: Record<
+  BatchTask,
+  { kind: 'text' | 'label' | 'fields'; maxTokens: number }
+> = {
   summarize: { kind: 'text', maxTokens: 192 },
   translate: { kind: 'text', maxTokens: 768 },
   classify: { kind: 'label', maxTokens: 32 },
@@ -63,22 +72,37 @@ export const isPlainText = (name: string): boolean => ['txt', 'md'].includes(ext
 export function readItemTable(name: string, text: string, split: TextSplit = 'lines'): ItemTable {
   const content = text.replace(/^﻿/, '');
   const extension = extensionOf(name);
-  if (['csv', 'tsv'].includes(extension)) return readDelimited(content, extension === 'tsv' ? '\t' : detectDelimiter(content));
+  if (['csv', 'tsv'].includes(extension))
+    return readDelimited(content, extension === 'tsv' ? '\t' : detectDelimiter(content));
   if (['jsonl', 'ndjson'].includes(extension)) {
-    const values = content.split(/\r?\n/).filter((line) => line.trim()).map((line, index) => {
-      try { return JSON.parse(line) as unknown; } catch { throw new Error(translate('batchAI.file.badLine', { line: index + 1 })); }
-    });
+    const values = content
+      .split(/\r?\n/)
+      .filter((line) => line.trim())
+      .map((line, index) => {
+        try {
+          return JSON.parse(line) as unknown;
+        } catch {
+          throw new Error(translate('batchAI.file.badLine', { line: index + 1 }));
+        }
+      });
     return tableOfValues(values);
   }
   if (extension === 'json') {
     let value: unknown;
-    try { value = JSON.parse(content); } catch { throw new Error(translate('batchAI.file.badJson')); }
+    try {
+      value = JSON.parse(content);
+    } catch {
+      throw new Error(translate('batchAI.file.badJson'));
+    }
     if (!Array.isArray(value)) throw new Error(translate('batchAI.file.badJson'));
     return tableOfValues(value);
   }
   if (isPlainText(name)) {
     const pieces = split === 'paragraphs' ? content.split(/\r?\n\s*\r?\n/) : content.split(/\r?\n/);
-    return { columns: [translate('batchAI.file.textColumn')], rows: pieces.map((piece) => [piece.trim()]).filter((row) => row[0]) };
+    return {
+      columns: [translate('batchAI.file.textColumn')],
+      rows: pieces.map((piece) => [piece.trim()]).filter((row) => row[0]),
+    };
   }
   throw new Error(translate('batchAI.file.unsupported', { name }));
 }
@@ -105,14 +129,19 @@ export function readDelimited(text: string, delimiter: string): ItemTable {
   for (let index = 0; index < text.length; index += 1) {
     const char = text[index]!;
     if (quoted) {
-      if (char === '"' && text[index + 1] === '"') { cell += '"'; index += 1; }
-      else if (char === '"') quoted = false;
+      if (char === '"' && text[index + 1] === '"') {
+        cell += '"';
+        index += 1;
+      } else if (char === '"') quoted = false;
       else cell += char;
     } else if (char === '"' && !cell) quoted = true;
-    else if (char === delimiter) { row.push(cell); cell = ''; }
-    else if (char === '\n' || char === '\r') {
+    else if (char === delimiter) {
+      row.push(cell);
+      cell = '';
+    } else if (char === '\n' || char === '\r') {
       if (char === '\r' && text[index + 1] === '\n') index += 1;
-      row.push(cell); cell = '';
+      row.push(cell);
+      cell = '';
       if (row.some((value) => value.trim())) rows.push(row);
       row = [];
     } else cell += char;
@@ -121,13 +150,22 @@ export function readDelimited(text: string, delimiter: string): ItemTable {
   if (row.some((value) => value.trim())) rows.push(row);
   const header = rows.shift() || [];
   const width = Math.max(header.length, ...rows.map((line) => line.length));
-  const columns = Array.from({ length: width }, (_, index) => header[index]?.trim() || translate('batchAI.file.column', { index: index + 1 }));
-  return { columns, rows: rows.map((line) => Array.from({ length: width }, (_, index) => line[index] ?? '')) };
+  const columns = Array.from(
+    { length: width },
+    (_, index) => header[index]?.trim() || translate('batchAI.file.column', { index: index + 1 }),
+  );
+  return {
+    columns,
+    rows: rows.map((line) => Array.from({ length: width }, (_, index) => line[index] ?? '')),
+  };
 }
 
 function tableOfValues(values: unknown[]): ItemTable {
   if (values.every((value) => typeof value === 'string' || typeof value === 'number')) {
-    return { columns: [translate('batchAI.file.textColumn')], rows: values.map((value) => [String(value)]) };
+    return {
+      columns: [translate('batchAI.file.textColumn')],
+      rows: values.map((value) => [String(value)]),
+    };
   }
   const columns: string[] = [];
   for (const value of values) {
@@ -136,10 +174,15 @@ function tableOfValues(values: unknown[]): ItemTable {
     }
   }
   if (!columns.length) throw new Error(translate('batchAI.file.badJson'));
-  const cell = (value: unknown): string => (value == null ? '' : typeof value === 'string' ? value : JSON.stringify(value));
+  const cell = (value: unknown): string =>
+    value == null ? '' : typeof value === 'string' ? value : JSON.stringify(value);
   return {
     columns,
-    rows: values.map((value) => columns.map((column) => (value && typeof value === 'object' ? cell((value as Record<string, unknown>)[column]) : ''))),
+    rows: values.map((value) =>
+      columns.map((column) =>
+        value && typeof value === 'object' ? cell((value as Record<string, unknown>)[column]) : '',
+      ),
+    ),
   };
 }
 
@@ -149,8 +192,13 @@ export function guessTextColumn(table: ItemTable): number {
   let bestLength = -1;
   table.columns.forEach((_, index) => {
     const sample = table.rows.slice(0, 50);
-    const length = sample.reduce((total, row) => total + (row[index]?.length || 0), 0) / Math.max(1, sample.length);
-    if (length > bestLength) { best = index; bestLength = length; }
+    const length =
+      sample.reduce((total, row) => total + (row[index]?.length || 0), 0) /
+      Math.max(1, sample.length);
+    if (length > bestLength) {
+      best = index;
+      bestLength = length;
+    }
   });
   return best;
 }
@@ -161,14 +209,18 @@ export function itemsOf(table: ItemTable, column: number): { items: string[]; sk
   let skipped = 0;
   for (const row of table.rows) {
     const value = (row[column] || '').trim();
-    if (value) items.push(value); else skipped += 1;
+    if (value) items.push(value);
+    else skipped += 1;
   }
   return { items, skipped };
 }
 
 /** "positif, négatif ; neutre" → ["positif", "négatif", "neutre"]. */
 export const splitNames = (text: string): string[] =>
-  text.split(/[,;\n]/).map((name) => name.trim().replace(/\s+/g, ' ')).filter(Boolean);
+  text
+    .split(/[,;\n]/)
+    .map((name) => name.trim().replace(/\s+/g, ' '))
+    .filter(Boolean);
 
 export interface BatchRequestInput {
   task: BatchTask;
@@ -187,7 +239,12 @@ export function buildRequest(input: BatchRequestInput): Record<string, unknown> 
     format: REQUEST_FORMAT,
     task: input.task,
     instruction: input.instruction.trim(),
-    output: output.kind === 'label' ? { kind: 'label', labels: names } : output.kind === 'fields' ? { kind: 'fields', fields: names } : { kind: 'text' },
+    output:
+      output.kind === 'label'
+        ? { kind: 'label', labels: names }
+        : output.kind === 'fields'
+          ? { kind: 'fields', fields: names }
+          : { kind: 'text' },
     max_tokens: output.maxTokens,
     source: { name: input.source.name.slice(0, 200), column: input.source.column.slice(0, 200) },
     items: input.items,
@@ -199,21 +256,29 @@ export function requestProblem(input: BatchRequestInput): string {
   const limits = BATCH_AI_LIMITS;
   const kind = TASK_OUTPUT[input.task].kind;
   if (!input.items.length) return translate('batchAI.problems.noItems');
-  if (input.items.length > limits.items) return translate('batchAI.problems.tooManyItems', { max: limits.items });
+  if (input.items.length > limits.items)
+    return translate('batchAI.problems.tooManyItems', { max: limits.items });
   const long = input.items.findIndex((item) => [...item].length > limits.itemChars);
-  if (long >= 0) return translate('batchAI.problems.itemTooLong', { index: long + 1, max: limits.itemChars });
+  if (long >= 0)
+    return translate('batchAI.problems.itemTooLong', { index: long + 1, max: limits.itemChars });
   // Only a free task may go without instruction: each item is then a prompt.
-  if (!input.instruction.trim() && input.task !== 'free') return translate('batchAI.problems.instruction');
-  if ([...input.instruction.trim()].length > limits.instructionChars) return translate('batchAI.problems.instructionLong', { max: limits.instructionChars });
+  if (!input.instruction.trim() && input.task !== 'free')
+    return translate('batchAI.problems.instruction');
+  if ([...input.instruction.trim()].length > limits.instructionChars)
+    return translate('batchAI.problems.instructionLong', { max: limits.instructionChars });
   const names = splitNames(input.names);
   const lower = names.map((name) => name.toLowerCase());
   if (kind === 'label') {
-    if (names.length < limits.minLabels || names.length > limits.maxLabels) return translate('batchAI.problems.labels', { min: limits.minLabels, max: limits.maxLabels });
-    if (names.some((name) => name.length > limits.labelChars)) return translate('batchAI.problems.nameLong', { max: limits.labelChars });
+    if (names.length < limits.minLabels || names.length > limits.maxLabels)
+      return translate('batchAI.problems.labels', { min: limits.minLabels, max: limits.maxLabels });
+    if (names.some((name) => name.length > limits.labelChars))
+      return translate('batchAI.problems.nameLong', { max: limits.labelChars });
   }
   if (kind === 'fields') {
-    if (!names.length || names.length > limits.maxFields) return translate('batchAI.problems.fields', { max: limits.maxFields });
-    if (names.some((name) => name.length > limits.fieldChars)) return translate('batchAI.problems.nameLong', { max: limits.fieldChars });
+    if (!names.length || names.length > limits.maxFields)
+      return translate('batchAI.problems.fields', { max: limits.maxFields });
+    if (names.some((name) => name.length > limits.fieldChars))
+      return translate('batchAI.problems.nameLong', { max: limits.fieldChars });
   }
   const twice = lower.find((name, index) => lower.indexOf(name) !== index);
   if (twice) return translate('batchAI.problems.twice', { name: names[lower.indexOf(twice)]! });
@@ -222,14 +287,21 @@ export function requestProblem(input: BatchRequestInput): string {
 
 /** What the form of step 1 tells the job form; `build` makes the request
  * file (only when sent: a list can weigh megabytes). */
-export interface BatchAIState { build: () => File | null; problem: string; itemCount: number; task: BatchTask; consent: boolean }
+export interface BatchAIState {
+  build: () => File | null;
+  problem: string;
+  itemCount: number;
+  task: BatchTask;
+  consent: boolean;
+}
 
 /** The request as the file sent in the job form. */
 export const requestFile = (request: Record<string, unknown>): File =>
   new File([JSON.stringify(request)], 'request.json', { type: 'application/json' });
 
 /** True for a batch AI job. */
-export const isBatchAIWorkload = (workload: unknown): boolean => String(workload || '').trim() === BATCH_AI_WORKLOAD;
+export const isBatchAIWorkload = (workload: unknown): boolean =>
+  String(workload || '').trim() === BATCH_AI_WORKLOAD;
 
 /** An answer as the API sends it: a text, a label, `{field: text}` or null. */
 export type BatchOutput = string | Record<string, string> | null;
@@ -268,5 +340,8 @@ export interface BatchAIDashboard {
 export function outputText(output: BatchOutput): string {
   if (output == null) return '';
   if (typeof output === 'string') return output;
-  return Object.entries(output).filter(([, value]) => value).map(([key, value]) => `${key} : ${value}`).join(' · ');
+  return Object.entries(output)
+    .filter(([, value]) => value)
+    .map(([key, value]) => `${key} : ${value}`)
+    .join(' · ');
 }

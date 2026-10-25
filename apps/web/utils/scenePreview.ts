@@ -12,12 +12,23 @@ export function createScenePreview(onReply: (reply: PreviewReply) => void) {
   let last: PreviewRequest | undefined;
 
   const onPage = (request: PreviewRequest) => {
-    void runPreview(request, (reply) => { if (reply.id === id) onReply(reply); }, () => request.id === id, 12);
+    void runPreview(
+      request,
+      (reply) => {
+        if (reply.id === id) onReply(reply);
+      },
+      () => request.id === id,
+      12,
+    );
   };
 
   try {
-    worker = new Worker(new URL('../workers/scenePreview.worker.ts', import.meta.url), { type: 'module' });
-    worker.onmessage = (event: MessageEvent<PreviewReply>) => { if (event.data.id === id) onReply(event.data); };
+    worker = new Worker(new URL('../workers/scenePreview.worker.ts', import.meta.url), {
+      type: 'module',
+    });
+    worker.onmessage = (event: MessageEvent<PreviewReply>) => {
+      if (event.data.id === id) onReply(event.data);
+    };
     worker.onerror = () => {
       // The worker could not start (old browser, blocked script): render on the page.
       worker?.terminate();

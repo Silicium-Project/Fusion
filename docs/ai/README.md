@@ -11,6 +11,7 @@ du composant. `./dev capabilities --json` est l'interface de découverte ;
 3. Créer une branche courte et une PR brouillon avec les URL des issues.
 4. Lire les contrats affectés ; demander au plan CI les suites nécessaires.
 5. Implémenter le changement avec le contre-exemple et les tests applicables.
+   Appliquer `dev format --write` puis les [normes de qualité](../development/quality.md).
 6. Exécuter les suites communes et conserver leurs rapports. Ne pas inventer
    un résultat manquant ni retirer un contrôle pour obtenir une CI verte.
 7. Mettre à jour documentation, exemples et instructions locales.

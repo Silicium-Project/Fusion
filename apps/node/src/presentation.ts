@@ -38,7 +38,8 @@ export function friendlyEvent(item: NodeActivity['history'][number]) {
   }
   if (item.kind === 'task_started') {
     return {
-      title: item.role === 'verify' ? `Verification demarree${fragment}` : `Calcul demarre${fragment}`,
+      title:
+        item.role === 'verify' ? `Verification demarree${fragment}` : `Calcul demarre${fragment}`,
       description: `La machine traite ${item.itemId || 'une tache du reseau'}.`,
       date: formatDate(item.modifiedAt),
     };
@@ -109,9 +110,10 @@ export function machineWorkDetail(machine: NodeActivity['machines'][number]) {
   const task = machine.activeTasks[0];
   if (machine.lastClaimError) return machine.lastClaimError;
   if (task) {
-    const fragment = task.fragmentIndex !== null && task.fragmentIndex !== undefined
-      ? `fragment #${task.fragmentIndex}`
-      : task.workload;
+    const fragment =
+      task.fragmentIndex !== null && task.fragmentIndex !== undefined
+        ? `fragment #${task.fragmentIndex}`
+        : task.workload;
     return `${task.itemId}${fragment ? ` - ${fragment}` : ''}`;
   }
   if (machine.online && !machine.schedulerActive) {
@@ -148,7 +150,9 @@ export function shortIdentity(identity: string) {
 
 export function candidateSummary(machine: NodeActivity['machines'][number]) {
   if (!machine.candidates.length) return 'aucun candidat annonce';
-  const types = [...new Set(machine.candidates.map((candidate) => candidate.candidateType || 'host'))];
+  const types = [
+    ...new Set(machine.candidates.map((candidate) => candidate.candidateType || 'host')),
+  ];
   return `${machine.candidates.length} candidat(s) · ${types.join(', ')}`;
 }
 
@@ -235,10 +239,11 @@ export function friendlyError(error: unknown) {
     orchestrator_url_missing: 'l adresse de l orchestrateur est vide',
     orchestrator_url_invalid_scheme: 'l adresse doit commencer par http:// ou https://',
     orchestrator_url_invalid_host: 'l adresse de l orchestrateur est invalide',
-    node_not_ready_after_supervisor_start: 'le service local met trop de temps a demarrer; une nouvelle verification sera faite automatiquement',
-    supervisor_exited_before_ready: 'le superviseur local s est arrete avant que le reseau soit disponible',
+    node_not_ready_after_supervisor_start:
+      'le service local met trop de temps a demarrer; une nouvelle verification sera faite automatiquement',
+    supervisor_exited_before_ready:
+      'le superviseur local s est arrete avant que le reseau soit disponible',
   };
   const knownPrefix = Object.keys(messages).find((key) => raw.startsWith(key));
   return knownPrefix ? messages[knownPrefix] : raw;
 }
-

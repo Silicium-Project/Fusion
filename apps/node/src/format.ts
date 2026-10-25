@@ -15,25 +15,29 @@ export const formatElapsed = (milliseconds: number): string => {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 };
 
-export const taskStatusLabel = (status: string): string => ({
-  running: 'en cours',
-  dispatched: 'attribuee',
-  retrying: 'nouvel essai',
-  cancelling: 'annulation',
-  cancelled: 'annulee',
-  expired: 'expiree',
-  failed: 'echec',
-}[status] || 'en attente');
+export const taskStatusLabel = (status: string): string =>
+  ({
+    running: 'en cours',
+    dispatched: 'attribuee',
+    retrying: 'nouvel essai',
+    cancelling: 'annulation',
+    cancelled: 'annulee',
+    expired: 'expiree',
+    failed: 'echec',
+  })[status] || 'en attente';
 
-export const phaseLabel = (phase: string): string => ({
-  fetching_input: 'Recuperation',
-  executing: 'Execution',
-  rendering: 'Rendu',
-  publishing_result: 'Publication',
-  finalizing: 'Finalisation',
-  cancelling: 'Annulation',
-  cancelled: 'Annulee',
-  expired: 'Expiree',
-  completed: 'Terminee',
-  failed: 'Echec',
-}[phase] || phase || 'Execution');
+export const phaseLabel = (phase: string): string =>
+  ({
+    fetching_input: 'Recuperation',
+    executing: 'Execution',
+    rendering: 'Rendu',
+    publishing_result: 'Publication',
+    finalizing: 'Finalisation',
+    cancelling: 'Annulation',
+    cancelled: 'Annulee',
+    expired: 'Expiree',
+    completed: 'Terminee',
+    failed: 'Echec',
+  })[phase] ||
+  phase ||
+  'Execution';

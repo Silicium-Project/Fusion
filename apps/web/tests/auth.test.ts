@@ -10,7 +10,13 @@ describe('login helpers', () => {
   });
 
   it('ignores malformed, missing and expired tokens', () => {
-    for (const value of [undefined, 'broken', token({}), token({ exp: '1000' }), token({ exp: 0 })]) {
+    for (const value of [
+      undefined,
+      'broken',
+      token({}),
+      token({ exp: '1000' }),
+      token({ exp: 0 }),
+    ]) {
       expect(tokenExpiry(value)).toBeUndefined();
     }
   });

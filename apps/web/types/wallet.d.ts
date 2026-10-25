@@ -9,7 +9,9 @@ export interface PhantomProvider {
   connect(): Promise<{ publicKey: { toString(): string } }>;
   disconnect?(): Promise<void>;
   signMessage(message: Uint8Array, display?: string): Promise<{ signature: Uint8Array }>;
-  signAllTransactions?<T extends Transaction | VersionedTransaction>(transactions: T[]): Promise<T[]>;
+  signAllTransactions?<T extends Transaction | VersionedTransaction>(
+    transactions: T[],
+  ): Promise<T[]>;
   signTransaction?<T extends Transaction | VersionedTransaction>(transaction: T): Promise<T>;
 }
 

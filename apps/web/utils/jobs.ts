@@ -2,20 +2,29 @@ import { translate } from './i18n';
 import type { SceneSummary } from './sceneCheck';
 
 /** "1280 × 720 · 3 objets · 2 lumières" (+ triangles and rays per pixel when there are some). */
-export function sceneSummaryText(scene: SceneSummary, counts?: { objects: number; lights: number }): string {
-  const parts = [translate('jobForm.sceneSummary', {
-    width: scene.width,
-    height: scene.height,
-    objects: translate('jobForm.objectCount', { count: counts?.objects ?? scene.spheres + scene.planes }),
-    lights: translate('jobForm.lightCount', { count: counts?.lights ?? scene.lights }),
-  })];
+export function sceneSummaryText(
+  scene: SceneSummary,
+  counts?: { objects: number; lights: number },
+): string {
+  const parts = [
+    translate('jobForm.sceneSummary', {
+      width: scene.width,
+      height: scene.height,
+      objects: translate('jobForm.objectCount', {
+        count: counts?.objects ?? scene.spheres + scene.planes,
+      }),
+      lights: translate('jobForm.lightCount', { count: counts?.lights ?? scene.lights }),
+    }),
+  ];
   if (scene.triangles) parts.push(translate('jobForm.triangleCount', { count: scene.triangles }));
   if (scene.samples > 1) parts.push(translate('jobForm.sceneQuality', { samples: scene.samples }));
   return parts.join(' · ');
 }
 
 export const compactJobError = (message: string, limit = 16_000): string => {
-  const normalized = String(message || '').replace(/\r\n?/g, '\n').trim();
+  const normalized = String(message || '')
+    .replace(/\r\n?/g, '\n')
+    .trim();
   if (!normalized) return translate('errors.workerNoDetail');
   if (normalized.length <= limit) return normalized;
   const marker = `\n\n${translate('errors.truncated')}`;
@@ -23,7 +32,8 @@ export const compactJobError = (message: string, limit = 16_000): string => {
 };
 
 /** True for an HTML page (the error page of a proxy), never shown as text. */
-const isHtml = (text: string): boolean => /^\s*<(!doctype|html|head|body)\b/i.test(text) || /<\/html>/i.test(text);
+const isHtml = (text: string): boolean =>
+  /^\s*<(!doctype|html|head|body)\b/i.test(text) || /<\/html>/i.test(text);
 
 /** A message for an HTTP status when the response says nothing readable. */
 const statusMessage = (status: unknown): string | undefined => {
@@ -39,7 +49,10 @@ const statusMessage = (status: unknown): string | undefined => {
  * HTTP status, then the fallback. An HTML error page (from the proxy in
  * front of the API) is never shown.
  */
-export const extractJobError = (failure: unknown, fallback = translate('errors.submitFailed')): string => {
+export const extractJobError = (
+  failure: unknown,
+  fallback = translate('errors.submitFailed'),
+): string => {
   const candidate = failure as {
     data?: unknown;
     message?: unknown;
@@ -47,7 +60,12 @@ export const extractJobError = (failure: unknown, fallback = translate('errors.s
     statusCode?: unknown;
     response?: { _data?: unknown; data?: unknown; status?: unknown };
   };
-  const payloads = [candidate?.data, candidate?.response?._data, candidate?.response?.data, candidate];
+  const payloads = [
+    candidate?.data,
+    candidate?.response?._data,
+    candidate?.response?.data,
+    candidate,
+  ];
   for (const payload of payloads) {
     if (typeof payload === 'string' && payload.trim()) {
       if (isHtml(payload)) continue;
@@ -55,18 +73,28 @@ export const extractJobError = (failure: unknown, fallback = translate('errors.s
     }
     if (!payload || typeof payload !== 'object') continue;
     const values = payload as Record<string, unknown>;
-    const message = ['failureDetail', 'failure_detail', 'errorMessage', 'message', 'error']
-      .map((key) => values[key]).find((value): value is string => typeof value === 'string' && Boolean(value.trim()))?.trim() || '';
-    const traceback = ['traceback', 'error_traceback']
-      .map((key) => values[key]).find((value): value is string => typeof value === 'string' && Boolean(value.trim()))?.trim() || '';
+    const message =
+      ['failureDetail', 'failure_detail', 'errorMessage', 'message', 'error']
+        .map((key) => values[key])
+        .find((value): value is string => typeof value === 'string' && Boolean(value.trim()))
+        ?.trim() || '';
+    const traceback =
+      ['traceback', 'error_traceback']
+        .map((key) => values[key])
+        .find((value): value is string => typeof value === 'string' && Boolean(value.trim()))
+        ?.trim() || '';
     if (message || traceback) {
       if (!traceback || message.includes(traceback)) return message || traceback;
       return message ? `${message}\n\n${traceback}` : traceback;
     }
   }
-  const byStatus = statusMessage(candidate?.statusCode ?? candidate?.status ?? candidate?.response?.status);
+  const byStatus = statusMessage(
+    candidate?.statusCode ?? candidate?.status ?? candidate?.response?.status,
+  );
   if (byStatus) return byStatus;
-  return failure instanceof Error && failure.message && !isHtml(failure.message) ? failure.message : fallback;
+  return failure instanceof Error && failure.message && !isHtml(failure.message)
+    ? failure.message
+    : fallback;
 };
 
 /**
@@ -88,15 +116,29 @@ export const isJobCancellable = (status: string): boolean =>
 export type FragmentVisualState = 'planned' | 'computing' | 'validating' | 'done' | 'failed';
 
 export const fragmentVisualState = (status: unknown): FragmentVisualState => {
-  const normalized = String(status || '').trim().toLowerCase();
-  if (['failed', 'error', 'cancelled', 'canceled', 'expired'].some(value => normalized.includes(value))) return 'failed';
-  if (['reassembled', 'verified', 'completed', 'finished', 'resolved'].includes(normalized)) return 'done';
-  if (normalized.includes('verify') || normalized.includes('validat') || normalized === 'computed') return 'validating';
-  if (normalized.includes('compute') || ['claimed', 'dispatched', 'running', 'processing', 'in_progress'].includes(normalized)) return 'computing';
+  const normalized = String(status || '')
+    .trim()
+    .toLowerCase();
+  if (
+    ['failed', 'error', 'cancelled', 'canceled', 'expired'].some((value) =>
+      normalized.includes(value),
+    )
+  )
+    return 'failed';
+  if (['reassembled', 'verified', 'completed', 'finished', 'resolved'].includes(normalized))
+    return 'done';
+  if (normalized.includes('verify') || normalized.includes('validat') || normalized === 'computed')
+    return 'validating';
+  if (
+    normalized.includes('compute') ||
+    ['claimed', 'dispatched', 'running', 'processing', 'in_progress'].includes(normalized)
+  )
+    return 'computing';
   return 'planned';
 };
 
-export const fragmentStateLabel = (status: unknown): string => translate(`fragmentState.${fragmentVisualState(status)}`);
+export const fragmentStateLabel = (status: unknown): string =>
+  translate(`fragmentState.${fragmentVisualState(status)}`);
 
 export const shouldRefreshJob = (status: string, resultReady: boolean): boolean =>
   isJobCancellable(status) || (status === 'completed' && !resultReady);
@@ -147,7 +189,12 @@ export const resultExtension = (contentType: string, disposition?: string | null
 };
 
 /** One chunk of a SHA-256 job result. */
-export interface HashChunk { index: number; offset: number; length: number; sha256: string }
+export interface HashChunk {
+  index: number;
+  offset: number;
+  length: number;
+  sha256: string;
+}
 
 /** SHA-256 job result written by the Rust node. */
 export interface HashReport {
@@ -162,6 +209,7 @@ export interface HashReport {
 export const parseHashReport = (value: unknown): HashReport | null => {
   const report = value as Partial<HashReport> | null;
   if (!report || typeof report !== 'object' || !Array.isArray(report.chunks)) return null;
-  if (typeof report.size_bytes !== 'number' || typeof report.chunk_list_sha256 !== 'string') return null;
+  if (typeof report.size_bytes !== 'number' || typeof report.chunk_list_sha256 !== 'string')
+    return null;
   return report as HashReport;
 };

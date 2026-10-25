@@ -15,7 +15,13 @@ export const triangle = (a: Vec3, b: Vec3, c: Vec3): Shape => {
   return { kind: 'triangle', a, edge1, edge2, normal: edge1.cross(edge2).normalized() };
 };
 
-export const quad = (corner: Vec3, u: Vec3, v: Vec3): Shape => ({ kind: 'quad', corner, u, v, normal: u.cross(v).normalized() });
+export const quad = (corner: Vec3, u: Vec3, v: Vec3): Shape => ({
+  kind: 'quad',
+  corner,
+  u,
+  v,
+  normal: u.cross(v).normalized(),
+});
 
 /** Distance and outward normal of the first hit after `EPSILON`. */
 export function intersect(shape: Shape, origin: Vec3, direction: Vec3): [number, Vec3] | undefined {
@@ -27,7 +33,12 @@ export function intersect(shape: Shape, origin: Vec3, direction: Vec3): [number,
       const discriminant = halfB * halfB - c;
       if (discriminant < 0) return undefined;
       const root = Math.sqrt(discriminant);
-      const distance = -halfB - root > EPSILON ? -halfB - root : -halfB + root > EPSILON ? -halfB + root : undefined;
+      const distance =
+        -halfB - root > EPSILON
+          ? -halfB - root
+          : -halfB + root > EPSILON
+            ? -halfB + root
+            : undefined;
       if (distance === undefined) return undefined;
       const point = origin.add(direction.mul(distance));
       return [distance, point.sub(shape.center).div(shape.radius)];
@@ -62,36 +73,61 @@ export function intersect(shape: Shape, origin: Vec3, direction: Vec3): [number,
       const w = n.div(n.dot(n));
       const alpha = w.dot(relative.cross(shape.v));
       const beta = w.dot(shape.u.cross(relative));
-      return alpha >= 0 && alpha <= 1 && beta >= 0 && beta <= 1 ? [distance, shape.normal] : undefined;
+      return alpha >= 0 && alpha <= 1 && beta >= 0 && beta <= 1
+        ? [distance, shape.normal]
+        : undefined;
     }
   }
 }
 
 export function area(shape: Shape): number {
   switch (shape.kind) {
-    case 'sphere': return 4 * Math.PI * shape.radius * shape.radius;
-    case 'plane': return Infinity;
-    case 'triangle': return 0.5 * shape.edge1.cross(shape.edge2).length();
-    case 'quad': return shape.u.cross(shape.v).length();
+    case 'sphere':
+      return 4 * Math.PI * shape.radius * shape.radius;
+    case 'plane':
+      return Infinity;
+    case 'triangle':
+      return 0.5 * shape.edge1.cross(shape.edge2).length();
+    case 'quad':
+      return shape.u.cross(shape.v).length();
   }
 }
 
-interface Aabb { min: Vec3; max: Vec3 }
+interface Aabb {
+  min: Vec3;
+  max: Vec3;
+}
 
 function bounds(shape: Shape): Aabb | undefined {
   const pad = 1e-6;
   const box = (points: Vec3[]): Aabb => ({
-    min: new Vec3(Math.min(...points.map((p) => p.x)) - pad, Math.min(...points.map((p) => p.y)) - pad, Math.min(...points.map((p) => p.z)) - pad),
-    max: new Vec3(Math.max(...points.map((p) => p.x)) + pad, Math.max(...points.map((p) => p.y)) + pad, Math.max(...points.map((p) => p.z)) + pad),
+    min: new Vec3(
+      Math.min(...points.map((p) => p.x)) - pad,
+      Math.min(...points.map((p) => p.y)) - pad,
+      Math.min(...points.map((p) => p.z)) - pad,
+    ),
+    max: new Vec3(
+      Math.max(...points.map((p) => p.x)) + pad,
+      Math.max(...points.map((p) => p.y)) + pad,
+      Math.max(...points.map((p) => p.z)) + pad,
+    ),
   });
   switch (shape.kind) {
     case 'sphere': {
       const r = new Vec3(shape.radius, shape.radius, shape.radius);
       return { min: shape.center.sub(r), max: shape.center.add(r) };
     }
-    case 'plane': return undefined;
-    case 'triangle': return box([shape.a, shape.a.add(shape.edge1), shape.a.add(shape.edge2)]);
-    case 'quad': return box([shape.corner, shape.corner.add(shape.u), shape.corner.add(shape.v), shape.corner.add(shape.u).add(shape.v)]);
+    case 'plane':
+      return undefined;
+    case 'triangle':
+      return box([shape.a, shape.a.add(shape.edge1), shape.a.add(shape.edge2)]);
+    case 'quad':
+      return box([
+        shape.corner,
+        shape.corner.add(shape.u),
+        shape.corner.add(shape.v),
+        shape.corner.add(shape.u).add(shape.v),
+      ]);
   }
 }
 
@@ -113,30 +149,64 @@ function hitsBox(box: Aabb, origin: Vec3, inverse: Vec3, limit: number): boolean
 /** Scale, then rotation (degrees around x, then y, then z), then translation. */
 export class Transform {
   private rows: [Vec3, Vec3, Vec3];
-  constructor(private scale = new Vec3(1, 1, 1), rotationDegrees = new Vec3(), private translation = new Vec3()) {
-    const [ax, ay, az] = [rotationDegrees.x, rotationDegrees.y, rotationDegrees.z].map((d) => (d * Math.PI) / 180) as [number, number, number];
-    const [sx, cx, sy, cy, sz, cz] = [Math.sin(ax), Math.cos(ax), Math.sin(ay), Math.cos(ay), Math.sin(az), Math.cos(az)];
+  constructor(
+    private scale = new Vec3(1, 1, 1),
+    rotationDegrees = new Vec3(),
+    private translation = new Vec3(),
+  ) {
+    const [ax, ay, az] = [rotationDegrees.x, rotationDegrees.y, rotationDegrees.z].map(
+      (d) => (d * Math.PI) / 180,
+    ) as [number, number, number];
+    const [sx, cx, sy, cy, sz, cz] = [
+      Math.sin(ax),
+      Math.cos(ax),
+      Math.sin(ay),
+      Math.cos(ay),
+      Math.sin(az),
+      Math.cos(az),
+    ];
     this.rows = [
       new Vec3(cz * cy, cz * sy * sx - sz * cx, cz * sy * cx + sz * sx),
       new Vec3(sz * cy, sz * sy * sx + cz * cx, sz * sy * cx - cz * sx),
       new Vec3(-sy, cy * sx, cy * cx),
     ];
   }
-  private rotate(v: Vec3) { return new Vec3(this.rows[0].dot(v), this.rows[1].dot(v), this.rows[2].dot(v)); }
-  point(p: Vec3) { return this.rotate(p.hadamard(this.scale)).add(this.translation); }
-  vector(v: Vec3) { return this.rotate(v.hadamard(this.scale)); }
-  normal(n: Vec3) { return this.rotate(new Vec3(n.x / this.scale.x, n.y / this.scale.y, n.z / this.scale.z)).normalized(); }
-  uniformScale() { return Math.max(Math.abs(this.scale.x), Math.abs(this.scale.y), Math.abs(this.scale.z)); }
+  private rotate(v: Vec3) {
+    return new Vec3(this.rows[0].dot(v), this.rows[1].dot(v), this.rows[2].dot(v));
+  }
+  point(p: Vec3) {
+    return this.rotate(p.hadamard(this.scale)).add(this.translation);
+  }
+  vector(v: Vec3) {
+    return this.rotate(v.hadamard(this.scale));
+  }
+  normal(n: Vec3) {
+    return this.rotate(
+      new Vec3(n.x / this.scale.x, n.y / this.scale.y, n.z / this.scale.z),
+    ).normalized();
+  }
+  uniformScale() {
+    return Math.max(Math.abs(this.scale.x), Math.abs(this.scale.y), Math.abs(this.scale.z));
+  }
 }
 
-interface Node { box: Aabb; first: number; count: number; left: number; right: number }
+interface Node {
+  box: Aabb;
+  first: number;
+  count: number;
+  left: number;
+  right: number;
+}
 
 /** Bounding-volume hierarchy over the finite shapes (same build as the engine). */
 export class Bvh {
   private nodes: Node[] = [];
   private order: number[];
 
-  constructor(private shapes: Shape[], members: number[]) {
+  constructor(
+    private shapes: Shape[],
+    members: number[],
+  ) {
     this.order = members;
     const boxes = shapes.map(bounds);
     if (members.length) this.split(boxes, 0, members.length);
@@ -144,7 +214,10 @@ export class Bvh {
 
   private split(boxes: (Aabb | undefined)[], first: number, count: number): number {
     const items = this.order.slice(first, first + count);
-    const centre = (i: number) => { const b = boxes[i]!; return b.min.add(b.max).mul(0.5); };
+    const centre = (i: number) => {
+      const b = boxes[i]!;
+      return b.min.add(b.max).mul(0.5);
+    };
     const min = new Vec3(Infinity, Infinity, Infinity);
     const max = new Vec3(-Infinity, -Infinity, -Infinity);
     const cmin = new Vec3(Infinity, Infinity, Infinity);
@@ -152,10 +225,18 @@ export class Bvh {
     for (const item of items) {
       const b = boxes[item]!;
       const c = centre(item);
-      min.x = Math.min(min.x, b.min.x); min.y = Math.min(min.y, b.min.y); min.z = Math.min(min.z, b.min.z);
-      max.x = Math.max(max.x, b.max.x); max.y = Math.max(max.y, b.max.y); max.z = Math.max(max.z, b.max.z);
-      cmin.x = Math.min(cmin.x, c.x); cmin.y = Math.min(cmin.y, c.y); cmin.z = Math.min(cmin.z, c.z);
-      cmax.x = Math.max(cmax.x, c.x); cmax.y = Math.max(cmax.y, c.y); cmax.z = Math.max(cmax.z, c.z);
+      min.x = Math.min(min.x, b.min.x);
+      min.y = Math.min(min.y, b.min.y);
+      min.z = Math.min(min.z, b.min.z);
+      max.x = Math.max(max.x, b.max.x);
+      max.y = Math.max(max.y, b.max.y);
+      max.z = Math.max(max.z, b.max.z);
+      cmin.x = Math.min(cmin.x, c.x);
+      cmin.y = Math.min(cmin.y, c.y);
+      cmin.z = Math.min(cmin.z, c.z);
+      cmax.x = Math.max(cmax.x, c.x);
+      cmax.y = Math.max(cmax.y, c.y);
+      cmax.z = Math.max(cmax.z, c.z);
     }
     const node = this.nodes.length;
     this.nodes.push({ box: { min, max }, first, count, left: 0, right: 0 });
@@ -185,7 +266,9 @@ export class Bvh {
           const member = this.order[i]!;
           const hit = intersect(this.shapes[member]!, origin, direction);
           if (!hit) continue;
-          const better = best ? hit[0] < best[0] || (hit[0] === best[0] && member < best[2]) : hit[0] < limit;
+          const better = best
+            ? hit[0] < best[0] || (hit[0] === best[0] && member < best[2])
+            : hit[0] < limit;
           if (better) best = [hit[0], hit[1], member];
         }
       } else {

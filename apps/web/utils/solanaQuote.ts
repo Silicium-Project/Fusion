@@ -8,7 +8,9 @@ export function maxSILFragments(initialFragments: number): number {
   if (!Number.isInteger(initialFragments) || initialFragments < 1 || initialFragments > 256) {
     throw new Error('Invalid SIL quote fragment count.');
   }
-  const childSlotsPerRoot = Math.floor((MAX_SIL_FRAGMENT_NODES - initialFragments) / initialFragments);
+  const childSlotsPerRoot = Math.floor(
+    (MAX_SIL_FRAGMENT_NODES - initialFragments) / initialFragments,
+  );
   const leavesPerRoot = 1 + Math.floor(childSlotsPerRoot / 2);
   return Math.min(
     MAX_SIL_FRAGMENTS,

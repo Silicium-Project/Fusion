@@ -1,13 +1,13 @@
-import * as anchor from "@coral-xyz/anchor";
-import { Program } from "@coral-xyz/anchor";
-import { PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY } from "@solana/web3.js";
-import { assert } from "chai";
+import * as anchor from '@coral-xyz/anchor';
+import { Program } from '@coral-xyz/anchor';
+import { PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js';
+import { assert } from 'chai';
 import {
   TOKEN_PROGRAM_ID,
   createAssociatedTokenAccount,
   createMint,
   mintTo,
-} from "@solana/spl-token";
+} from '@solana/spl-token';
 
 const provider = anchor.AnchorProvider.env();
 anchor.setProvider(provider);
@@ -20,26 +20,26 @@ function asHash(byte: number): number[] {
 
 function jobPda(client: PublicKey, jobId: anchor.BN): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("job"), client.toBuffer(), jobId.toArrayLike(Buffer, "le", 8)],
-    program.programId
+    [Buffer.from('job'), client.toBuffer(), jobId.toArrayLike(Buffer, 'le', 8)],
+    program.programId,
   )[0];
 }
 
 function escrowAuthPda(job: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("escrow_auth"), job.toBuffer()],
-    program.programId
+    [Buffer.from('escrow_auth'), job.toBuffer()],
+    program.programId,
   )[0];
 }
 
 function jobStoragePda(job: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("job_storage"), job.toBuffer()],
-    program.programId
+    [Buffer.from('job_storage'), job.toBuffer()],
+    program.programId,
   )[0];
 }
 
-describe("silicium job storage", () => {
+describe('silicium job storage', () => {
   let mint: PublicKey;
   let clientToken: PublicKey;
 
@@ -48,21 +48,9 @@ describe("silicium job storage", () => {
     const client = provider.wallet.publicKey;
 
     mint = await createMint(provider.connection, payer, client, null, 6);
-    clientToken = await createAssociatedTokenAccount(
-      provider.connection,
-      payer,
-      mint,
-      client
-    );
+    clientToken = await createAssociatedTokenAccount(provider.connection, payer, mint, client);
 
-    await mintTo(
-      provider.connection,
-      payer,
-      mint,
-      clientToken,
-      client,
-      100_000_000
-    );
+    await mintTo(provider.connection, payer, mint, clientToken, client, 100_000_000);
   });
 
   async function createJobForStorage() {
@@ -81,7 +69,7 @@ describe("silicium job storage", () => {
         new anchor.BN(100_000),
         new anchor.BN(3_200_000),
         deadlineUnix,
-        2
+        2,
       )
       .accounts({
         client,
@@ -100,7 +88,7 @@ describe("silicium job storage", () => {
     return { job };
   }
 
-  it("declares P2P storage metadata for a job", async () => {
+  it('declares P2P storage metadata for a job', async () => {
     const client = provider.wallet.publicKey;
     const { job } = await createJobForStorage();
     const jobStorage = jobStoragePda(job);
@@ -111,12 +99,7 @@ describe("silicium job storage", () => {
     const encryptionRefHash = asHash(0);
 
     await program.methods
-      .declareJobStorage(
-        manifestHash,
-        inputRootHash,
-        storageRefHash,
-        encryptionRefHash
-      )
+      .declareJobStorage(manifestHash, inputRootHash, storageRefHash, encryptionRefHash)
       .accounts({
         client,
         job,
@@ -136,7 +119,7 @@ describe("silicium job storage", () => {
     assert.isAbove(Number(storage.createdAtUnix.toString()), 0);
   });
 
-  it("rejects zero manifest/input/storage hashes", async () => {
+  it('rejects zero manifest/input/storage hashes', async () => {
     const client = provider.wallet.publicKey;
     const { job } = await createJobForStorage();
     const jobStorage = jobStoragePda(job);
@@ -152,9 +135,9 @@ describe("silicium job storage", () => {
         })
         .rpc();
 
-      assert.fail("declareJobStorage should have failed with InvalidStorageHash");
+      assert.fail('declareJobStorage should have failed with InvalidStorageHash');
     } catch (e: any) {
-      assert.include(String(e), "InvalidStorageHash");
+      assert.include(String(e), 'InvalidStorageHash');
     }
   });
 });

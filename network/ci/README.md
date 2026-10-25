@@ -1,25 +1,18 @@
-# ci/ — scripts de CI
+# CI du réseau Rust
 
-Appelés par `.github/workflows/ci.yml` et utilisables en local.
+Depuis la racine Fusion : `./dev test --suite network`, puis
+`./dev test --suite network-integration`. Le registre commun est
+`tools/config/lanes.json` ; GitHub appelle les mêmes commandes.
 
-| Script | Rôle |
-| --- | --- |
-| `core_check.sh` | Contrôle principal (`make check`, job « network-core » de Fusion) : tests Rust du workspace, puis tests de l'outillage Python si `pytest` est installé. `CORE_CHECK_MODE=full` lance aussi `e2e.sh` ; `CORE_CHECK_SCOPE` est accepté pour compatibilité |
-| `e2e.sh` | E2E du réseau Rust en local, sans Docker (`make e2e`, job « network-e2e » de Fusion) : compile les binaires release puis lance `crates/p2p-node/scripts/e2e-local.sh` (raytracer avec 1 puis 2 workers, sha256) |
-| `p2p_kademlia_smoke.sh` | Deux nœuds Rust locaux échangent un enregistrement Kademlia |
+`e2e.sh` compile une seule fois les binaires release puis lance les scénarios
+Rust (raytracer à un et deux workers, SHA-256). Les mêmes binaires sont
+collectés pour la livraison Linux. Le support WASM a sa suite ciblée
+`network-wasm` et sa campagne complémentaire.
 
-## `runner/` — protection des runners auto-hébergés
+Les scripts de réparation des runners persistants ont été retirés. Une
+corruption de cache sur un runner GitHub éphémère reste un échec explicite ;
+les caches ne contiennent ni wallets ni données utilisateur. Les anciens
+scripts et leur historique restent accessibles dans les commits antérieurs.
 
-Les runners du VPS gardent leur dossier de travail et `~/.cargo` d'un job à
-l'autre (et plusieurs runners partagent `~/.cargo`). Un disque plein, un
-nettoyage (« Reclaim self-hosted runner ») ou un job interrompu peuvent laisser
-un état cassé que Cargo réutilise. Ces scripts le réparent avant de compiler :
-
-| Script | Rôle |
-| --- | --- |
-| `runner/repair_rust_toolchains.sh` | Désinstalle les toolchains rustup qui ne marchent plus (ex. lien `solana` vers un cache supprimé) |
-| `runner/repair_cargo_sources.py` | Compare chaque source de `~/.cargo/registry/src` à son archive `.crate` (fichiers et tailles) et supprime celles qui sont incomplètes ; tient les verrous de Cargo |
-| `runner/install_rust_toolchain.sh` | Installe la toolchain Rust sous verrou (un seul job à la fois dans le `~/.rustup` partagé) et réessaie un téléchargement raté |
-| `runner/retry_on_corruption.sh` | Lance une commande de build ; si elle échoue sur une corruption (`dep info` manquant, crate introuvable, source C incomplète), nettoie `target/` ou les sources et réessaie une seule fois |
-
-Une vraie erreur de compilation ou de test n'est jamais réessayée.
+Il n'existe plus de CI sur le VPS applicatif. Voir
+[les instructions communes](../../docs/ai/README.md).

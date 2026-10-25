@@ -6,19 +6,47 @@ import { git, root, Failure, run } from '../lib/process.mjs';
 const files = git('ls-files', '-z').split('\0').filter(Boolean);
 const failures = [];
 for (const file of files) {
-  if (/(^|\/)(node_modules|target|\.silicium|ledger|\.anchor)\//.test(file)) failures.push(`Generated runtime state tracked: ${file}`);
-  if (/\.(pfx|p12|key)$/.test(file) || /(^|\/)[^/]*keypair\.json$/.test(file)) failures.push(`Private key-shaped file tracked: ${file}`);
+  if (/(^|\/)(node_modules|target|dist|\.silicium|ledger|\.anchor)\//.test(file))
+    failures.push(`Generated runtime state tracked: ${file}`);
+  if (/\.(pfx|p12|key)$/.test(file) || /(^|\/)[^/]*keypair\.json$/.test(file))
+    failures.push(`Private key-shaped file tracked: ${file}`);
 }
 const mode = process.argv[2] ?? 'repository';
 if (mode === 'docs') {
-  const canonical = ['README.md', 'CONTRIBUTING.md', 'AGENTS.md', 'docs/README.md', 'docs/ai/README.md', 'docs/development/commands.md', 'docs/operations/delivery.md', 'docs/architecture/monorepo.md'];
+  const canonical = [
+    ...new Set([
+      'README.md',
+      'CONTRIBUTING.md',
+      'AGENTS.md',
+      'contracts/README.md',
+      ...files.filter(
+        (file) =>
+          file.startsWith('docs/') && !file.startsWith('docs/archive/') && file.endsWith('.md'),
+      ),
+      ...[
+        'apps/web',
+        'apps/api',
+        'apps/node',
+        'network',
+        'chain/solana',
+        'packages/solana-sdk',
+        'infra',
+      ]
+        .flatMap((path) => [path + '/AGENTS.md', path + '/README.md'])
+        .filter((file) => existsSync(resolve(root, file))),
+    ]),
+  ];
   for (const file of canonical) {
-    if (!existsSync(resolve(root, file))) { failures.push(`Missing canonical documentation: ${file}`); continue; }
+    if (!existsSync(resolve(root, file))) {
+      failures.push(`Missing canonical documentation: ${file}`);
+      continue;
+    }
     const text = readFileSync(resolve(root, file), 'utf8');
     for (const match of text.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
       const link = match[1].split('#')[0];
       if (!link || /^(https?:|mailto:)/.test(link)) continue;
-      if (!existsSync(resolve(dirname(resolve(root, file)), decodeURIComponent(link)))) failures.push(`${file}: missing link ${link}`);
+      if (!existsSync(resolve(dirname(resolve(root, file)), decodeURIComponent(link))))
+        failures.push(`${file}: missing link ${link}`);
     }
   }
 } else if (mode === 'go-format') {

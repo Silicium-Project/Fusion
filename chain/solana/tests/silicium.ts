@@ -1,13 +1,13 @@
-import * as anchor from "@coral-xyz/anchor";
-import { Program } from "@coral-xyz/anchor";
-import { PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY } from "@solana/web3.js";
-import { assert } from "chai";
+import * as anchor from '@coral-xyz/anchor';
+import { Program } from '@coral-xyz/anchor';
+import { PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js';
+import { assert } from 'chai';
 import {
   TOKEN_PROGRAM_ID,
   createMint,
   createAssociatedTokenAccount,
   mintTo,
-} from "@solana/spl-token";
+} from '@solana/spl-token';
 
 const provider = anchor.AnchorProvider.env();
 anchor.setProvider(provider);
@@ -44,7 +44,9 @@ let stakingStakeVault: PublicKey;
 let stakingRewardVault: PublicKey;
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 function u32le(n: number): Buffer {
@@ -61,48 +63,52 @@ function u16le(n: number): Buffer {
 
 function jobPda(client: PublicKey, jobId: anchor.BN): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("job"), client.toBuffer(), jobId.toArrayLike(Buffer, "le", 8)],
-    program.programId
+    [Buffer.from('job'), client.toBuffer(), jobId.toArrayLike(Buffer, 'le', 8)],
+    program.programId,
   )[0];
 }
 
 function fragmentPda(job: PublicKey, fragmentIndex: number): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("fragment"), job.toBuffer(), u32le(fragmentIndex)],
-    program.programId
+    [Buffer.from('fragment'), job.toBuffer(), u32le(fragmentIndex)],
+    program.programId,
   )[0];
 }
 
 function workerPda(worker: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("worker"), worker.toBuffer()],
-    program.programId
+    [Buffer.from('worker'), worker.toBuffer()],
+    program.programId,
   )[0];
 }
 
 function workerPayoutPda(workerAccount: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("worker_payout"), workerAccount.toBuffer()],
-    program.programId
+    [Buffer.from('worker_payout'), workerAccount.toBuffer()],
+    program.programId,
   )[0];
 }
 
 function escrowAuthPda(job: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("escrow_auth"), job.toBuffer()],
-    program.programId
+    [Buffer.from('escrow_auth'), job.toBuffer()],
+    program.programId,
   )[0];
 }
 
 function maxLeafFragments(initialFragments: number): number {
   const childSlotsPerRoot = Math.floor((1_000 - initialFragments) / initialFragments);
-  return Math.min(initialFragments * 16, initialFragments * (1 + Math.floor(childSlotsPerRoot / 2)), 1_000);
+  return Math.min(
+    initialFragments * 16,
+    initialFragments * (1 + Math.floor(childSlotsPerRoot / 2)),
+    1_000,
+  );
 }
 
 function minimumVerifierRewardBudget(
   initialFragments: number,
   fragmentQuorum: number,
-  rewardPerVote = VERIFIER_REWARD_PER_VOTE
+  rewardPerVote = VERIFIER_REWARD_PER_VOTE,
 ): anchor.BN {
   return new anchor.BN(maxLeafFragments(initialFragments))
     .mul(new anchor.BN(fragmentQuorum))
@@ -111,38 +117,29 @@ function minimumVerifierRewardBudget(
 
 function stakeAuthPda(workerAccount: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("stake_auth"), workerAccount.toBuffer()],
-    program.programId
+    [Buffer.from('stake_auth'), workerAccount.toBuffer()],
+    program.programId,
   )[0];
 }
 
 function stakeVaultPda(worker: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("stake_vault"), worker.toBuffer()],
-    program.programId
+    [Buffer.from('stake_vault'), worker.toBuffer()],
+    program.programId,
   )[0];
 }
 
 function votePda(fragment: PublicKey, verifier: PublicKey, round: number): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [
-      Buffer.from("fragment_vote"),
-      fragment.toBuffer(),
-      verifier.toBuffer(),
-      u16le(round),
-    ],
-    program.programId
+    [Buffer.from('fragment_vote'), fragment.toBuffer(), verifier.toBuffer(), u16le(round)],
+    program.programId,
   )[0];
 }
 
 function roundResolutionPda(fragment: PublicKey, round: number): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [
-      Buffer.from("fragment_resolution"),
-      fragment.toBuffer(),
-      u16le(round),
-    ],
-    program.programId
+    [Buffer.from('fragment_resolution'), fragment.toBuffer(), u16le(round)],
+    program.programId,
   )[0];
 }
 
@@ -173,28 +170,13 @@ async function registerWorker(workerKeypair: anchor.web3.Keypair): Promise<Publi
   return workerAccount;
 }
 
-async function createAndFundWorkerToken(
-  owner: PublicKey,
-  amount = 10_000_000
-): Promise<PublicKey> {
+async function createAndFundWorkerToken(owner: PublicKey, amount = 10_000_000): Promise<PublicKey> {
   const payer = provider.wallet.payer as anchor.web3.Keypair;
   const authority = provider.wallet.publicKey;
 
-  const token = await createAssociatedTokenAccount(
-    provider.connection,
-    payer,
-    sharedMint,
-    owner
-  );
+  const token = await createAssociatedTokenAccount(provider.connection, payer, sharedMint, owner);
 
-  await mintTo(
-    provider.connection,
-    payer,
-    sharedMint,
-    token,
-    authority,
-    amount
-  );
+  await mintTo(provider.connection, payer, sharedMint, token, authority, amount);
 
   return token;
 }
@@ -203,7 +185,7 @@ async function stakeRegisteredWorker(
   workerKeypair: anchor.web3.Keypair,
   workerAccount: PublicKey,
   workerToken: PublicKey,
-  amount = 1_000_000
+  amount = 1_000_000,
 ) {
   const stakeAuth = stakeAuthPda(workerAccount);
   const stakeVault = stakeVaultPda(workerKeypair.publicKey);
@@ -229,26 +211,22 @@ async function stakeRegisteredWorker(
 
 function stakingPoolPda(mint: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("staking_pool"), mint.toBuffer()],
-    program.programId
+    [Buffer.from('staking_pool'), mint.toBuffer()],
+    program.programId,
   )[0];
 }
 
 function stakingPoolAuthPda(mint: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("staking_pool_auth"), mint.toBuffer()],
-    program.programId
+    [Buffer.from('staking_pool_auth'), mint.toBuffer()],
+    program.programId,
   )[0];
 }
 
 function networkStakerPda(owner: PublicKey, mint: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [
-      Buffer.from("network_staker"),
-      owner.toBuffer(),
-      mint.toBuffer(),
-    ],
-    program.programId
+    [Buffer.from('network_staker'), owner.toBuffer(), mint.toBuffer()],
+    program.programId,
   )[0];
 }
 
@@ -261,8 +239,8 @@ async function createTestJob(
   verifierRewardBudget = minimumVerifierRewardBudget(
     expectedFragments,
     fragmentQuorum,
-    verifierRewardPerVote
-  )
+    verifierRewardPerVote,
+  ),
 ) {
   const client = provider.wallet.publicKey;
   const payer = provider.wallet.payer as anchor.web3.Keypair;
@@ -284,7 +262,7 @@ async function createTestJob(
     sharedMint,
     sharedWorkerToken,
     client,
-    Number(totalToMint.toString())
+    Number(totalToMint.toString()),
   );
 
   await program.methods
@@ -295,7 +273,7 @@ async function createTestJob(
       verifierRewardPerVote,
       verifierRewardBudget,
       deadlineUnix,
-      fragmentQuorum
+      fragmentQuorum,
     )
     .accounts({
       client: client,
@@ -318,10 +296,7 @@ async function createTestJob(
   };
 }
 
-async function expectTxToFail(
-  fn: () => Promise<any>,
-  expectedMessage: string
-) {
+async function expectTxToFail(fn: () => Promise<any>, expectedMessage: string) {
   try {
     await fn();
     assert.fail(`Expected transaction to fail with ${expectedMessage}`);
@@ -330,7 +305,7 @@ async function expectTxToFail(
     assert.include(
       msg,
       expectedMessage,
-      `Expected error to include "${expectedMessage}", got: ${msg}`
+      `Expected error to include "${expectedMessage}", got: ${msg}`,
     );
   }
 }
@@ -343,12 +318,7 @@ async function createReadyWorker(amount = 1_000_000) {
   const workerAccount = await registerWorker(worker);
   const workerToken = await createAndFundWorkerToken(worker.publicKey);
 
-  const stake = await stakeRegisteredWorker(
-    worker,
-    workerAccount,
-    workerToken,
-    amount
-  );
+  const stake = await stakeRegisteredWorker(worker, workerAccount, workerToken, amount);
 
   return {
     keypair: worker,
@@ -366,7 +336,7 @@ async function claimAndSubmitFragment(
   job: PublicKey,
   fragmentIndex: number,
   resultByte = 1,
-  proofByte = 2
+  proofByte = 2,
 ) {
   const fragment = fragmentPda(job, fragmentIndex);
 
@@ -384,11 +354,7 @@ async function claimAndSubmitFragment(
     .rpc();
 
   await program.methods
-    .submitFragmentResult(
-      fragmentIndex,
-      Array(32).fill(resultByte),
-      Array(32).fill(proofByte)
-    )
+    .submitFragmentResult(fragmentIndex, Array(32).fill(resultByte), Array(32).fill(proofByte))
     .accounts({
       worker: worker.publicKey,
       workerAccount: workerAccount,
@@ -409,20 +375,13 @@ async function voteOnFragment(
   fragment: PublicKey,
   escrow: PublicKey,
   workerToken: PublicKey,
-  choice: boolean
+  choice: boolean,
 ) {
   const fragmentBefore = await program.account.fragment.fetch(fragment);
 
-  const vote = votePda(
-    fragment,
-    verifier.publicKey,
-    fragmentBefore.round
-  );
+  const vote = votePda(fragment, verifier.publicKey, fragmentBefore.round);
 
-  const roundResolution = roundResolutionPda(
-    fragment,
-    fragmentBefore.round
-  );
+  const roundResolution = roundResolutionPda(fragment, fragmentBefore.round);
 
   const computeWorker = workerPda(fragmentBefore.worker);
   const escrowAuth = escrowAuthPda(job);
@@ -454,8 +413,8 @@ async function voteOnFragment(
   };
 }
 
-describe("silicium", () => {
-  it("registers a worker", async () => {
+describe('silicium', () => {
+  it('registers a worker', async () => {
     const worker = provider.wallet.publicKey;
     const workerAccount = workerPda(worker);
 
@@ -473,24 +432,18 @@ describe("silicium", () => {
     assert.equal(account.owner.toBase58(), worker.toBase58());
   });
 
-  it("stakes SPL tokens for a worker", async () => {
+  it('stakes SPL tokens for a worker', async () => {
     const worker = provider.wallet.publicKey;
     const workerAccount = workerPda(worker);
 
-    const mint = await createMint(
-      provider.connection,
-      provider.wallet.payer,
-      worker,
-      null,
-      6
-    );
+    const mint = await createMint(provider.connection, provider.wallet.payer, worker, null, 6);
     sharedMint = mint;
 
     const workerToken = await createAssociatedTokenAccount(
       provider.connection,
       provider.wallet.payer,
       mint,
-      worker
+      worker,
     );
     sharedWorkerToken = workerToken;
 
@@ -500,7 +453,7 @@ describe("silicium", () => {
       mint,
       workerToken,
       worker,
-      1_000_000_000
+      1_000_000_000,
     );
 
     const stakeAuth = stakeAuthPda(workerAccount);
@@ -529,7 +482,7 @@ describe("silicium", () => {
     assert.equal(account.stakeVault.toBase58(), stakeVault.toBase58());
   });
 
-  it("creates a job and funds escrow", async () => {
+  it('creates a job and funds escrow', async () => {
     const client = provider.wallet.publicKey;
     const payer = provider.wallet.payer as anchor.web3.Keypair;
 
@@ -539,14 +492,7 @@ describe("silicium", () => {
     const deadlineUnix = new anchor.BN(Math.floor(Date.now() / 1000) + 3600);
     const fragmentQuorum = 2;
 
-    await mintTo(
-      provider.connection,
-      payer,
-      sharedMint,
-      sharedWorkerToken,
-      client,
-      60_000_000
-    );
+    await mintTo(provider.connection, payer, sharedMint, sharedWorkerToken, client, 60_000_000);
 
     const job = jobPda(client, jobId);
     const escrowAuth = escrowAuthPda(job);
@@ -562,7 +508,7 @@ describe("silicium", () => {
         VERIFIER_REWARD_PER_VOTE,
         minimumVerifierRewardBudget(expectedFragments, fragmentQuorum),
         deadlineUnix,
-        fragmentQuorum
+        fragmentQuorum,
       )
       .accounts({
         client: client,
@@ -592,14 +538,14 @@ describe("silicium", () => {
       rewardPerFragment
         .mul(new anchor.BN(maxLeafFragments(expectedFragments)))
         .add(minimumVerifierRewardBudget(expectedFragments, fragmentQuorum))
-        .toString()
+        .toString(),
     );
-    assert.equal(jobAccount.paidAmount.toString(), "0");
+    assert.equal(jobAccount.paidAmount.toString(), '0');
     assert.equal(jobAccount.fragmentQuorum, fragmentQuorum);
     assert.deepEqual(jobAccount.status, { open: {} });
   });
 
-  it("claims a fragment", async () => {
+  it('claims a fragment', async () => {
     const worker = provider.wallet.publicKey;
     const workerAccount = workerPda(worker);
     const job = jobPda(worker, new anchor.BN(1));
@@ -625,13 +571,10 @@ describe("silicium", () => {
     assert.equal(fragmentAccount.assignedWorker.toBase58(), worker.toBase58());
     assert.deepEqual(fragmentAccount.status, { claimed: {} });
 
-    assert.isAbove(
-      Number(fragmentAccount.claimDeadlineUnix.toString()),
-      0
-    );
+    assert.isAbove(Number(fragmentAccount.claimDeadlineUnix.toString()), 0);
   });
 
-  it("submits a claimed fragment result", async () => {
+  it('submits a claimed fragment result', async () => {
     const worker = provider.wallet.publicKey;
     const workerAccount = workerPda(worker);
     const job = jobPda(worker, new anchor.BN(1));
@@ -662,7 +605,7 @@ describe("silicium", () => {
     assert.equal(workerAccountData.totalSubmitted, 1);
   });
 
-  it("registers and stakes a verifier", async () => {
+  it('registers and stakes a verifier', async () => {
     verifierKeypair = anchor.web3.Keypair.generate();
 
     await airdrop(verifierKeypair.publicKey);
@@ -672,10 +615,10 @@ describe("silicium", () => {
     await stakeRegisteredWorker(verifierKeypair, verifierWorker, verifierToken);
 
     const verifierAccount = await program.account.worker.fetch(verifierWorker);
-    assert.equal(verifierAccount.stakeAmount.toString(), "1000000");
+    assert.equal(verifierAccount.stakeAmount.toString(), '1000000');
   });
 
-  it("votes yes on a fragment and keeps it submitted before quorum", async () => {
+  it('votes yes on a fragment and keeps it submitted before quorum', async () => {
     const client = provider.wallet.publicKey;
     const job = jobPda(client, new anchor.BN(1));
     const fragment = fragmentPda(job, 0);
@@ -720,7 +663,7 @@ describe("silicium", () => {
     assert.equal(verifierAccount.totalVerified, 0);
   });
 
-  it("reaches quorum and pays worker", async () => {
+  it('reaches quorum and pays worker', async () => {
     const client = provider.wallet.publicKey;
     const job = jobPda(client, new anchor.BN(1));
     const fragment = fragmentPda(job, 0);
@@ -773,7 +716,7 @@ describe("silicium", () => {
     assert.equal(after - before, 1_000_000);
   });
 
-  it("creates a rejected fragment", async () => {
+  it('creates a rejected fragment', async () => {
     const client = provider.wallet.publicKey;
     const payer = provider.wallet.payer as anchor.web3.Keypair;
 
@@ -788,14 +731,7 @@ describe("silicium", () => {
     const escrow = anchor.web3.Keypair.generate();
     rejectedEscrow = escrow.publicKey;
 
-    await mintTo(
-      provider.connection,
-      payer,
-      sharedMint,
-      sharedWorkerToken,
-      client,
-      40_000_000
-    );
+    await mintTo(provider.connection, payer, sharedMint, sharedWorkerToken, client, 40_000_000);
 
     await program.methods
       .createJob(
@@ -805,7 +741,7 @@ describe("silicium", () => {
         VERIFIER_REWARD_PER_VOTE,
         minimumVerifierRewardBudget(expectedFragments, fragmentQuorum),
         deadlineUnix,
-        fragmentQuorum
+        fragmentQuorum,
       )
       .accounts({
         client: client,
@@ -915,7 +851,7 @@ describe("silicium", () => {
     assert.deepEqual(fragmentAfter.status, { rejected: {} });
   });
 
-  it("claims a rejected fragment again and submits again", async () => {
+  it('claims a rejected fragment again and submits again', async () => {
     const worker = provider.wallet.publicKey;
     const workerAccount = workerPda(worker);
     const fragmentIndex = 0;
@@ -960,7 +896,7 @@ describe("silicium", () => {
     assert.equal(workerAfter.totalSubmitted, 3);
   });
 
-  it("creates, verifies, and finalizes a job", async () => {
+  it('creates, verifies, and finalizes a job', async () => {
     const client = provider.wallet.publicKey;
     const payer = provider.wallet.payer as anchor.web3.Keypair;
 
@@ -976,14 +912,7 @@ describe("silicium", () => {
     const escrow = anchor.web3.Keypair.generate();
     finalizeEscrow = escrow.publicKey;
 
-    await mintTo(
-      provider.connection,
-      payer,
-      sharedMint,
-      sharedWorkerToken,
-      client,
-      40_000_000
-    );
+    await mintTo(provider.connection, payer, sharedMint, sharedWorkerToken, client, 40_000_000);
 
     await program.methods
       .createJob(
@@ -993,7 +922,7 @@ describe("silicium", () => {
         VERIFIER_REWARD_PER_VOTE,
         minimumVerifierRewardBudget(expectedFragments, fragmentQuorum),
         deadlineUnix,
-        fragmentQuorum
+        fragmentQuorum,
       )
       .accounts({
         client: client,
@@ -1175,123 +1104,115 @@ describe("silicium", () => {
       .rpc();
 
     const [result] = PublicKey.findProgramAddressSync(
-      [Buffer.from("result"), finalizeJob.toBuffer()],
-      program.programId
+      [Buffer.from('result'), finalizeJob.toBuffer()],
+      program.programId,
     );
 
     const finalHash = Array(32).fill(42);
-    const outputUri = Buffer.from("ipfs://silicium-result-3");
+    const outputUri = Buffer.from('ipfs://silicium-result-3');
 
     const verifierToken1Claim = verifierToken1;
-const verifierToken2Claim = verifierToken2;
+    const verifierToken2Claim = verifierToken2;
 
-// ---------- fragment 0 reward claims ----------
-const fragment0State = await program.account.fragment.fetch(fragment0);
-const round0 = fragment0State.round;
+    // ---------- fragment 0 reward claims ----------
+    const fragment0State = await program.account.fragment.fetch(fragment0);
+    const round0 = fragment0State.round;
 
-const [roundResolution0] = PublicKey.findProgramAddressSync(
-  [
-    Buffer.from("fragment_resolution"),
-    fragment0.toBuffer(),
-    u16le(round0),
-  ],
-  program.programId
-);
+    const [roundResolution0] = PublicKey.findProgramAddressSync(
+      [Buffer.from('fragment_resolution'), fragment0.toBuffer(), u16le(round0)],
+      program.programId,
+    );
 
-const vote1Frag0 = votePda(fragment0, finalizeVerifier1.publicKey, round0);
-const vote2Frag0 = votePda(fragment0, finalizeVerifier2.publicKey, round0);
+    const vote1Frag0 = votePda(fragment0, finalizeVerifier1.publicKey, round0);
+    const vote2Frag0 = votePda(fragment0, finalizeVerifier2.publicKey, round0);
 
-await program.methods
-  .claimVerifierReward()
-  .accounts({
-    verifier: finalizeVerifier1.publicKey,
-    job: finalizeJob,
-    fragment: fragment0,
-    roundResolution: roundResolution0,
-    vote: vote1Frag0,
-    verifierWorker: verifierWorker1,
-    escrowAuth: escrowAuth,
-    escrow: finalizeEscrow,
-    verifierToken: verifierToken1Claim,
-    verifierPayout: workerPayoutPda(verifierWorker1),
-    verifierPayoutToken: verifierToken1Claim,
-    tokenProgram: TOKEN_PROGRAM_ID,
-  })
-  .signers([finalizeVerifier1])
-  .rpc();
+    await program.methods
+      .claimVerifierReward()
+      .accounts({
+        verifier: finalizeVerifier1.publicKey,
+        job: finalizeJob,
+        fragment: fragment0,
+        roundResolution: roundResolution0,
+        vote: vote1Frag0,
+        verifierWorker: verifierWorker1,
+        escrowAuth: escrowAuth,
+        escrow: finalizeEscrow,
+        verifierToken: verifierToken1Claim,
+        verifierPayout: workerPayoutPda(verifierWorker1),
+        verifierPayoutToken: verifierToken1Claim,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([finalizeVerifier1])
+      .rpc();
 
-await program.methods
-  .claimVerifierReward()
-  .accounts({
-    verifier: finalizeVerifier2.publicKey,
-    job: finalizeJob,
-    fragment: fragment0,
-    roundResolution: roundResolution0,
-    vote: vote2Frag0,
-    verifierWorker: verifierWorker2,
-    escrowAuth: escrowAuth,
-    escrow: finalizeEscrow,
-    verifierToken: verifierToken2Claim,
-    verifierPayout: workerPayoutPda(verifierWorker2),
-    verifierPayoutToken: verifierToken2Claim,
-    tokenProgram: TOKEN_PROGRAM_ID,
-  })
-  .signers([finalizeVerifier2])
-  .rpc();
+    await program.methods
+      .claimVerifierReward()
+      .accounts({
+        verifier: finalizeVerifier2.publicKey,
+        job: finalizeJob,
+        fragment: fragment0,
+        roundResolution: roundResolution0,
+        vote: vote2Frag0,
+        verifierWorker: verifierWorker2,
+        escrowAuth: escrowAuth,
+        escrow: finalizeEscrow,
+        verifierToken: verifierToken2Claim,
+        verifierPayout: workerPayoutPda(verifierWorker2),
+        verifierPayoutToken: verifierToken2Claim,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([finalizeVerifier2])
+      .rpc();
 
-  // ---------- fragment 1 reward claims ----------
-  const fragment1State = await program.account.fragment.fetch(fragment1);
-  const round1 = fragment1State.round;
+    // ---------- fragment 1 reward claims ----------
+    const fragment1State = await program.account.fragment.fetch(fragment1);
+    const round1 = fragment1State.round;
 
-  const [roundResolution1] = PublicKey.findProgramAddressSync(
-    [
-      Buffer.from("fragment_resolution"),
-      fragment1.toBuffer(),
-      u16le(round1),
-    ],
-    program.programId
-  );
+    const [roundResolution1] = PublicKey.findProgramAddressSync(
+      [Buffer.from('fragment_resolution'), fragment1.toBuffer(), u16le(round1)],
+      program.programId,
+    );
 
-  const vote1Frag1 = votePda(fragment1, finalizeVerifier1.publicKey, round1);
-  const vote2Frag1 = votePda(fragment1, finalizeVerifier2.publicKey, round1);
+    const vote1Frag1 = votePda(fragment1, finalizeVerifier1.publicKey, round1);
+    const vote2Frag1 = votePda(fragment1, finalizeVerifier2.publicKey, round1);
 
-  await program.methods
-    .claimVerifierReward()
-    .accounts({
-      verifier: finalizeVerifier1.publicKey,
-      job: finalizeJob,
-      fragment: fragment1,
-      roundResolution: roundResolution1,
-      vote: vote1Frag1,
-      verifierWorker: verifierWorker1,
-      escrowAuth: escrowAuth,
-      escrow: finalizeEscrow,
-      verifierToken: verifierToken1Claim,
-      verifierPayout: workerPayoutPda(verifierWorker1),
-      verifierPayoutToken: verifierToken1Claim,
-      tokenProgram: TOKEN_PROGRAM_ID,
-    })
-    .signers([finalizeVerifier1])
-    .rpc();
+    await program.methods
+      .claimVerifierReward()
+      .accounts({
+        verifier: finalizeVerifier1.publicKey,
+        job: finalizeJob,
+        fragment: fragment1,
+        roundResolution: roundResolution1,
+        vote: vote1Frag1,
+        verifierWorker: verifierWorker1,
+        escrowAuth: escrowAuth,
+        escrow: finalizeEscrow,
+        verifierToken: verifierToken1Claim,
+        verifierPayout: workerPayoutPda(verifierWorker1),
+        verifierPayoutToken: verifierToken1Claim,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([finalizeVerifier1])
+      .rpc();
 
-  await program.methods
-    .claimVerifierReward()
-    .accounts({
-      verifier: finalizeVerifier2.publicKey,
-      job: finalizeJob,
-      fragment: fragment1,
-      roundResolution: roundResolution1,
-      vote: vote2Frag1,
-      verifierWorker: verifierWorker2,
-      escrowAuth: escrowAuth,
-      escrow: finalizeEscrow,
-      verifierToken: verifierToken2Claim,
-      verifierPayout: workerPayoutPda(verifierWorker2),
-      verifierPayoutToken: verifierToken2Claim,
-      tokenProgram: TOKEN_PROGRAM_ID,
-    })
-    .signers([finalizeVerifier2])
-    .rpc();
+    await program.methods
+      .claimVerifierReward()
+      .accounts({
+        verifier: finalizeVerifier2.publicKey,
+        job: finalizeJob,
+        fragment: fragment1,
+        roundResolution: roundResolution1,
+        vote: vote2Frag1,
+        verifierWorker: verifierWorker2,
+        escrowAuth: escrowAuth,
+        escrow: finalizeEscrow,
+        verifierToken: verifierToken2Claim,
+        verifierPayout: workerPayoutPda(verifierWorker2),
+        verifierPayoutToken: verifierToken2Claim,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([finalizeVerifier2])
+      .rpc();
 
     await program.methods
       .finalizeJob(finalHash, outputUri)
@@ -1314,14 +1235,12 @@ await program.methods
     assert.deepEqual(resultAccount.finalHash, finalHash);
     assert.equal(resultAccount.uriLen, outputUri.length);
 
-    const uri = Buffer.from(resultAccount.uriBytes)
-      .slice(0, resultAccount.uriLen)
-      .toString();
+    const uri = Buffer.from(resultAccount.uriBytes).slice(0, resultAccount.uriLen).toString();
 
-    assert.equal(uri, "ipfs://silicium-result-3");
+    assert.equal(uri, 'ipfs://silicium-result-3');
   });
 
-  it("reclaims an expired fragment claim", async () => {
+  it('reclaims an expired fragment claim', async () => {
     const client = provider.wallet.publicKey;
     const payer = provider.wallet.payer as anchor.web3.Keypair;
     const fragmentIndex = 0;
@@ -1332,14 +1251,7 @@ await program.methods
     const escrow = anchor.web3.Keypair.generate();
     reclaimEscrow = escrow.publicKey;
 
-    await mintTo(
-      provider.connection,
-      payer,
-      sharedMint,
-      sharedWorkerToken,
-      client,
-      40_000_000
-    );
+    await mintTo(provider.connection, payer, sharedMint, sharedWorkerToken, client, 40_000_000);
 
     await program.methods
       .createJob(
@@ -1349,7 +1261,7 @@ await program.methods
         VERIFIER_REWARD_PER_VOTE,
         minimumVerifierRewardBudget(2, 2),
         new anchor.BN(Math.floor(Date.now() / 1000) + 3600),
-        2
+        2,
       )
       .accounts({
         client: client,
@@ -1402,7 +1314,7 @@ await program.methods
       } catch (e: any) {
         const msg = String(e);
 
-        if (!msg.includes("ClaimStillActive")) {
+        if (!msg.includes('ClaimStillActive')) {
           throw e;
         }
 
@@ -1415,14 +1327,10 @@ await program.methods
     const afterReclaim = await program.account.fragment.fetch(reclaimFragment);
 
     assert.deepEqual(afterReclaim.status, { available: {} });
-    assert.equal(
-      afterReclaim.assignedWorker.toBase58(),
-      ZERO_PUBKEY.toBase58()
-    );
+    assert.equal(afterReclaim.assignedWorker.toBase58(), ZERO_PUBKEY.toBase58());
   });
 
-
-  it("initializes worker reputation at 5000", async () => {
+  it('initializes worker reputation at 5000', async () => {
     const worker = anchor.web3.Keypair.generate();
 
     await airdrop(worker.publicKey);
@@ -1439,7 +1347,7 @@ await program.methods
     assert.equal(account.totalRejected, 0);
   });
 
-  it("increases compute worker reputation when a fragment is verified", async () => {
+  it('increases compute worker reputation when a fragment is verified', async () => {
     const computeWorker = await createReadyWorker();
     const verifier1 = await createReadyWorker();
     const verifier2 = await createReadyWorker();
@@ -1457,7 +1365,7 @@ await program.methods
       job,
       0,
       31,
-      32
+      32,
     );
 
     await voteOnFragment(
@@ -1467,7 +1375,7 @@ await program.methods
       fragment,
       escrow,
       computeWorker.workerToken,
-      true
+      true,
     );
 
     const mid = await program.account.worker.fetch(computeWorker.workerAccount);
@@ -1480,7 +1388,7 @@ await program.methods
       fragment,
       escrow,
       computeWorker.workerToken,
-      true
+      true,
     );
 
     const after = await program.account.worker.fetch(computeWorker.workerAccount);
@@ -1489,17 +1397,17 @@ await program.methods
     assert.deepEqual(fragmentAfter.status, { verified: {} });
     assert.isAbove(
       reputationToNumber(after.computeReputation),
-      reputationToNumber(before.computeReputation)
+      reputationToNumber(before.computeReputation),
     );
 
     assert.equal(
       reputationToNumber(after.verifyReputation),
-      reputationToNumber(before.verifyReputation)
+      reputationToNumber(before.verifyReputation),
     );
     assert.equal(after.totalVerified, 1);
   });
 
-  it("decreases compute worker reputation when a fragment is rejected", async () => {
+  it('decreases compute worker reputation when a fragment is rejected', async () => {
     const computeWorker = await createReadyWorker();
     const verifier1 = await createReadyWorker();
     const verifier2 = await createReadyWorker();
@@ -1517,7 +1425,7 @@ await program.methods
       job,
       0,
       41,
-      42
+      42,
     );
 
     await voteOnFragment(
@@ -1527,7 +1435,7 @@ await program.methods
       fragment,
       escrow,
       computeWorker.workerToken,
-      false
+      false,
     );
 
     const mid = await program.account.worker.fetch(computeWorker.workerAccount);
@@ -1540,7 +1448,7 @@ await program.methods
       fragment,
       escrow,
       computeWorker.workerToken,
-      false
+      false,
     );
 
     const after = await program.account.worker.fetch(computeWorker.workerAccount);
@@ -1549,17 +1457,17 @@ await program.methods
     assert.deepEqual(fragmentAfter.status, { rejected: {} });
     assert.isBelow(
       reputationToNumber(after.computeReputation),
-      reputationToNumber(before.computeReputation)
+      reputationToNumber(before.computeReputation),
     );
 
     assert.equal(
       reputationToNumber(after.verifyReputation),
-      reputationToNumber(before.verifyReputation)
+      reputationToNumber(before.verifyReputation),
     );
     assert.equal(after.totalRejected, 1);
   });
 
-  it("increases verifier reputation when claiming a correct vote reward", async () => {
+  it('increases verifier reputation when claiming a correct vote reward', async () => {
     const computeWorker = await createReadyWorker();
     const verifier1 = await createReadyWorker();
     const verifier2 = await createReadyWorker();
@@ -1574,7 +1482,7 @@ await program.methods
       job,
       0,
       51,
-      52
+      52,
     );
 
     const voteResult1 = await voteOnFragment(
@@ -1584,7 +1492,7 @@ await program.methods
       fragment,
       escrow,
       computeWorker.workerToken,
-      true
+      true,
     );
 
     await voteOnFragment(
@@ -1594,7 +1502,7 @@ await program.methods
       fragment,
       escrow,
       computeWorker.workerToken,
-      true
+      true,
     );
 
     const beforeClaim = await program.account.worker.fetch(verifier1.workerAccount);
@@ -1626,17 +1534,17 @@ await program.methods
 
     assert.isAbove(
       reputationToNumber(afterClaim.verifyReputation),
-      reputationToNumber(beforeClaim.verifyReputation)
+      reputationToNumber(beforeClaim.verifyReputation),
     );
 
     assert.equal(
       reputationToNumber(afterClaim.computeReputation),
-      reputationToNumber(beforeClaim.computeReputation)
+      reputationToNumber(beforeClaim.computeReputation),
     );
     assert.equal(afterClaim.totalVerified, 1);
   });
 
-  it("decreases reputation when a worker lets a claimed fragment expire", async () => {
+  it('decreases reputation when a worker lets a claimed fragment expire', async () => {
     const computeWorker = await createReadyWorker();
 
     const jobId = new anchor.BN(103);
@@ -1680,7 +1588,7 @@ await program.methods
       } catch (e: any) {
         const msg = String(e);
 
-        if (!msg.includes("ClaimStillActive")) {
+        if (!msg.includes('ClaimStillActive')) {
           throw e;
         }
 
@@ -1696,28 +1604,28 @@ await program.methods
     assert.deepEqual(fragmentAfter.status, { available: {} });
     assert.isBelow(
       reputationToNumber(after.computeReputation),
-      reputationToNumber(before.computeReputation)
+      reputationToNumber(before.computeReputation),
     );
 
     assert.equal(
       reputationToNumber(after.verifyReputation),
-      reputationToNumber(before.verifyReputation)
+      reputationToNumber(before.verifyReputation),
     );
   });
 
-  it("slashes a wrong vote", async () => {
+  it('slashes a wrong vote', async () => {
     const client = provider.wallet.publicKey;
     const payer = provider.wallet.payer as anchor.web3.Keypair;
     const fragmentIndex = 0;
 
     const [treasuryState] = PublicKey.findProgramAddressSync(
-      [Buffer.from("treasury"), sharedMint.toBuffer()],
-      program.programId
+      [Buffer.from('treasury'), sharedMint.toBuffer()],
+      program.programId,
     );
 
     const [treasuryAuth] = PublicKey.findProgramAddressSync(
-      [Buffer.from("treasury_auth"), sharedMint.toBuffer()],
-      program.programId
+      [Buffer.from('treasury_auth'), sharedMint.toBuffer()],
+      program.programId,
     );
 
     const treasury = anchor.web3.Keypair.generate();
@@ -1741,14 +1649,7 @@ await program.methods
     const escrowAuth = escrowAuthPda(job);
     const escrow = anchor.web3.Keypair.generate();
 
-    await mintTo(
-      provider.connection,
-      payer,
-      sharedMint,
-      sharedWorkerToken,
-      client,
-      40_000_000
-    );
+    await mintTo(provider.connection, payer, sharedMint, sharedWorkerToken, client, 40_000_000);
 
     await program.methods
       .createJob(
@@ -1758,7 +1659,7 @@ await program.methods
         VERIFIER_REWARD_PER_VOTE,
         minimumVerifierRewardBudget(2, 2),
         new anchor.BN(Math.floor(Date.now() / 1000) + 3600),
-        2
+        2,
       )
       .accounts({
         client: client,
@@ -1808,7 +1709,7 @@ await program.methods
     const { stakeAuth, stakeVault } = await stakeRegisteredWorker(
       badVerifier,
       badVerifierWorker,
-      badVerifierToken
+      badVerifierToken,
     );
 
     const fragmentBefore = await program.account.fragment.fetch(fragment);
@@ -1931,26 +1832,16 @@ await program.methods
     const treasuryAfter = await provider.connection.getTokenAccountBalance(treasury.publicKey);
 
     assert.equal(voteAfter.slashed, true);
-    assert.equal(workerAfter.stakeAmount.toString(), "900000");
-    assert.isBelow(
-      reputationToNumber(workerAfter.verifyReputation),
-      5000
-    );
+    assert.equal(workerAfter.stakeAmount.toString(), '900000');
+    assert.isBelow(reputationToNumber(workerAfter.verifyReputation), 5000);
     assert.equal(workerAfter.totalRejected, 1);
 
-    assert.equal(
-      Number(stakeBefore.value.amount) - Number(stakeAfter.value.amount),
-      100000
-    );
+    assert.equal(Number(stakeBefore.value.amount) - Number(stakeAfter.value.amount), 100000);
 
-    assert.equal(
-      Number(treasuryAfter.value.amount) - Number(treasuryBefore.value.amount),
-      100000
-    );
+    assert.equal(Number(treasuryAfter.value.amount) - Number(treasuryBefore.value.amount), 100000);
   });
 
-
-  it("rejects a job with too many fragments", async () => {
+  it('rejects a job with too many fragments', async () => {
     const client = provider.wallet.publicKey;
     const payer = provider.wallet.payer as anchor.web3.Keypair;
 
@@ -1959,47 +1850,36 @@ await program.methods
     const escrowAuth = escrowAuthPda(job);
     const escrow = anchor.web3.Keypair.generate();
 
-    await mintTo(
-      provider.connection,
-      payer,
-      sharedMint,
-      sharedWorkerToken,
-      client,
-      10_000_000
-    );
+    await mintTo(provider.connection, payer, sharedMint, sharedWorkerToken, client, 10_000_000);
 
-    await expectTxToFail(
-      async () => {
-        await program.methods
-          .createJob(
-            jobId,
-            1001,
-            new anchor.BN(1_000_000),
-            VERIFIER_REWARD_PER_VOTE,
-            new anchor.BN(300_000_000),
-            new anchor.BN(Math.floor(Date.now() / 1000) + 3600),
-            2
-          )
-          .accounts({
-            client: client,
-            mint: sharedMint,
-            job: job,
-            escrowAuth: escrowAuth,
-            escrow: escrow.publicKey,
-            clientToken: sharedWorkerToken,
-            tokenProgram: TOKEN_PROGRAM_ID,
-            systemProgram: SystemProgram.programId,
-            rent: SYSVAR_RENT_PUBKEY,
-          })
-          .signers([escrow])
-          .rpc();
-      },
-      "TooManyFragments"
-    );
+    await expectTxToFail(async () => {
+      await program.methods
+        .createJob(
+          jobId,
+          1001,
+          new anchor.BN(1_000_000),
+          VERIFIER_REWARD_PER_VOTE,
+          new anchor.BN(300_000_000),
+          new anchor.BN(Math.floor(Date.now() / 1000) + 3600),
+          2,
+        )
+        .accounts({
+          client: client,
+          mint: sharedMint,
+          job: job,
+          escrowAuth: escrowAuth,
+          escrow: escrow.publicKey,
+          clientToken: sharedWorkerToken,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+          rent: SYSVAR_RENT_PUBKEY,
+        })
+        .signers([escrow])
+        .rpc();
+    }, 'TooManyFragments');
   });
 
-
-    it("rejects a job with an invalid short deadline", async () => {
+  it('rejects a job with an invalid short deadline', async () => {
     const client = provider.wallet.publicKey;
     const payer = provider.wallet.payer as anchor.web3.Keypair;
 
@@ -2008,47 +1888,36 @@ await program.methods
     const escrowAuth = escrowAuthPda(job);
     const escrow = anchor.web3.Keypair.generate();
 
-    await mintTo(
-      provider.connection,
-      payer,
-      sharedMint,
-      sharedWorkerToken,
-      client,
-      10_000_000
-    );
+    await mintTo(provider.connection, payer, sharedMint, sharedWorkerToken, client, 10_000_000);
 
-    await expectTxToFail(
-      async () => {
-        await program.methods
-          .createJob(
-            jobId,
-            1,
-            new anchor.BN(1_000_000),
-            VERIFIER_REWARD_PER_VOTE,
-            VERIFIER_REWARD_BUDGET,
-            new anchor.BN(Math.floor(Date.now() / 1000) + 10),
-            2
-          )
-          .accounts({
-            client: client,
-            mint: sharedMint,
-            job: job,
-            escrowAuth: escrowAuth,
-            escrow: escrow.publicKey,
-            clientToken: sharedWorkerToken,
-            tokenProgram: TOKEN_PROGRAM_ID,
-            systemProgram: SystemProgram.programId,
-            rent: SYSVAR_RENT_PUBKEY,
-          })
-          .signers([escrow])
-          .rpc();
-      },
-      "InvalidDeadline"
-    );
+    await expectTxToFail(async () => {
+      await program.methods
+        .createJob(
+          jobId,
+          1,
+          new anchor.BN(1_000_000),
+          VERIFIER_REWARD_PER_VOTE,
+          VERIFIER_REWARD_BUDGET,
+          new anchor.BN(Math.floor(Date.now() / 1000) + 10),
+          2,
+        )
+        .accounts({
+          client: client,
+          mint: sharedMint,
+          job: job,
+          escrowAuth: escrowAuth,
+          escrow: escrow.publicKey,
+          clientToken: sharedWorkerToken,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+          rent: SYSVAR_RENT_PUBKEY,
+        })
+        .signers([escrow])
+        .rpc();
+    }, 'InvalidDeadline');
   });
-  
-  
-  it("allows an unstaked registered worker to claim a zero-stake bootstrap fragment", async () => {
+
+  it('allows an unstaked registered worker to claim a zero-stake bootstrap fragment', async () => {
     const unstakedWorker = anchor.web3.Keypair.generate();
     await airdrop(unstakedWorker.publicKey);
 
@@ -2079,11 +1948,10 @@ await program.methods
 
     assert.equal(fragmentAccount.assignedWorker.toBase58(), unstakedWorker.publicKey.toBase58());
     assert.deepEqual(fragmentAccount.status, { claimed: {} });
-    assert.equal(workerAccount.stakeAmount.toString(), "0");
+    assert.equal(workerAccount.stakeAmount.toString(), '0');
   });
 
-
-  it("allows an unstaked registered verifier to vote on a bootstrap fragment", async () => {
+  it('allows an unstaked registered verifier to vote on a bootstrap fragment', async () => {
     const computeWorker = await createReadyWorker();
 
     const unstakedVerifier = anchor.web3.Keypair.generate();
@@ -2101,7 +1969,7 @@ await program.methods
       job,
       0,
       61,
-      62
+      62,
     );
 
     const fragmentBefore = await program.account.fragment.fetch(fragment);
@@ -2135,11 +2003,10 @@ await program.methods
 
     assert.equal(voteAccount.verifier.toBase58(), unstakedVerifier.publicKey.toBase58());
     assert.equal(voteAccount.choice, true);
-    assert.equal(verifierAccount.stakeAmount.toString(), "0");
+    assert.equal(verifierAccount.stakeAmount.toString(), '0');
   });
 
-
-  it("rejects vote from the job client", async () => {
+  it('rejects vote from the job client', async () => {
     const computeWorker = await createReadyWorker();
 
     const jobId = new anchor.BN(204);
@@ -2152,7 +2019,7 @@ await program.methods
       job,
       0,
       71,
-      72
+      72,
     );
 
     const client = provider.wallet.publicKey;
@@ -2163,34 +2030,30 @@ await program.methods
     const roundResolution = roundResolutionPda(fragment, fragmentBefore.round);
     const computeWorkerPda = workerPda(fragmentBefore.worker);
 
-    await expectTxToFail(
-      async () => {
-        await program.methods
-          .voteFragment(true)
-          .accounts({
-            verifier: client,
-            job: job,
-            fragment: fragment,
-            verifierWorker: clientWorker,
-            computeWorker: computeWorkerPda,
-            vote: vote,
-            roundResolution: roundResolution,
-            escrowAuth: escrowAuthPda(job),
-            escrow: escrow,
-            workerToken: computeWorker.workerToken,
-            workerPayout: workerPayoutPda(computeWorkerPda),
-            workerPayoutToken: computeWorker.workerToken,
-            tokenProgram: TOKEN_PROGRAM_ID,
-            systemProgram: SystemProgram.programId,
-          })
-          .rpc();
-      },
-      "ClientCannotVerifyOwnJob"
-    );
+    await expectTxToFail(async () => {
+      await program.methods
+        .voteFragment(true)
+        .accounts({
+          verifier: client,
+          job: job,
+          fragment: fragment,
+          verifierWorker: clientWorker,
+          computeWorker: computeWorkerPda,
+          vote: vote,
+          roundResolution: roundResolution,
+          escrowAuth: escrowAuthPda(job),
+          escrow: escrow,
+          workerToken: computeWorker.workerToken,
+          workerPayout: workerPayoutPda(computeWorkerPda),
+          workerPayoutToken: computeWorker.workerToken,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+    }, 'ClientCannotVerifyOwnJob');
   });
 
-
-  it("rejects self vote from the compute worker", async () => {
+  it('rejects self vote from the compute worker', async () => {
     const computeWorker = await createReadyWorker();
 
     const jobId = new anchor.BN(205);
@@ -2203,52 +2066,48 @@ await program.methods
       job,
       0,
       81,
-      82
+      82,
     );
 
     const fragmentBefore = await program.account.fragment.fetch(fragment);
     const vote = votePda(fragment, computeWorker.keypair.publicKey, fragmentBefore.round);
     const roundResolution = roundResolutionPda(fragment, fragmentBefore.round);
 
-    await expectTxToFail(
-      async () => {
-        await program.methods
-          .voteFragment(true)
-          .accounts({
-            verifier: computeWorker.keypair.publicKey,
-            job: job,
-            fragment: fragment,
-            verifierWorker: computeWorker.workerAccount,
-            computeWorker: computeWorker.workerAccount,
-            vote: vote,
-            roundResolution: roundResolution,
-            escrowAuth: escrowAuthPda(job),
-            escrow: escrow,
-            workerToken: computeWorker.workerToken,
-            workerPayout: workerPayoutPda(computeWorker.workerAccount),
-            workerPayoutToken: computeWorker.workerToken,
-            tokenProgram: TOKEN_PROGRAM_ID,
-            systemProgram: SystemProgram.programId,
-          })
-          .signers([computeWorker.keypair])
-          .rpc();
-      },
-      "SelfVoteForbidden"
-    );
+    await expectTxToFail(async () => {
+      await program.methods
+        .voteFragment(true)
+        .accounts({
+          verifier: computeWorker.keypair.publicKey,
+          job: job,
+          fragment: fragment,
+          verifierWorker: computeWorker.workerAccount,
+          computeWorker: computeWorker.workerAccount,
+          vote: vote,
+          roundResolution: roundResolution,
+          escrowAuth: escrowAuthPda(job),
+          escrow: escrow,
+          workerToken: computeWorker.workerToken,
+          workerPayout: workerPayoutPda(computeWorker.workerAccount),
+          workerPayoutToken: computeWorker.workerToken,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([computeWorker.keypair])
+        .rpc();
+    }, 'SelfVoteForbidden');
   });
 
-
-  it("rejects double slashing the same wrong vote", async () => {
+  it('rejects double slashing the same wrong vote', async () => {
     const client = provider.wallet.publicKey;
 
     const [treasuryState] = PublicKey.findProgramAddressSync(
-      [Buffer.from("treasury"), sharedMint.toBuffer()],
-      program.programId
+      [Buffer.from('treasury'), sharedMint.toBuffer()],
+      program.programId,
     );
 
     const [treasuryAuth] = PublicKey.findProgramAddressSync(
-      [Buffer.from("treasury_auth"), sharedMint.toBuffer()],
-      program.programId
+      [Buffer.from('treasury_auth'), sharedMint.toBuffer()],
+      program.programId,
     );
 
     let treasuryAccount: PublicKey;
@@ -2291,7 +2150,7 @@ await program.methods
       job,
       0,
       101,
-      102
+      102,
     );
 
     const badVoteResult = await voteOnFragment(
@@ -2301,7 +2160,7 @@ await program.methods
       fragment,
       escrow,
       computeWorker.workerToken,
-      false
+      false,
     );
 
     await voteOnFragment(
@@ -2311,7 +2170,7 @@ await program.methods
       fragment,
       escrow,
       computeWorker.workerToken,
-      true
+      true,
     );
 
     await voteOnFragment(
@@ -2321,7 +2180,7 @@ await program.methods
       fragment,
       escrow,
       computeWorker.workerToken,
-      true
+      true,
     );
 
     const fragmentResolved = await program.account.fragment.fetch(fragment);
@@ -2345,32 +2204,28 @@ await program.methods
       })
       .rpc();
 
-    await expectTxToFail(
-      async () => {
-        await program.methods
-          .slashVote()
-          .accounts({
-            slasher: client,
-            job: job,
-            fragment: fragment,
-            roundResolution: slashRoundResolution,
-            vote: badVoteResult.vote,
-            verifierWorker: badVerifier.workerAccount,
-            treasuryState: treasuryState,
-            stakeAuth: badVerifier.stakeAuth,
-            stakeVault: badVerifier.stakeVault,
-            treasuryAuth: treasuryAuth,
-            treasury: treasuryAccount,
-            tokenProgram: TOKEN_PROGRAM_ID,
-          })
-          .rpc();
-      },
-      "VoteAlreadySlashed"
-    );
+    await expectTxToFail(async () => {
+      await program.methods
+        .slashVote()
+        .accounts({
+          slasher: client,
+          job: job,
+          fragment: fragment,
+          roundResolution: slashRoundResolution,
+          vote: badVoteResult.vote,
+          verifierWorker: badVerifier.workerAccount,
+          treasuryState: treasuryState,
+          stakeAuth: badVerifier.stakeAuth,
+          stakeVault: badVerifier.stakeVault,
+          treasuryAuth: treasuryAuth,
+          treasury: treasuryAccount,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .rpc();
+    }, 'VoteAlreadySlashed');
   });
 
-
-    it("initializes a network staking pool", async () => {
+  it('initializes a network staking pool', async () => {
     const payer = provider.wallet.publicKey;
 
     stakingPool = stakingPoolPda(sharedMint);
@@ -2404,11 +2259,11 @@ await program.methods
     assert.equal(poolAccount.authority.toBase58(), stakingPoolAuth.toBase58());
     assert.equal(poolAccount.stakeVault.toBase58(), stakingStakeVault.toBase58());
     assert.equal(poolAccount.rewardVault.toBase58(), stakingRewardVault.toBase58());
-    assert.equal(poolAccount.totalStaked.toString(), "0");
-    assert.equal(poolAccount.accRewardPerShare.toString(), "0");
+    assert.equal(poolAccount.totalStaked.toString(), '0');
+    assert.equal(poolAccount.accRewardPerShare.toString(), '0');
   });
 
-  it("allows a passive user to stake on the network", async () => {
+  it('allows a passive user to stake on the network', async () => {
     const staker = anchor.web3.Keypair.generate();
     await airdrop(staker.publicKey);
 
@@ -2434,25 +2289,19 @@ await program.methods
     const stakerAccountData = await program.account.networkStaker.fetch(stakerAccount);
     const vaultBalance = await provider.connection.getTokenAccountBalance(stakingStakeVault);
 
-    assert.equal(poolAccount.totalStaked.toString(), "2000000");
+    assert.equal(poolAccount.totalStaked.toString(), '2000000');
     assert.equal(stakerAccountData.owner.toBase58(), staker.publicKey.toBase58());
     assert.equal(stakerAccountData.mint.toBase58(), sharedMint.toBase58());
-    assert.equal(stakerAccountData.stakeAmount.toString(), "2000000");
-    assert.equal(stakerAccountData.pendingRewards.toString(), "0");
+    assert.equal(stakerAccountData.stakeAmount.toString(), '2000000');
+    assert.equal(stakerAccountData.pendingRewards.toString(), '0');
     assert.equal(Number(vaultBalance.value.amount), 2_000_000);
   });
 
-  it("rejects funding staking rewards when there are no stakers", async () => {
+  it('rejects funding staking rewards when there are no stakers', async () => {
     const client = provider.wallet.publicKey;
     const payer = provider.wallet.payer as anchor.web3.Keypair;
 
-    const isolatedMint = await createMint(
-      provider.connection,
-      payer,
-      client,
-      null,
-      6
-    );
+    const isolatedMint = await createMint(provider.connection, payer, client, null, 6);
 
     const isolatedPool = stakingPoolPda(isolatedMint);
     const isolatedPoolAuth = stakingPoolAuthPda(isolatedMint);
@@ -2464,17 +2313,10 @@ await program.methods
       provider.connection,
       payer,
       isolatedMint,
-      client
+      client,
     );
 
-    await mintTo(
-      provider.connection,
-      payer,
-      isolatedMint,
-      funderToken,
-      client,
-      10_000_000
-    );
+    await mintTo(provider.connection, payer, isolatedMint, funderToken, client, 10_000_000);
 
     await program.methods
       .initStakingPool()
@@ -2492,25 +2334,22 @@ await program.methods
       .signers([isolatedStakeVault, isolatedRewardVault])
       .rpc();
 
-    await expectTxToFail(
-      async () => {
-        await program.methods
-          .fundStakingRewards(new anchor.BN(1_000_000))
-          .accounts({
-            funder: client,
-            mint: isolatedMint,
-            pool: isolatedPool,
-            funderToken: funderToken,
-            rewardVault: isolatedRewardVault.publicKey,
-            tokenProgram: TOKEN_PROGRAM_ID,
-          })
-          .rpc();
-      },
-      "NoStakers"
-    );
+    await expectTxToFail(async () => {
+      await program.methods
+        .fundStakingRewards(new anchor.BN(1_000_000))
+        .accounts({
+          funder: client,
+          mint: isolatedMint,
+          pool: isolatedPool,
+          funderToken: funderToken,
+          rewardVault: isolatedRewardVault.publicKey,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .rpc();
+    }, 'NoStakers');
   });
 
-  it("funds staking rewards and lets a staker claim them", async () => {
+  it('funds staking rewards and lets a staker claim them', async () => {
     const staker = anchor.web3.Keypair.generate();
     await airdrop(staker.publicKey);
 
@@ -2535,14 +2374,7 @@ await program.methods
     const funder = provider.wallet.publicKey;
     const payer = provider.wallet.payer as anchor.web3.Keypair;
 
-    await mintTo(
-      provider.connection,
-      payer,
-      sharedMint,
-      sharedWorkerToken,
-      funder,
-      1_000_000
-    );
+    await mintTo(provider.connection, payer, sharedMint, sharedWorkerToken, funder, 1_000_000);
 
     await program.methods
       .fundStakingRewards(new anchor.BN(1_000_000))
@@ -2580,10 +2412,10 @@ await program.methods
     const after = Number(afterClaim.value.amount);
 
     assert.isAbove(after - before, 0);
-    assert.equal(stakerAfter.pendingRewards.toString(), "0");
+    assert.equal(stakerAfter.pendingRewards.toString(), '0');
   });
 
-  it("rejects claiming staking rewards when there are no rewards", async () => {
+  it('rejects claiming staking rewards when there are no rewards', async () => {
     const staker = anchor.web3.Keypair.generate();
     await airdrop(staker.publicKey);
 
@@ -2605,28 +2437,25 @@ await program.methods
       .signers([staker])
       .rpc();
 
-    await expectTxToFail(
-      async () => {
-        await program.methods
-          .claimStakingReward()
-          .accounts({
-            owner: staker.publicKey,
-            mint: sharedMint,
-            pool: stakingPool,
-            poolAuth: stakingPoolAuth,
-            staker: stakerAccount,
-            rewardVault: stakingRewardVault,
-            ownerRewardToken: stakerToken,
-            tokenProgram: TOKEN_PROGRAM_ID,
-          })
-          .signers([staker])
-          .rpc();
-      },
-      "NoStakingRewards"
-    );
+    await expectTxToFail(async () => {
+      await program.methods
+        .claimStakingReward()
+        .accounts({
+          owner: staker.publicKey,
+          mint: sharedMint,
+          pool: stakingPool,
+          poolAuth: stakingPoolAuth,
+          staker: stakerAccount,
+          rewardVault: stakingRewardVault,
+          ownerRewardToken: stakerToken,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .signers([staker])
+        .rpc();
+    }, 'NoStakingRewards');
   });
 
-  it("requests unstake and rejects withdraw before cooldown", async () => {
+  it('requests unstake and rejects withdraw before cooldown', async () => {
     const staker = anchor.web3.Keypair.generate();
     await airdrop(staker.publicKey);
 
@@ -2661,32 +2490,29 @@ await program.methods
 
     const stakerAfterRequest = await program.account.networkStaker.fetch(stakerAccount);
 
-    assert.equal(stakerAfterRequest.stakeAmount.toString(), "1000000");
-    assert.equal(stakerAfterRequest.unstakeRequestedAmount.toString(), "1000000");
+    assert.equal(stakerAfterRequest.stakeAmount.toString(), '1000000');
+    assert.equal(stakerAfterRequest.unstakeRequestedAmount.toString(), '1000000');
     assert.isAbove(Number(stakerAfterRequest.unstakeAvailableAt.toString()), 0);
 
-    await expectTxToFail(
-      async () => {
-        await program.methods
-          .withdrawUnstaked()
-          .accounts({
-            owner: staker.publicKey,
-            mint: sharedMint,
-            pool: stakingPool,
-            poolAuth: stakingPoolAuth,
-            staker: stakerAccount,
-            stakeVault: stakingStakeVault,
-            ownerToken: stakerToken,
-            tokenProgram: TOKEN_PROGRAM_ID,
-          })
-          .signers([staker])
-          .rpc();
-      },
-      "UnstakeCooldownActive"
-    );
+    await expectTxToFail(async () => {
+      await program.methods
+        .withdrawUnstaked()
+        .accounts({
+          owner: staker.publicKey,
+          mint: sharedMint,
+          pool: stakingPool,
+          poolAuth: stakingPoolAuth,
+          staker: stakerAccount,
+          stakeVault: stakingStakeVault,
+          ownerToken: stakerToken,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .signers([staker])
+        .rpc();
+    }, 'UnstakeCooldownActive');
   });
 
-  it("withdraws unstaked tokens after cooldown", async () => {
+  it('withdraws unstaked tokens after cooldown', async () => {
     const staker = anchor.web3.Keypair.generate();
     await airdrop(staker.publicKey);
 
@@ -2745,7 +2571,7 @@ await program.methods
       } catch (e: any) {
         const msg = String(e);
 
-        if (!msg.includes("UnstakeCooldownActive")) {
+        if (!msg.includes('UnstakeCooldownActive')) {
           throw e;
         }
 
@@ -2763,11 +2589,11 @@ await program.methods
 
     assert.equal(after - before, 1_000_000);
 
-    assert.equal(stakerAfter.unstakeRequestedAmount.toString(), "0");
-    assert.equal(stakerAfter.unstakeAvailableAt.toString(), "0");
+    assert.equal(stakerAfter.unstakeRequestedAmount.toString(), '0');
+    assert.equal(stakerAfter.unstakeAvailableAt.toString(), '0');
   });
 
-  it("rejects withdrawing when there is nothing to withdraw", async () => {
+  it('rejects withdrawing when there is nothing to withdraw', async () => {
     const staker = anchor.web3.Keypair.generate();
     await airdrop(staker.publicKey);
 
@@ -2789,24 +2615,21 @@ await program.methods
       .signers([staker])
       .rpc();
 
-    await expectTxToFail(
-      async () => {
-        await program.methods
-          .withdrawUnstaked()
-          .accounts({
-            owner: staker.publicKey,
-            mint: sharedMint,
-            pool: stakingPool,
-            poolAuth: stakingPoolAuth,
-            staker: stakerAccount,
-            stakeVault: stakingStakeVault,
-            ownerToken: stakerToken,
-            tokenProgram: TOKEN_PROGRAM_ID,
-          })
-          .signers([staker])
-          .rpc();
-      },
-      "NothingToWithdraw"
-    );
+    await expectTxToFail(async () => {
+      await program.methods
+        .withdrawUnstaked()
+        .accounts({
+          owner: staker.publicKey,
+          mint: sharedMint,
+          pool: stakingPool,
+          poolAuth: stakingPoolAuth,
+          staker: stakerAccount,
+          stakeVault: stakingStakeVault,
+          ownerToken: stakerToken,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .signers([staker])
+        .rpc();
+    }, 'NothingToWithdraw');
   });
 });

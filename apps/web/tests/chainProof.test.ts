@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { ChainTask } from '../types/api';
-import { canonicalTaskJson, checkTask, checkTrace, explorerTransactionUrl, leafHash, parseMemo, verifyProof } from '../utils/chainProof';
+import {
+  canonicalTaskJson,
+  checkTask,
+  checkTrace,
+  explorerTransactionUrl,
+  leafHash,
+  parseMemo,
+  verifyProof,
+} from '../utils/chainProof';
 import { awaitingChainAnchor } from '../utils/jobs';
 // Written by the Go BackEnd (internal/chainproof.BuildTrace): the browser
 // must recompute exactly the same leaves and root.
@@ -30,22 +38,43 @@ describe('blockchain trace checks', () => {
   });
 
   it('reads the anchored memo', () => {
-    expect(parseMemo(fixture.memo)).toEqual({ schema: 'silicium.job-proof.v1', job: fixture.job, tasks: 3, root, final: 'ffee' });
+    expect(parseMemo(fixture.memo)).toEqual({
+      schema: 'silicium.job-proof.v1',
+      job: fixture.job,
+      tasks: 3,
+      root,
+      final: 'ffee',
+    });
     expect(parseMemo('hello')).toBeNull();
     expect(parseMemo('silicium.job-proof.v1 root=short')).toBeNull();
   });
 
   it('compares the trace with the transaction on chain', async () => {
     const trace = { tasks, root, finalSha256: fixture.final_sha256 };
-    expect(await checkTrace(trace, async () => fixture.memo)).toEqual({ chain: 'match', tasks: Object.fromEntries(tasks.map((task) => [task.task_id, true])) });
-    expect((await checkTrace(trace, async () => fixture.memo.replace('final=ffee', 'final=0000'))).chain).toBe('mismatch');
+    expect(await checkTrace(trace, async () => fixture.memo)).toEqual({
+      chain: 'match',
+      tasks: Object.fromEntries(tasks.map((task) => [task.task_id, true])),
+    });
+    expect(
+      (await checkTrace(trace, async () => fixture.memo.replace('final=ffee', 'final=0000'))).chain,
+    ).toBe('mismatch');
     expect((await checkTrace(trace, async () => null)).chain).toBe('unreachable');
-    expect((await checkTrace(trace, async () => { throw new Error('rpc down'); })).chain).toBe('unreachable');
+    expect(
+      (
+        await checkTrace(trace, async () => {
+          throw new Error('rpc down');
+        })
+      ).chain,
+    ).toBe('unreachable');
   });
 
   it('links the explorer of the right cluster', () => {
-    expect(explorerTransactionUrl('sig', 'devnet')).toBe('https://explorer.solana.com/tx/sig?cluster=devnet');
-    expect(explorerTransactionUrl('sig', 'mainnet-beta')).toBe('https://explorer.solana.com/tx/sig');
+    expect(explorerTransactionUrl('sig', 'devnet')).toBe(
+      'https://explorer.solana.com/tx/sig?cluster=devnet',
+    );
+    expect(explorerTransactionUrl('sig', 'mainnet-beta')).toBe(
+      'https://explorer.solana.com/tx/sig',
+    );
   });
 
   it('waits a few minutes at most for the anchor of a completed job', () => {
@@ -55,6 +84,11 @@ describe('blockchain trace checks', () => {
     expect(awaitingChainAnchor({ job, devnet: { status: 'pending' } }, at(1))).toBe(true);
     expect(awaitingChainAnchor({ job, devnet: { status: 'pending' } }, at(6))).toBe(false);
     expect(awaitingChainAnchor({ job, devnet: { status: 'anchored' } }, at(1))).toBe(false);
-    expect(awaitingChainAnchor({ job: { ...job, status: 'running' }, devnet: { status: 'pending' } }, at(1))).toBe(false);
+    expect(
+      awaitingChainAnchor(
+        { job: { ...job, status: 'running' }, devnet: { status: 'pending' } },
+        at(1),
+      ),
+    ).toBe(false);
   });
 });

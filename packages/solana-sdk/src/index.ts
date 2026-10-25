@@ -1,4 +1,4 @@
-import * as anchor from "@coral-xyz/anchor";
+import * as anchor from '@coral-xyz/anchor';
 import {
   Connection,
   Ed25519Program,
@@ -7,11 +7,11 @@ import {
   SYSVAR_INSTRUCTIONS_PUBKEY,
   SYSVAR_RENT_PUBKEY,
   TransactionSignature,
-} from "@solana/web3.js";
-import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import { Buffer } from "buffer";
+} from '@solana/web3.js';
+import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { Buffer } from 'buffer';
 
-import { SiliciumEventClient } from "./events";
+import { SiliciumEventClient } from './events';
 import {
   escrowAuthPda,
   fragmentPda,
@@ -31,7 +31,7 @@ import {
   votePda,
   workerPda,
   workerPayoutPda,
-} from "./pdas";
+} from './pdas';
 import type {
   CancelJobParams,
   ClaimFragmentParams,
@@ -59,21 +59,25 @@ import type {
   SubmitFragmentResultParams,
   VoteFragmentParams,
   WithdrawUnstakedParams,
-} from "./types";
+} from './types';
 
-export * from "./pdas";
-export * from "./events";
-export * from "./types";
+export * from './pdas';
+export * from './events';
+export * from './types';
 
 // Must match declare_id! in programs/solana-layer/src/lib.rs
-export type SolanaLayerCluster = "devnet" | "localnet";
+export type SolanaLayerCluster = 'devnet' | 'localnet';
 
-export const SOLANA_LAYER_DEVNET_PROGRAM_ID = new PublicKey("64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG");
-export const SOLANA_LAYER_LOCALNET_PROGRAM_ID = new PublicKey("64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG");
+export const SOLANA_LAYER_DEVNET_PROGRAM_ID = new PublicKey(
+  '64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG',
+);
+export const SOLANA_LAYER_LOCALNET_PROGRAM_ID = new PublicKey(
+  '64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG',
+);
 export const SOLANA_LAYER_PROGRAM_ID = SOLANA_LAYER_DEVNET_PROGRAM_ID;
 
-export const SOLANA_LAYER_DEVNET_RPC_URL = "https://api.devnet.solana.com";
-export const SOLANA_LAYER_LOCALNET_RPC_URL = "http://127.0.0.1:8899";
+export const SOLANA_LAYER_DEVNET_RPC_URL = 'https://api.devnet.solana.com';
+export const SOLANA_LAYER_LOCALNET_RPC_URL = 'http://127.0.0.1:8899';
 
 /** Devnet SIL mint denomination: one SIL is 10^6 SPL base units. */
 export const SIL_DECIMALS = 6;
@@ -84,9 +88,11 @@ const MAX_DEVNET_LEAF_MULTIPLIER = 16;
 
 export function maxDevnetSilLeaves(initialFragments: number): number {
   if (!Number.isSafeInteger(initialFragments) || initialFragments < 1 || initialFragments > 256) {
-    throw new Error("initialFragments must be an integer from 1 through 256");
+    throw new Error('initialFragments must be an integer from 1 through 256');
   }
-  const childSlotsPerRoot = Math.floor((MAX_DEVNET_FRAGMENT_NODES - initialFragments) / initialFragments);
+  const childSlotsPerRoot = Math.floor(
+    (MAX_DEVNET_FRAGMENT_NODES - initialFragments) / initialFragments,
+  );
   const leavesPerRoot = 1 + Math.floor(childSlotsPerRoot / 2);
   return Math.min(
     MAX_DEVNET_FRAGMENT_NODES,
@@ -97,8 +103,12 @@ export function maxDevnetSilLeaves(initialFragments: number): number {
 
 /** The selected test quote reserves the full adaptive tree, then refunds unused escrow. */
 export function quoteDevnetSilFragments(expectedFragments: number) {
-  if (!Number.isSafeInteger(expectedFragments) || expectedFragments < 1 || expectedFragments > 256) {
-    throw new Error("expectedFragments must be an integer from 1 through 256");
+  if (
+    !Number.isSafeInteger(expectedFragments) ||
+    expectedFragments < 1 ||
+    expectedFragments > 256
+  ) {
+    throw new Error('expectedFragments must be an integer from 1 through 256');
   }
   const maxFragments = maxDevnetSilLeaves(expectedFragments);
   const count = BigInt(maxFragments);
@@ -113,19 +123,23 @@ export function quoteDevnetSilFragments(expectedFragments: number) {
     maxFragments,
     maxFragmentNodes: MAX_DEVNET_FRAGMENT_NODES,
     fragmentQuorum: DEVNET_FRAGMENT_QUORUM,
-    totalEscrow: count * (rewardPerFragment + BigInt(DEVNET_FRAGMENT_QUORUM) * verifierRewardPerVote),
+    totalEscrow:
+      count * (rewardPerFragment + BigInt(DEVNET_FRAGMENT_QUORUM) * verifierRewardPerVote),
   };
 }
 
-export function getSolanaLayerProgramId(cluster: SolanaLayerCluster = "devnet"): PublicKey {
-  return cluster === "localnet" ? SOLANA_LAYER_LOCALNET_PROGRAM_ID : SOLANA_LAYER_DEVNET_PROGRAM_ID;
+export function getSolanaLayerProgramId(cluster: SolanaLayerCluster = 'devnet'): PublicKey {
+  return cluster === 'localnet' ? SOLANA_LAYER_LOCALNET_PROGRAM_ID : SOLANA_LAYER_DEVNET_PROGRAM_ID;
 }
 
-export function getSolanaLayerRpcUrl(cluster: SolanaLayerCluster = "devnet"): string {
-  return cluster === "localnet" ? SOLANA_LAYER_LOCALNET_RPC_URL : SOLANA_LAYER_DEVNET_RPC_URL;
+export function getSolanaLayerRpcUrl(cluster: SolanaLayerCluster = 'devnet'): string {
+  return cluster === 'localnet' ? SOLANA_LAYER_LOCALNET_RPC_URL : SOLANA_LAYER_DEVNET_RPC_URL;
 }
 
-export function createSolanaLayerConnection(cluster: SolanaLayerCluster = "devnet", commitment: anchor.web3.Commitment = "confirmed"): Connection {
+export function createSolanaLayerConnection(
+  cluster: SolanaLayerCluster = 'devnet',
+  commitment: anchor.web3.Commitment = 'confirmed',
+): Connection {
   return new Connection(getSolanaLayerRpcUrl(cluster), commitment);
 }
 
@@ -138,7 +152,7 @@ function asHash32(value: Hash32): number[] {
 }
 
 function asBytes(value: string | Uint8Array | Buffer): Buffer {
-  return typeof value === "string" ? Buffer.from(value) : Buffer.from(value);
+  return typeof value === 'string' ? Buffer.from(value) : Buffer.from(value);
 }
 
 function appendSigners<T extends { signers(signers: any[]): T }>(builder: T, signers?: any[]): T {
@@ -175,23 +189,29 @@ export class SiliciumLayerSdk {
   }
 
   pdas = {
-    job: (client: PublicKey, jobId: anchor.BN | number | bigint | string) => jobPda(this.programId, client, jobId),
+    job: (client: PublicKey, jobId: anchor.BN | number | bigint | string) =>
+      jobPda(this.programId, client, jobId),
     jobStorage: (job: PublicKey) => jobStoragePda(this.programId, job),
-    fragment: (job: PublicKey, fragmentIndex: number) => fragmentPda(this.programId, job, fragmentIndex),
+    fragment: (job: PublicKey, fragmentIndex: number) =>
+      fragmentPda(this.programId, job, fragmentIndex),
     worker: (worker: PublicKey) => workerPda(this.programId, worker),
     workerPayout: (workerAccount: PublicKey) => workerPayoutPda(this.programId, workerAccount),
     escrowAuth: (job: PublicKey) => escrowAuthPda(this.programId, job),
     stakeAuth: (workerAccount: PublicKey) => stakeAuthPda(this.programId, workerAccount),
     stakeVault: (worker: PublicKey) => stakeVaultPda(this.programId, worker),
-    vote: (fragment: PublicKey, verifier: PublicKey, round: number) => votePda(this.programId, fragment, verifier, round),
-    roundResolution: (fragment: PublicKey, round: number) => roundResolutionPda(this.programId, fragment, round),
-    splitProposal: (parentFragment: PublicKey, round: number) => splitProposalPda(this.programId, parentFragment, round),
+    vote: (fragment: PublicKey, verifier: PublicKey, round: number) =>
+      votePda(this.programId, fragment, verifier, round),
+    roundResolution: (fragment: PublicKey, round: number) =>
+      roundResolutionPda(this.programId, fragment, round),
+    splitProposal: (parentFragment: PublicKey, round: number) =>
+      splitProposalPda(this.programId, parentFragment, round),
     result: (job: PublicKey) => resultPda(this.programId, job),
     treasuryState: (mint: PublicKey) => treasuryStatePda(this.programId, mint),
     treasuryAuth: (mint: PublicKey) => treasuryAuthPda(this.programId, mint),
     stakingPool: (mint: PublicKey) => stakingPoolPda(this.programId, mint),
     stakingPoolAuth: (mint: PublicKey) => stakingPoolAuthPda(this.programId, mint),
-    networkStaker: (owner: PublicKey, mint: PublicKey) => networkStakerPda(this.programId, owner, mint),
+    networkStaker: (owner: PublicKey, mint: PublicKey) =>
+      networkStakerPda(this.programId, owner, mint),
   };
 
   async registerWorker(params: RegisterWorkerParams = {}): Promise<TransactionSignature> {
@@ -199,14 +219,12 @@ export class SiliciumLayerSdk {
     const workerAccount = this.pdas.worker(worker);
     const workerPayout = this.pdas.workerPayout(workerAccount);
 
-    let builder = this.methods
-      .registerWorker()
-      .accounts({
-        worker,
-        workerAccount,
-        workerPayout,
-        systemProgram: SystemProgram.programId,
-      });
+    let builder = this.methods.registerWorker().accounts({
+      worker,
+      workerAccount,
+      workerPayout,
+      systemProgram: SystemProgram.programId,
+    });
 
     builder = appendSigners(builder, params.signers);
     return builder.rpc();
@@ -216,15 +234,18 @@ export class SiliciumLayerSdk {
     const payoutWallet = params.payoutWallet ?? this.walletPubkey();
     const workerAccount = this.pdas.worker(params.worker);
     if (!payoutWallet.equals(this.walletPubkey())) {
-      throw new Error("The connected wallet must be the payout wallet signer.");
+      throw new Error('The connected wallet must be the payout wallet signer.');
     }
     const selfPayout = payoutWallet.equals(params.worker);
     const proofSignature = params.workerProofSignature;
-    if (!selfPayout && (!proofSignature || !params.pairingCode || !params.nodeId || !params.peerId)) {
-      throw new Error("A linked worker requires its signed account-pairing proof.");
+    if (
+      !selfPayout &&
+      (!proofSignature || !params.pairingCode || !params.nodeId || !params.peerId)
+    ) {
+      throw new Error('A linked worker requires its signed account-pairing proof.');
     }
     const register = await this.methods
-      .registerWorkerPayout(params.pairingCode ?? "", params.nodeId ?? "", params.peerId ?? "")
+      .registerWorkerPayout(params.pairingCode ?? '', params.nodeId ?? '', params.peerId ?? '')
       .accounts({
         payoutWallet,
         worker: params.worker,
@@ -240,11 +261,13 @@ export class SiliciumLayerSdk {
       const message = new TextEncoder().encode(
         `silicium-device-payout-v1\n${params.pairingCode}\n${params.nodeId}\n${params.peerId}\n${params.worker.toBase58()}\n${payoutWallet.toBase58()}`,
       );
-      transaction.add(Ed25519Program.createInstructionWithPublicKey({
-        publicKey: Buffer.from(params.worker.toBytes()),
-        message: Buffer.from(message),
-        signature: Buffer.from(proofSignature),
-      }));
+      transaction.add(
+        Ed25519Program.createInstructionWithPublicKey({
+          publicKey: Buffer.from(params.worker.toBytes()),
+          message: Buffer.from(message),
+          signature: Buffer.from(proofSignature),
+        }),
+      );
     }
     transaction.add(register);
     return this.provider.sendAndConfirm(transaction, []);
@@ -256,25 +279,25 @@ export class SiliciumLayerSdk {
     const stakeAuth = this.pdas.stakeAuth(workerAccount);
     const stakeVault = this.pdas.stakeVault(worker);
 
-    let builder = this.methods
-      .stakeWorker(toBn(params.amount))
-      .accounts({
-        worker,
-        workerAccount,
-        mint: params.mint,
-        workerToken: params.workerToken,
-        stakeAuth,
-        stakeVault,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        systemProgram: SystemProgram.programId,
-        rent: SYSVAR_RENT_PUBKEY,
-      });
+    let builder = this.methods.stakeWorker(toBn(params.amount)).accounts({
+      worker,
+      workerAccount,
+      mint: params.mint,
+      workerToken: params.workerToken,
+      stakeAuth,
+      stakeVault,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+      rent: SYSVAR_RENT_PUBKEY,
+    });
 
     builder = appendSigners(builder, params.signers);
     return builder.rpc();
   }
 
-  async createJob(params: CreateJobParams): Promise<{ signature: TransactionSignature; job: PublicKey; escrowAuth: PublicKey }> {
+  async createJob(
+    params: CreateJobParams,
+  ): Promise<{ signature: TransactionSignature; job: PublicKey; escrowAuth: PublicKey }> {
     const client = params.client ?? this.walletPubkey();
     const job = this.pdas.job(client, params.jobId);
     const escrowAuth = this.pdas.escrowAuth(job);
@@ -306,8 +329,9 @@ export class SiliciumLayerSdk {
     return { signature, job, escrowAuth };
   }
 
-
-  async declareJobStorage(params: DeclareJobStorageParams): Promise<{ signature: TransactionSignature; jobStorage: PublicKey }> {
+  async declareJobStorage(
+    params: DeclareJobStorageParams,
+  ): Promise<{ signature: TransactionSignature; jobStorage: PublicKey }> {
     const client = params.client ?? this.walletPubkey();
     const jobStorage = this.pdas.jobStorage(params.job);
     const encryptionRefHash = params.encryptionRefHash ?? new Uint8Array(32);
@@ -331,28 +355,30 @@ export class SiliciumLayerSdk {
     return { signature, jobStorage };
   }
 
-  async claimFragment(params: ClaimFragmentParams): Promise<{ signature: TransactionSignature; fragment: PublicKey }> {
+  async claimFragment(
+    params: ClaimFragmentParams,
+  ): Promise<{ signature: TransactionSignature; fragment: PublicKey }> {
     const worker = params.worker ?? this.walletPubkey();
     const workerAccount = this.pdas.worker(worker);
     const fragment = this.pdas.fragment(params.job, params.fragmentIndex);
 
-    let builder = this.methods
-      .claimFragment(params.fragmentIndex)
-      .accounts({
-        worker,
-        workerAccount,
-        job: params.job,
-        fragment,
-        workerToken: params.workerToken,
-        systemProgram: SystemProgram.programId,
-      });
+    let builder = this.methods.claimFragment(params.fragmentIndex).accounts({
+      worker,
+      workerAccount,
+      job: params.job,
+      fragment,
+      workerToken: params.workerToken,
+      systemProgram: SystemProgram.programId,
+    });
 
     builder = appendSigners(builder, params.signers);
     const signature = await builder.rpc();
     return { signature, fragment };
   }
 
-  async reclaimFragment(params: ReclaimFragmentParams): Promise<{ signature: TransactionSignature; fragment: PublicKey }> {
+  async reclaimFragment(
+    params: ReclaimFragmentParams,
+  ): Promise<{ signature: TransactionSignature; fragment: PublicKey }> {
     const caller = params.caller ?? this.walletPubkey();
     const fragment = this.pdas.fragment(params.job, params.fragmentIndex);
 
@@ -371,7 +397,8 @@ export class SiliciumLayerSdk {
     parentFragmentIndex: number;
     round?: number;
   }): Promise<{ parentFragment: PublicKey; round: number }> {
-    const parentFragment = params.parentFragment ?? this.pdas.fragment(params.job, params.parentFragmentIndex);
+    const parentFragment =
+      params.parentFragment ?? this.pdas.fragment(params.job, params.parentFragmentIndex);
 
     if (params.round !== undefined) {
       return { parentFragment, round: params.round };
@@ -381,7 +408,11 @@ export class SiliciumLayerSdk {
     return { parentFragment, round: Number(parentAccount.round) };
   }
 
-  async proposeFragmentSplit(params: ProposeFragmentSplitParams): Promise<{ signature: TransactionSignature; parentFragment: PublicKey; splitProposal: PublicKey }> {
+  async proposeFragmentSplit(params: ProposeFragmentSplitParams): Promise<{
+    signature: TransactionSignature;
+    parentFragment: PublicKey;
+    splitProposal: PublicKey;
+  }> {
     const splitter = params.splitter ?? this.walletPubkey();
     const splitterWorker = this.pdas.worker(splitter);
     const { parentFragment, round } = await this.resolveParentFragmentAndRound(params);
@@ -405,26 +436,33 @@ export class SiliciumLayerSdk {
     return { signature, parentFragment, splitProposal };
   }
 
-  async approveFragmentSplit(params: ApproveFragmentSplitParams): Promise<{ signature: TransactionSignature; parentFragment: PublicKey; splitProposal: PublicKey }> {
+  async approveFragmentSplit(params: ApproveFragmentSplitParams): Promise<{
+    signature: TransactionSignature;
+    parentFragment: PublicKey;
+    splitProposal: PublicKey;
+  }> {
     const authority = params.authority ?? this.walletPubkey();
     const { parentFragment, round } = await this.resolveParentFragmentAndRound(params);
     const splitProposal = params.splitProposal ?? this.pdas.splitProposal(parentFragment, round);
 
-    let builder = this.methods
-      .approveFragmentSplit(params.approve)
-      .accounts({
-        authority,
-        job: params.job,
-        parentFragment,
-        splitProposal,
-      });
+    let builder = this.methods.approveFragmentSplit(params.approve).accounts({
+      authority,
+      job: params.job,
+      parentFragment,
+      splitProposal,
+    });
 
     builder = appendSigners(builder, params.signers);
     const signature = await builder.rpc();
     return { signature, parentFragment, splitProposal };
   }
 
-  async createSubFragment(params: CreateSubFragmentParams): Promise<{ signature: TransactionSignature; parentFragment: PublicKey; childFragment: PublicKey; splitProposal: PublicKey }> {
+  async createSubFragment(params: CreateSubFragmentParams): Promise<{
+    signature: TransactionSignature;
+    parentFragment: PublicKey;
+    childFragment: PublicKey;
+    splitProposal: PublicKey;
+  }> {
     const payer = params.payer ?? this.walletPubkey();
     const { parentFragment, round } = await this.resolveParentFragmentAndRound(params);
     const splitProposal = params.splitProposal ?? this.pdas.splitProposal(parentFragment, round);
@@ -453,14 +491,17 @@ export class SiliciumLayerSdk {
   }
 
   async submitFragmentResult(params: SubmitFragmentResultParams): Promise<TransactionSignature> {
-    return this.sendSubmitLike("submitFragmentResult", params);
+    return this.sendSubmitLike('submitFragmentResult', params);
   }
 
   async resubmitFragmentResult(params: SubmitFragmentResultParams): Promise<TransactionSignature> {
-    return this.sendSubmitLike("resubmitFragmentResult", params);
+    return this.sendSubmitLike('resubmitFragmentResult', params);
   }
 
-  private async sendSubmitLike(method: "submitFragmentResult" | "resubmitFragmentResult", params: SubmitFragmentResultParams): Promise<TransactionSignature> {
+  private async sendSubmitLike(
+    method: 'submitFragmentResult' | 'resubmitFragmentResult',
+    params: SubmitFragmentResultParams,
+  ): Promise<TransactionSignature> {
     const worker = params.worker ?? this.walletPubkey();
     const workerAccount = this.pdas.worker(worker);
     const fragment = this.pdas.fragment(params.job, params.fragmentIndex);
@@ -481,7 +522,9 @@ export class SiliciumLayerSdk {
     return builder.rpc();
   }
 
-  async voteFragment(params: VoteFragmentParams): Promise<{ signature: TransactionSignature; vote: PublicKey; roundResolution: PublicKey }> {
+  async voteFragment(
+    params: VoteFragmentParams,
+  ): Promise<{ signature: TransactionSignature; vote: PublicKey; roundResolution: PublicKey }> {
     const verifier = params.verifier ?? this.walletPubkey();
     const verifierWorker = this.pdas.worker(verifier);
     const fragmentAccount = await this.accounts.fragment.fetch(params.fragment);
@@ -493,29 +536,28 @@ export class SiliciumLayerSdk {
     const escrowAuth = this.pdas.escrowAuth(params.job);
     const workerPayout = this.pdas.workerPayout(computeWorker);
     const payoutRecord = await this.accounts.workerPayout.fetchNullable(workerPayout);
-    if (!payoutRecord) throw new Error("Compute worker payout is not registered on-chain.");
+    if (!payoutRecord) throw new Error('Compute worker payout is not registered on-chain.');
     const jobAccount = await this.accounts.job.fetch(params.job);
-    const workerPayoutToken = params.workerPayoutToken
-      ?? getAssociatedTokenAddressSync(jobAccount.mint, payoutRecord.payoutWallet);
+    const workerPayoutToken =
+      params.workerPayoutToken ??
+      getAssociatedTokenAddressSync(jobAccount.mint, payoutRecord.payoutWallet);
 
-    let builder = this.methods
-      .voteFragment(params.choice)
-      .accounts({
-        verifier,
-        job: params.job,
-        fragment: params.fragment,
-        verifierWorker,
-        computeWorker,
-        vote,
-        roundResolution,
-        escrowAuth,
-        escrow: params.escrow,
-        workerToken: params.workerToken,
-        workerPayout,
-        workerPayoutToken,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        systemProgram: SystemProgram.programId,
-      });
+    let builder = this.methods.voteFragment(params.choice).accounts({
+      verifier,
+      job: params.job,
+      fragment: params.fragment,
+      verifierWorker,
+      computeWorker,
+      vote,
+      roundResolution,
+      escrowAuth,
+      escrow: params.escrow,
+      workerToken: params.workerToken,
+      workerPayout,
+      workerPayoutToken,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+    });
 
     builder = appendSigners(builder, params.signers);
     const signature = await builder.rpc();
@@ -525,42 +567,42 @@ export class SiliciumLayerSdk {
   async claimVerifierReward(params: ClaimVerifierRewardParams): Promise<TransactionSignature> {
     const verifier = params.verifier ?? this.walletPubkey();
     const verifierWorker = this.pdas.worker(verifier);
-    const fragmentAccount = params.round === undefined
-      ? await this.accounts.fragment.fetch(params.fragment)
-      : undefined;
+    const fragmentAccount =
+      params.round === undefined ? await this.accounts.fragment.fetch(params.fragment) : undefined;
     const round = params.round ?? Number(fragmentAccount.round);
     const vote = this.pdas.vote(params.fragment, verifier, round);
     const roundResolution = this.pdas.roundResolution(params.fragment, round);
     const escrowAuth = this.pdas.escrowAuth(params.job);
     const workerPayout = this.pdas.workerPayout(verifierWorker);
     const payoutRecord = await this.accounts.workerPayout.fetchNullable(workerPayout);
-    if (!payoutRecord) throw new Error("Verifier payout is not registered on-chain.");
+    if (!payoutRecord) throw new Error('Verifier payout is not registered on-chain.');
     const jobAccount = await this.accounts.job.fetch(params.job);
-    const verifierPayoutToken = params.verifierPayoutToken
-      ?? getAssociatedTokenAddressSync(jobAccount.mint, payoutRecord.payoutWallet);
+    const verifierPayoutToken =
+      params.verifierPayoutToken ??
+      getAssociatedTokenAddressSync(jobAccount.mint, payoutRecord.payoutWallet);
 
-    let builder = this.methods
-      .claimVerifierReward()
-      .accounts({
-        verifier,
-        job: params.job,
-        fragment: params.fragment,
-        roundResolution,
-        vote,
-        verifierWorker,
-        escrowAuth,
-        escrow: params.escrow,
-        verifierToken: params.verifierToken,
-        verifierPayout: workerPayout,
-        verifierPayoutToken,
-        tokenProgram: TOKEN_PROGRAM_ID,
-      });
+    let builder = this.methods.claimVerifierReward().accounts({
+      verifier,
+      job: params.job,
+      fragment: params.fragment,
+      roundResolution,
+      vote,
+      verifierWorker,
+      escrowAuth,
+      escrow: params.escrow,
+      verifierToken: params.verifierToken,
+      verifierPayout: workerPayout,
+      verifierPayoutToken,
+      tokenProgram: TOKEN_PROGRAM_ID,
+    });
 
     builder = appendSigners(builder, params.signers);
     return builder.rpc();
   }
 
-  async finalizeJob(params: FinalizeJobParams): Promise<{ signature: TransactionSignature; result: PublicKey }> {
+  async finalizeJob(
+    params: FinalizeJobParams,
+  ): Promise<{ signature: TransactionSignature; result: PublicKey }> {
     const client = params.client ?? this.walletPubkey();
     const result = this.pdas.result(params.job);
     const escrowAuth = this.pdas.escrowAuth(params.job);
@@ -599,7 +641,11 @@ export class SiliciumLayerSdk {
       .rpc();
   }
 
-  async initTreasury(params: InitTreasuryParams): Promise<{ signature: TransactionSignature; treasuryState: PublicKey; treasuryAuth: PublicKey }> {
+  async initTreasury(params: InitTreasuryParams): Promise<{
+    signature: TransactionSignature;
+    treasuryState: PublicKey;
+    treasuryAuth: PublicKey;
+  }> {
     const payer = params.payer ?? this.walletPubkey();
     const treasuryState = this.pdas.treasuryState(params.mint);
     const treasuryAuth = this.pdas.treasuryAuth(params.mint);
@@ -684,24 +730,24 @@ export class SiliciumLayerSdk {
     };
   }
 
-  async stakeNetwork(params: StakeNetworkParams): Promise<{ signature: TransactionSignature; pool: PublicKey; staker: PublicKey }> {
+  async stakeNetwork(
+    params: StakeNetworkParams,
+  ): Promise<{ signature: TransactionSignature; pool: PublicKey; staker: PublicKey }> {
     const owner = params.owner ?? this.walletPubkey();
     const pool = this.pdas.stakingPool(params.mint);
     const staker = this.pdas.networkStaker(owner, params.mint);
-    const stakeVault = params.stakeVault ?? (await this.fetchStakingPool(pool) as any).stakeVault;
+    const stakeVault = params.stakeVault ?? ((await this.fetchStakingPool(pool)) as any).stakeVault;
 
-    let builder = this.methods
-      .stakeNetwork(toBn(params.amount))
-      .accounts({
-        owner,
-        mint: params.mint,
-        pool,
-        staker,
-        ownerToken: params.ownerToken,
-        stakeVault,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        systemProgram: SystemProgram.programId,
-      });
+    let builder = this.methods.stakeNetwork(toBn(params.amount)).accounts({
+      owner,
+      mint: params.mint,
+      pool,
+      staker,
+      ownerToken: params.ownerToken,
+      stakeVault,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+    });
 
     builder = appendSigners(builder, params.signers);
     const signature = await builder.rpc();
@@ -711,18 +757,17 @@ export class SiliciumLayerSdk {
   async fundStakingRewards(params: FundStakingRewardsParams): Promise<TransactionSignature> {
     const funder = params.funder ?? this.walletPubkey();
     const pool = this.pdas.stakingPool(params.mint);
-    const rewardVault = params.rewardVault ?? (await this.fetchStakingPool(pool) as any).rewardVault;
+    const rewardVault =
+      params.rewardVault ?? ((await this.fetchStakingPool(pool)) as any).rewardVault;
 
-    let builder = this.methods
-      .fundStakingRewards(toBn(params.amount))
-      .accounts({
-        funder,
-        mint: params.mint,
-        pool,
-        funderToken: params.funderToken,
-        rewardVault,
-        tokenProgram: TOKEN_PROGRAM_ID,
-      });
+    let builder = this.methods.fundStakingRewards(toBn(params.amount)).accounts({
+      funder,
+      mint: params.mint,
+      pool,
+      funderToken: params.funderToken,
+      rewardVault,
+      tokenProgram: TOKEN_PROGRAM_ID,
+    });
 
     builder = appendSigners(builder, params.signers);
     return builder.rpc();
@@ -733,26 +778,27 @@ export class SiliciumLayerSdk {
     const pool = this.pdas.stakingPool(params.mint);
     const poolAuth = this.pdas.stakingPoolAuth(params.mint);
     const staker = this.pdas.networkStaker(owner, params.mint);
-    const rewardVault = params.rewardVault ?? (await this.fetchStakingPool(pool) as any).rewardVault;
+    const rewardVault =
+      params.rewardVault ?? ((await this.fetchStakingPool(pool)) as any).rewardVault;
 
-    let builder = this.methods
-      .claimStakingReward()
-      .accounts({
-        owner,
-        mint: params.mint,
-        pool,
-        poolAuth,
-        staker,
-        rewardVault,
-        ownerRewardToken: params.ownerRewardToken,
-        tokenProgram: TOKEN_PROGRAM_ID,
-      });
+    let builder = this.methods.claimStakingReward().accounts({
+      owner,
+      mint: params.mint,
+      pool,
+      poolAuth,
+      staker,
+      rewardVault,
+      ownerRewardToken: params.ownerRewardToken,
+      tokenProgram: TOKEN_PROGRAM_ID,
+    });
 
     builder = appendSigners(builder, params.signers);
     return builder.rpc();
   }
 
-  async requestUnstake(params: RequestUnstakeParams): Promise<{ signature: TransactionSignature; pool: PublicKey; staker: PublicKey }> {
+  async requestUnstake(
+    params: RequestUnstakeParams,
+  ): Promise<{ signature: TransactionSignature; pool: PublicKey; staker: PublicKey }> {
     const owner = params.owner ?? this.walletPubkey();
     const pool = this.pdas.stakingPool(params.mint);
     const staker = this.pdas.networkStaker(owner, params.mint);
@@ -771,20 +817,18 @@ export class SiliciumLayerSdk {
     const pool = this.pdas.stakingPool(params.mint);
     const poolAuth = this.pdas.stakingPoolAuth(params.mint);
     const staker = this.pdas.networkStaker(owner, params.mint);
-    const stakeVault = params.stakeVault ?? (await this.fetchStakingPool(pool) as any).stakeVault;
+    const stakeVault = params.stakeVault ?? ((await this.fetchStakingPool(pool)) as any).stakeVault;
 
-    let builder = this.methods
-      .withdrawUnstaked()
-      .accounts({
-        owner,
-        mint: params.mint,
-        pool,
-        poolAuth,
-        staker,
-        stakeVault,
-        ownerToken: params.ownerToken,
-        tokenProgram: TOKEN_PROGRAM_ID,
-      });
+    let builder = this.methods.withdrawUnstaked().accounts({
+      owner,
+      mint: params.mint,
+      pool,
+      poolAuth,
+      staker,
+      stakeVault,
+      ownerToken: params.ownerToken,
+      tokenProgram: TOKEN_PROGRAM_ID,
+    });
 
     builder = appendSigners(builder, params.signers);
     return builder.rpc();
@@ -804,17 +848,22 @@ export class SiliciumLayerSdk {
   }
 
   async fetchWorker(workerOrWorkerAccount: PublicKey, isWorkerAccount = false): Promise<unknown> {
-    const account = isWorkerAccount ? workerOrWorkerAccount : this.pdas.worker(workerOrWorkerAccount);
+    const account = isWorkerAccount
+      ? workerOrWorkerAccount
+      : this.pdas.worker(workerOrWorkerAccount);
     return this.accounts.worker.fetch(account);
   }
 
-  async fetchWorkerReputation(workerOrWorkerAccount: PublicKey, isWorkerAccount = false): Promise<{
+  async fetchWorkerReputation(
+    workerOrWorkerAccount: PublicKey,
+    isWorkerAccount = false,
+  ): Promise<{
     computeReputation: anchor.BN;
     verifyReputation: anchor.BN;
     globalReputation: anchor.BN;
     reliabilityScore?: number;
   }> {
-    const worker = await this.fetchWorker(workerOrWorkerAccount, isWorkerAccount) as any;
+    const worker = (await this.fetchWorker(workerOrWorkerAccount, isWorkerAccount)) as any;
     return {
       computeReputation: worker.computeReputation,
       verifyReputation: worker.verifyReputation,
@@ -828,9 +877,7 @@ export class SiliciumLayerSdk {
   }
 
   async fetchFragmentsForJob(job: PublicKey): Promise<unknown[]> {
-    return this.accounts.fragment.all([
-      { memcmp: { offset: 8, bytes: job.toBase58() } },
-    ]);
+    return this.accounts.fragment.all([{ memcmp: { offset: 8, bytes: job.toBase58() } }]);
   }
 
   async fetchVote(vote: PublicKey): Promise<unknown> {

@@ -3,7 +3,16 @@ import checkCases from './fixtures/check_cases.json';
 import { readFileSync } from 'node:fs';
 import parity from './fixtures/preview_parity.json';
 import engineParity from './fixtures/engine_parity.json';
-import { editorLimits, materialPreset, renderCost, renderSettings, sceneFileName, sceneFromText, sceneToCfg, type SceneMesh } from '../utils/scene';
+import {
+  editorLimits,
+  materialPreset,
+  renderCost,
+  renderSettings,
+  sceneFileName,
+  sceneFromText,
+  sceneToCfg,
+  type SceneMesh,
+} from '../utils/scene';
 import { parseRustFloat } from '../utils/sceneSyntax';
 import { checkScene } from '../utils/sceneCheck';
 import { buildScene, pickShape, renderText } from '../utils/engine';
@@ -16,20 +25,43 @@ import { translate } from '../utils/i18n';
 function difference(a: Uint8ClampedArray, b: Uint8ClampedArray, tolerance = 8): number {
   let differ = 0;
   for (let i = 0; i < a.length; i += 4) {
-    if (Math.max(Math.abs(a[i]! - b[i]!), Math.abs(a[i + 1]! - b[i + 1]!), Math.abs(a[i + 2]! - b[i + 2]!)) > tolerance) differ += 1;
+    if (
+      Math.max(
+        Math.abs(a[i]! - b[i]!),
+        Math.abs(a[i + 1]! - b[i + 1]!),
+        Math.abs(a[i + 2]! - b[i + 2]!),
+      ) > tolerance
+    )
+      differ += 1;
   }
   return differ / (a.length / 4);
 }
 
-interface ExpectedIssue { code: string; line: number; key?: string; suggestion?: string }
+interface ExpectedIssue {
+  code: string;
+  line: number;
+  key?: string;
+  suggestion?: string;
+}
 
 describe('scene check (same cases as `silicium-raytracer check`)', () => {
-  for (const testCase of checkCases.cases as { name: string; lines: string[]; expected: ExpectedIssue[] }[]) {
+  for (const testCase of checkCases.cases as {
+    name: string;
+    lines: string[];
+    expected: ExpectedIssue[];
+  }[]) {
     it(testCase.name, () => {
       const report = checkScene(testCase.lines.join('\n'));
-      expect(report.issues.map((issue) => `${issue.code}@${issue.line}`).sort()).toEqual(testCase.expected.map((item) => `${item.code}@${item.line}`).sort());
+      expect(report.issues.map((issue) => `${issue.code}@${issue.line}`).sort()).toEqual(
+        testCase.expected.map((item) => `${item.code}@${item.line}`).sort(),
+      );
       for (const item of testCase.expected) {
-        const found = report.issues.find((issue) => issue.code === item.code && issue.line === item.line && (!item.key || issue.key === item.key));
+        const found = report.issues.find(
+          (issue) =>
+            issue.code === item.code &&
+            issue.line === item.line &&
+            (!item.key || issue.key === item.key),
+        );
         expect(found, JSON.stringify(item)).toBeDefined();
         if (item.suggestion) expect(found?.suggestion).toBe(item.suggestion);
       }
@@ -38,9 +70,28 @@ describe('scene check (same cases as `silicium-raytracer check`)', () => {
   }
 
   it('has a message for every issue it reports', () => {
-    const codes = new Set(checkCases.cases.flatMap((testCase) => checkScene(testCase.lines.join('\n')).issues.map((issue) => issue.code)));
-    for (const code of ['misplaced', 'unexpected_token', 'resolution_large', 'syntax_error', 'invalid_value', 'unknown_material', 'engine_too_new', 'engine_error', 'bad_mesh', 'dark_scene']) codes.add(code);
-    for (const code of codes) expect(translate(`sceneCheck.codes.${code}`, { key: 'x', min: 0, max: 1, value: 2 })).not.toContain('sceneCheck.');
+    const codes = new Set(
+      checkCases.cases.flatMap((testCase) =>
+        checkScene(testCase.lines.join('\n')).issues.map((issue) => issue.code),
+      ),
+    );
+    for (const code of [
+      'misplaced',
+      'unexpected_token',
+      'resolution_large',
+      'syntax_error',
+      'invalid_value',
+      'unknown_material',
+      'engine_too_new',
+      'engine_error',
+      'bad_mesh',
+      'dark_scene',
+    ])
+      codes.add(code);
+    for (const code of codes)
+      expect(
+        translate(`sceneCheck.codes.${code}`, { key: 'x', min: 0, max: 1, value: 2 }),
+      ).not.toContain('sceneCheck.');
   });
 
   it('accepts Windows line endings', () => {
@@ -71,9 +122,16 @@ describe('scene editor model', () => {
   });
 
   it('opens a hand-written file with what the engine reads from it', () => {
-    const scene = sceneFromText('camera : { resolution = { width = 64 height = 32 } };\nprimitives : { sphere = { x = 5 radius = 2 reflection = 3 } };');
+    const scene = sceneFromText(
+      'camera : { resolution = { width = 64 height = 32 } };\nprimitives : { sphere = { x = 5 radius = 2 reflection = 3 } };',
+    );
     expect(scene.objects).toHaveLength(1);
-    expect(scene.objects[0]).toMatchObject({ kind: 'sphere', x: 5, radius: 2, material: { reflection: 0.95 } });
+    expect(scene.objects[0]).toMatchObject({
+      kind: 'sphere',
+      x: 5,
+      radius: 2,
+      material: { reflection: 0.95 },
+    });
     expect(scene.lights).toEqual([expect.objectContaining({ x: 4, y: 0, z: 5, intensity: 450 })]);
   });
 
@@ -94,10 +152,18 @@ describe('scene editor model', () => {
     expect(renderSettings(draft)).toEqual({ samples: 1, mode: 'whitted' });
     for (const quality of ['smooth', 'photo'] as const) {
       const text = sceneToCfg({ ...sceneTemplate('mirrors'), quality });
-      expect(renderSettings(text)).toEqual(quality === 'photo' ? { samples: 256, mode: 'path' } : { samples: 16, mode: 'whitted' });
+      expect(renderSettings(text)).toEqual(
+        quality === 'photo' ? { samples: 256, mode: 'path' } : { samples: 16, mode: 'whitted' },
+      );
       const report = checkScene(text);
       expect(report.issues).toEqual([]);
-      expect(report.scene).toMatchObject({ width: 1280, height: 720, spheres: 4, planes: 1, samples: quality === 'photo' ? 256 : 16 });
+      expect(report.scene).toMatchObject({
+        width: 1280,
+        height: 720,
+        spheres: 4,
+        planes: 1,
+        samples: quality === 'photo' ? 256 : 16,
+      });
       expect(sceneToCfg(sceneFromText(text))).toBe(text);
     }
     const photo = sceneToCfg({ ...sceneTemplate('mirrors'), quality: 'photo' });
@@ -107,19 +173,36 @@ describe('scene editor model', () => {
 
   it('tells what the editor cannot show', () => {
     const base = 'camera : { resolution = { width = 8 height = 8 } }\n';
-    for (const name of SCENE_TEMPLATES) expect(editorLimits(sceneToCfg(sceneTemplate(name))), name).toEqual([]);
-    expect(editorLimits(`${base}primitives : { box = { } sphere = { x = { 0 = 1 9 = 2 } } }`)).toEqual(['animation']);
-    expect(editorLimits('camera : { resolution = { width = 8 height = 8 } look_at = { x = 1 } }\nlights : { area = { } }')).toEqual([]);
-    expect(editorLimits(`${base}materials : { material = { name = v type = glass } }\nprimitives : { sphere = { material = v } }`)).toEqual([]);
-    expect(editorLimits('camera : { resolution = { width = 8 height = 8 } up = { x = 1 z = 0 } }')).toEqual(['camera']);
-    expect(checkScene('render : { }\ncamera : {\n resolution = { width = 8 height = 8 }\n').issues[0]).toMatchObject({ code: 'unbalanced_braces', line: 2 });
+    for (const name of SCENE_TEMPLATES)
+      expect(editorLimits(sceneToCfg(sceneTemplate(name))), name).toEqual([]);
+    expect(
+      editorLimits(`${base}primitives : { box = { } sphere = { x = { 0 = 1 9 = 2 } } }`),
+    ).toEqual(['animation']);
+    expect(
+      editorLimits(
+        'camera : { resolution = { width = 8 height = 8 } look_at = { x = 1 } }\nlights : { area = { } }',
+      ),
+    ).toEqual([]);
+    expect(
+      editorLimits(
+        `${base}materials : { material = { name = v type = glass } }\nprimitives : { sphere = { material = v } }`,
+      ),
+    ).toEqual([]);
+    expect(
+      editorLimits('camera : { resolution = { width = 8 height = 8 } up = { x = 1 z = 0 } }'),
+    ).toEqual(['camera']);
+    expect(
+      checkScene('render : { }\ncamera : {\n resolution = { width = 8 height = 8 }\n').issues[0],
+    ).toMatchObject({ code: 'unbalanced_braces', line: 2 });
   });
 
   it('opens libconfig lists and named materials', () => {
-    const scene = sceneFromText('camera : { resolution = { width = 64; height = 32; }; position = { x = 1; y = 0; z = 0; }; };\n'
-      + 'materials : { material = { name = rouge type = diffuse color = { r = 255 g = 0 b = 0 } } }\n'
-      + 'primitives : { sphere = ( { x = 5; radius = 1; material = rouge; }, { x = 6; y = 2; } ); };\n'
-      + 'lights : { point = ( { x = 2; y = -2; z = 4; } ); };');
+    const scene = sceneFromText(
+      'camera : { resolution = { width = 64; height = 32; }; position = { x = 1; y = 0; z = 0; }; };\n' +
+        'materials : { material = { name = rouge type = diffuse color = { r = 255 g = 0 b = 0 } } }\n' +
+        'primitives : { sphere = ( { x = 5; radius = 1; material = rouge; }, { x = 6; y = 2; } ); };\n' +
+        'lights : { point = ( { x = 2; y = -2; z = 4; } ); };',
+    );
     expect(scene.camera.x).toBe(1);
     expect(scene.objects).toHaveLength(2);
     expect(scene.objects[0]).toMatchObject({ material: { type: 'diffuse', color: [255, 0, 0] } });
@@ -145,10 +228,26 @@ describe('scene editor model', () => {
       'lights : { point = { x = 2 y = 3 z = 5 } area = { x = 2 y = -3 z = 4 radius = 0.4 intensity = 250 } }',
     ].join('\n');
     const scene = sceneFromText(text);
-    expect(scene.objects.map((item) => item.kind)).toEqual(['plane', 'sphere', 'sphere', 'box', 'panel', 'mesh', 'mesh', 'mesh']);
+    expect(scene.objects.map((item) => item.kind)).toEqual([
+      'plane',
+      'sphere',
+      'sphere',
+      'box',
+      'panel',
+      'mesh',
+      'mesh',
+      'mesh',
+    ]);
     expect(scene.objects[1]).toMatchObject({ material: { type: 'glass', ior: 1.4 } });
     expect(scene.objects[3]).toMatchObject({ kind: 'box', size: [1, 2, 1], rotation: [0, 0, 30] });
-    expect(scene.objects[4]).toMatchObject({ kind: 'panel', width: 3, height: 2, x: 9, z: 1, material: { type: 'emissive', strength: 2 } });
+    expect(scene.objects[4]).toMatchObject({
+      kind: 'panel',
+      width: 3,
+      height: 2,
+      x: 9,
+      z: 1,
+      material: { type: 'emissive', strength: 2 },
+    });
     expect(scene.lights.map((light) => light.kind)).toEqual(['point', 'area']);
     expect(scene.camera.pitch).toBeLessThan(0);
     expect(scene).toMatchObject({ sky: 0.7, exposure: 1.2 });
@@ -160,7 +259,11 @@ describe('scene editor model', () => {
   }, 30_000);
 
   it('turns the camera like the engine', () => {
-    for (const [yaw, pitch] of [[30, 0], [-45, 20], [10, -35]] as const) {
+    for (const [yaw, pitch] of [
+      [30, 0],
+      [-45, 20],
+      [10, -35],
+    ] as const) {
       const scene = { ...sceneTemplate('blank'), width: 64, height: 40 };
       scene.camera = { ...scene.camera, yaw, pitch };
       const text = sceneToCfg(scene);
@@ -180,12 +283,18 @@ describe('scene editor model', () => {
 });
 
 describe('scene preview (browser engine)', () => {
-  const rgb = (rgba: Uint8ClampedArray) => Uint8Array.from(rgba.filter((_, index) => index % 4 !== 3));
+  const rgb = (rgba: Uint8ClampedArray) =>
+    Uint8Array.from(rgba.filter((_, index) => index % 4 !== 3));
 
   it('renders the same bytes as the network engine', () => {
     for (const testCase of [{ name: 'demo', ...parity }, ...engineParity.cases]) {
-      const expected = Uint8Array.from(atob(testCase.rgb_base64), (character) => character.charCodeAt(0));
-      expect(rgb(renderText(testCase.scene, testCase.width, testCase.height)), testCase.name).toEqual(expected);
+      const expected = Uint8Array.from(atob(testCase.rgb_base64), (character) =>
+        character.charCodeAt(0),
+      );
+      expect(
+        rgb(renderText(testCase.scene, testCase.width, testCase.height)),
+        testCase.name,
+      ).toEqual(expected);
     }
   });
 
@@ -194,7 +303,12 @@ describe('scene preview (browser engine)', () => {
     expect(scene.shapeSource[pickShape(scene, 0.5, 0.5)!]).toBe(0);
     expect(scene.shapeSource[pickShape(scene, 0.5, 0.97)!]).toBe(1);
     const showcase = sceneTemplate('showcase');
-    const built = buildScene(sceneToCfg({ ...showcase, lights: [{ ...showcase.lights[0]!, kind: 'area', x: 5, y: 0, z: 0.9, radius: 0.3 }] }));
+    const built = buildScene(
+      sceneToCfg({
+        ...showcase,
+        lights: [{ ...showcase.lights[0]!, kind: 'area', x: 5, y: 0, z: 0.9, radius: 0.3 }],
+      }),
+    );
     // Objects come first, then the lights.
     expect(built.shapeSource[pickShape(built, 0.5, 0.42)!]).toBe(showcase.objects.length);
   });
@@ -202,19 +316,45 @@ describe('scene preview (browser engine)', () => {
   it('refines the image pass after pass, after a quick small one', async () => {
     const replies: PreviewReply[] = [];
     // A classic-lighting scene: fast enough for slow CI machines.
-    await runPreview({ id: 1, text: sceneToCfg(sceneTemplate('demo')), width: 150, height: 90, target: 3, quick: true }, (reply) => replies.push(reply), () => true);
-    expect(replies.map((reply) => reply.kind === 'image' && [reply.width, reply.samples, reply.quick])).toEqual([[50, 1, true], [150, 1, false], [150, 2, false], [150, 3, false]]);
+    await runPreview(
+      {
+        id: 1,
+        text: sceneToCfg(sceneTemplate('demo')),
+        width: 150,
+        height: 90,
+        target: 3,
+        quick: true,
+      },
+      (reply) => replies.push(reply),
+      () => true,
+    );
+    expect(
+      replies.map((reply) => reply.kind === 'image' && [reply.width, reply.samples, reply.quick]),
+    ).toEqual([
+      [50, 1, true],
+      [150, 1, false],
+      [150, 2, false],
+      [150, 3, false],
+    ]);
     const errors: PreviewReply[] = [];
-    await runPreview({ id: 2, text: 'render : { mode = magic }', width: 10, height: 10, target: 1 }, (reply) => errors.push(reply), () => true);
+    await runPreview(
+      { id: 2, text: 'render : { mode = magic }', width: 10, height: 10, target: 1 },
+      (reply) => errors.push(reply),
+      () => true,
+    );
     expect(errors[0]).toMatchObject({ kind: 'error' });
   }, 30_000);
 
   it('path traces the same picture as the network (on average)', () => {
     // Brightness of a small Cornell box at 32 rays per pixel, against the engine's.
-    const text = sceneToCfg({ ...sceneTemplate('cornell'), width: 24, height: 24 }).replace('samples = 256', 'samples = 32');
+    const text = sceneToCfg({ ...sceneTemplate('cornell'), width: 24, height: 24 }).replace(
+      'samples = 256',
+      'samples = 32',
+    );
     const mean = (pixels: ArrayLike<number>, step: number) => {
       let sum = 0;
-      for (let i = 0; i < pixels.length; i += step) sum += pixels[i]! + pixels[i + 1]! + pixels[i + 2]!;
+      for (let i = 0; i < pixels.length; i += step)
+        sum += pixels[i]! + pixels[i + 1]! + pixels[i + 2]!;
       return sum / (pixels.length / step) / 3;
     };
     expect(Math.abs(mean(renderText(text, 24, 24, 32), 4) - CORNELL_MEAN)).toBeLessThan(3);
@@ -226,11 +366,15 @@ const CORNELL_MEAN = 122.96;
 
 describe('3D models', () => {
   it('reads OBJ files like the engine', () => {
-    const model = parseObj('# cube face\nv 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1/1/1 2/2/2 3/3/3 4/4/4\nf -4 -3 -2\n');
+    const model = parseObj(
+      '# cube face\nv 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1/1/1 2/2/2 3/3/3 4/4/4\nf -4 -3 -2\n',
+    );
     expect(model.vertices).toHaveLength(12);
     expect(model.faces).toEqual([0, 1, 2, 0, 2, 3, 0, 1, 2]);
     expect(() => parseObj('v 0 0 0\nf 1 2 3\n')).toThrow();
-    expect(fit(parseObj('v 0 0 0\nv 4 0 0\nv 0 2 1\nf 1 2 3\n'), 2).vertices.slice(3, 6)).toEqual([1, -0.5, 0]);
+    expect(fit(parseObj('v 0 0 0\nv 4 0 0\nv 0 2 1\nf 1 2 3\n'), 2).vertices.slice(3, 6)).toEqual([
+      1, -0.5, 0,
+    ]);
     expect(yUpToZUp({ vertices: [1, 2, 3], faces: [] }).vertices).toEqual([1, -3, 2]);
   });
 

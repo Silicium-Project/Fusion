@@ -53,30 +53,34 @@ const goBool = (value: unknown): string => (value === true ? 'true' : 'false');
  * (`silicium.job-proof.v1`). Any change here must match the Go side.
  */
 export function canonicalTaskJson(task: ChainTask): string {
-  const verifiers = (task.verifiers || []).map((verifier) => (
-    `{"author":${goString(verifier.author)},`
-    + `"verdict":${verifier.verdict === true || verifier.verdict === false ? goBool(verifier.verdict) : 'null'},`
-    + `"verification_event":${goString(verifier.verification_event)},`
-    + `"self_verification":${goBool(verifier.self_verification)}}`
-  ));
-  return `{"task_id":${goString(task.task_id)},`
-    + `"fragment_index":${goInt(task.fragment_index)},`
-    + `"status":${goString(task.status)},`
-    + `"result_sha256":${goString(task.result_sha256)},`
-    + `"publisher":${goString(task.publisher)},`
-    + `"proposal_event":${goString(task.proposal_event)},`
-    + `"spec_sha256":${goString(task.spec_sha256)},`
-    + `"attempt":${goInt(task.attempt)},`
-    + `"worker":${goString(task.worker)},`
-    + `"claim_event":${goString(task.claim_event)},`
-    + `"result_event":${goString(task.result_event)},`
-    + `"verifiers":[${verifiers.join(',')}]}`;
+  const verifiers = (task.verifiers || []).map(
+    (verifier) =>
+      `{"author":${goString(verifier.author)},` +
+      `"verdict":${verifier.verdict === true || verifier.verdict === false ? goBool(verifier.verdict) : 'null'},` +
+      `"verification_event":${goString(verifier.verification_event)},` +
+      `"self_verification":${goBool(verifier.self_verification)}}`,
+  );
+  return (
+    `{"task_id":${goString(task.task_id)},` +
+    `"fragment_index":${goInt(task.fragment_index)},` +
+    `"status":${goString(task.status)},` +
+    `"result_sha256":${goString(task.result_sha256)},` +
+    `"publisher":${goString(task.publisher)},` +
+    `"proposal_event":${goString(task.proposal_event)},` +
+    `"spec_sha256":${goString(task.spec_sha256)},` +
+    `"attempt":${goInt(task.attempt)},` +
+    `"worker":${goString(task.worker)},` +
+    `"claim_event":${goString(task.claim_event)},` +
+    `"result_event":${goString(task.result_event)},` +
+    `"verifiers":[${verifiers.join(',')}]}`
+  );
 }
 
 function hexToBytes(hex: string): Uint8Array | null {
   if (!/^[0-9a-f]{64}$/.test(hex)) return null;
   const bytes = new Uint8Array(32);
-  for (let index = 0; index < 32; index += 1) bytes[index] = parseInt(hex.slice(index * 2, index * 2 + 2), 16);
+  for (let index = 0; index < 32; index += 1)
+    bytes[index] = parseInt(hex.slice(index * 2, index * 2 + 2), 16);
   return bytes;
 }
 
@@ -91,15 +95,22 @@ async function sha256(parts: Uint8Array[]): Promise<Uint8Array> {
   return new Uint8Array(await crypto.subtle.digest('SHA-256', buffer));
 }
 
-const toHex = (bytes: Uint8Array): string => Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+const toHex = (bytes: Uint8Array): string =>
+  Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 
 /** Leaf hash of a task: SHA-256(0x00 || canonical JSON). */
 export async function leafHash(task: ChainTask): Promise<string> {
-  return toHex(await sha256([new Uint8Array([0]), new TextEncoder().encode(canonicalTaskJson(task))]));
+  return toHex(
+    await sha256([new Uint8Array([0]), new TextEncoder().encode(canonicalTaskJson(task))]),
+  );
 }
 
 /** Whether `leaf`, combined along `proof` (inner node = SHA-256(0x01 || l || r)), gives `root`. */
-export async function verifyProof(leaf: string, proof: ChainProofStep[], root: string): Promise<boolean> {
+export async function verifyProof(
+  leaf: string,
+  proof: ChainProofStep[],
+  root: string,
+): Promise<boolean> {
   let current = hexToBytes(leaf);
   if (!current) return false;
   for (const step of proof || []) {
@@ -122,22 +133,34 @@ export function parseMemo(memo: string | null | undefined): AnchoredMemo | null 
   const text = String(memo || '').trim();
   const [schema, ...pairs] = text.split(/\s+/);
   if (!schema?.startsWith('silicium.job-proof.')) return null;
-  const fields = Object.fromEntries(pairs.map((pair) => {
-    const separator = pair.indexOf('=');
-    return separator < 0 ? [pair, ''] : [pair.slice(0, separator), pair.slice(separator + 1)];
-  }));
+  const fields = Object.fromEntries(
+    pairs.map((pair) => {
+      const separator = pair.indexOf('=');
+      return separator < 0 ? [pair, ''] : [pair.slice(0, separator), pair.slice(separator + 1)];
+    }),
+  );
   if (!/^[0-9a-f]{64}$/.test(fields.root || '')) return null;
-  return { schema, job: fields.job || '', tasks: Number(fields.tasks) || 0, root: fields.root, final: fields.final || '' };
+  return {
+    schema,
+    job: fields.job || '',
+    tasks: Number(fields.tasks) || 0,
+    root: fields.root,
+    final: fields.final || '',
+  };
 }
 
 /** Memo text of the transaction `signature`, read from a Solana RPC. */
 export async function fetchOnChainMemo(signature: string, rpcUrl: string): Promise<string | null> {
   const { Connection } = await import('@solana/web3.js');
   const connection = new Connection(resolveSolanaRpcEndpoint(rpcUrl), 'confirmed');
-  const transaction = await connection.getParsedTransaction(signature, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 });
+  const transaction = await connection.getParsedTransaction(signature, {
+    commitment: 'confirmed',
+    maxSupportedTransactionVersion: 0,
+  });
   for (const instruction of transaction?.transaction.message.instructions || []) {
     if (instruction.programId.toBase58() !== MEMO_PROGRAM_ID) continue;
-    if ('parsed' in instruction && typeof instruction.parsed === 'string') return instruction.parsed;
+    if ('parsed' in instruction && typeof instruction.parsed === 'string')
+      return instruction.parsed;
   }
   return null;
 }
@@ -157,7 +180,10 @@ export async function checkTrace(
   try {
     const memo = parseMemo(await readMemo());
     if (memo) {
-      const same = memo.root === trace.root && memo.tasks === trace.tasks.length && memo.final === trace.finalSha256;
+      const same =
+        memo.root === trace.root &&
+        memo.tasks === trace.tasks.length &&
+        memo.final === trace.finalSha256;
       chain = same ? 'match' : 'mismatch';
     }
   } catch {
@@ -169,5 +195,7 @@ export async function checkTrace(
 /** Explorer link of a transaction; mainnet needs no cluster parameter. */
 export function explorerTransactionUrl(signature: string, cluster?: string): string {
   const base = `https://explorer.solana.com/tx/${encodeURIComponent(signature)}`;
-  return !cluster || cluster === 'mainnet-beta' ? base : `${base}?cluster=${encodeURIComponent(cluster)}`;
+  return !cluster || cluster === 'mainnet-beta'
+    ? base
+    : `${base}?cluster=${encodeURIComponent(cluster)}`;
 }

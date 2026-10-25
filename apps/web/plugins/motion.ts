@@ -7,7 +7,8 @@ const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)'
 // A card with form fields does not move under the pointer: tilting a form
 // while the user types is uncomfortable, and redrawing its blurred glass
 // on every pointer move made the settings page slow.
-const hasFormFields = (element: HTMLElement) => element.querySelector('input, textarea, select') !== null;
+const hasFormFields = (element: HTMLElement) =>
+  element.querySelector('input, textarea, select') !== null;
 
 /**
  * `handler` at most once per animation frame, with the last event: a pointer
@@ -16,7 +17,10 @@ const hasFormFields = (element: HTMLElement) => element.querySelector('input, te
 function perFrame(handler: (event: PointerEvent) => void): (event: PointerEvent) => void {
   let pending: PointerEvent | null = null;
   return (event) => {
-    if (pending) { pending = event; return; }
+    if (pending) {
+      pending = event;
+      return;
+    }
     pending = event;
     requestAnimationFrame(() => {
       const last = pending;
@@ -29,7 +33,8 @@ function perFrame(handler: (event: PointerEvent) => void): (event: PointerEvent)
 // UiCard owns the v-tilt interaction. Keeping it out of the generic spatial
 // scan prevents two pointer handlers from writing the same transform variables
 // and producing a doubled depth/parallax effect.
-const spatialSelector = '.spatial-tile, .marketing-glass, .surface, .glass-panel, .public-header__mobile';
+const spatialSelector =
+  '.spatial-tile, .marketing-glass, .surface, .glass-panel, .public-header__mobile';
 
 function resetSpatial(element: HTMLElement) {
   element.style.setProperty('--tilt-x', '0deg');
@@ -56,15 +61,15 @@ function bindSpatialTile(element: HTMLElement) {
     if (!rect.width || !rect.height) return;
     const x = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
     const y = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
-    const distance = Math.min(1, Math.hypot(x - .5, y - .5) / .72);
+    const distance = Math.min(1, Math.hypot(x - 0.5, y - 0.5) / 0.72);
     const focus = 1 - distance;
-    element.style.setProperty('--tilt-x', `${((.5 - y) * 3.2).toFixed(2)}deg`);
-    element.style.setProperty('--tilt-y', `${((x - .5) * 4.2).toFixed(2)}deg`);
+    element.style.setProperty('--tilt-x', `${((0.5 - y) * 3.2).toFixed(2)}deg`);
+    element.style.setProperty('--tilt-y', `${((x - 0.5) * 4.2).toFixed(2)}deg`);
     element.style.setProperty('--spatial-z', `${(10 + focus * 42).toFixed(1)}px`);
-    element.style.setProperty('--spatial-scale', `${(1 + focus * .012).toFixed(4)}`);
-    element.style.setProperty('--spatial-blur', `${((1 - focus) * .35).toFixed(2)}px`);
-    element.style.setProperty('--spatial-parallax-x', `${((x - .5) * -14).toFixed(1)}px`);
-    element.style.setProperty('--spatial-parallax-y', `${((y - .5) * -14).toFixed(1)}px`);
+    element.style.setProperty('--spatial-scale', `${(1 + focus * 0.012).toFixed(4)}`);
+    element.style.setProperty('--spatial-blur', `${((1 - focus) * 0.35).toFixed(2)}px`);
+    element.style.setProperty('--spatial-parallax-x', `${((x - 0.5) * -14).toFixed(1)}px`);
+    element.style.setProperty('--spatial-parallax-y', `${((y - 0.5) * -14).toFixed(1)}px`);
     element.style.setProperty('--spatial-light-x', `${(x * 100).toFixed(1)}%`);
     element.style.setProperty('--spatial-light-y', `${(y * 100).toFixed(1)}%`);
     element.dataset.spatialActive = 'true';
@@ -92,11 +97,14 @@ export default defineNuxtPlugin((nuxtApp) => {
         element.classList.add('is-visible');
         return;
       }
-      const observer = new IntersectionObserver(([entry]) => {
-        if (!entry?.isIntersecting) return;
-        element.classList.add('is-visible');
-        observer.disconnect();
-      }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+      const observer = new IntersectionObserver(
+        ([entry]) => {
+          if (!entry?.isIntersecting) return;
+          element.classList.add('is-visible');
+          observer.disconnect();
+        },
+        { rootMargin: '0px 0px -8% 0px', threshold: 0.08 },
+      );
       observer.observe(element);
       element.__siliciumCleanup = () => observer.disconnect();
     },
@@ -115,14 +123,14 @@ export default defineNuxtPlugin((nuxtApp) => {
         const rect = element.getBoundingClientRect();
         const x = (event.clientX - rect.left) / rect.width;
         const y = (event.clientY - rect.top) / rect.height;
-        const focus = Math.max(0, 1 - Math.min(1, Math.hypot(x - .5, y - .5) / .72));
+        const focus = Math.max(0, 1 - Math.min(1, Math.hypot(x - 0.5, y - 0.5) / 0.72));
         element.style.setProperty('--tilt-x', `${(0.5 - y) * strength}deg`);
         element.style.setProperty('--tilt-y', `${(x - 0.5) * strength}deg`);
         element.style.setProperty('--spatial-z', `${(10 + focus * 42).toFixed(1)}px`);
-        element.style.setProperty('--spatial-scale', `${(1 + focus * .012).toFixed(4)}`);
-        element.style.setProperty('--spatial-blur', `${((1 - focus) * .35).toFixed(2)}px`);
-        element.style.setProperty('--spatial-parallax-x', `${((x - .5) * -14).toFixed(1)}px`);
-        element.style.setProperty('--spatial-parallax-y', `${((y - .5) * -14).toFixed(1)}px`);
+        element.style.setProperty('--spatial-scale', `${(1 + focus * 0.012).toFixed(4)}`);
+        element.style.setProperty('--spatial-blur', `${((1 - focus) * 0.35).toFixed(2)}px`);
+        element.style.setProperty('--spatial-parallax-x', `${((x - 0.5) * -14).toFixed(1)}px`);
+        element.style.setProperty('--spatial-parallax-y', `${((y - 0.5) * -14).toFixed(1)}px`);
         element.style.setProperty('--glow-x', `${x * 100}%`);
         element.style.setProperty('--glow-y', `${y * 100}%`);
         element.style.setProperty('--spatial-light-x', `${x * 100}%`);
@@ -163,7 +171,7 @@ export default defineNuxtPlugin((nuxtApp) => {
             cleanups.delete(tile);
           }
         }
-        element.querySelectorAll<HTMLElement>(spatialSelector).forEach(tile => {
+        element.querySelectorAll<HTMLElement>(spatialSelector).forEach((tile) => {
           if (!cleanups.has(tile)) cleanups.set(tile, bindSpatialTile(tile));
         });
       };
@@ -172,7 +180,7 @@ export default defineNuxtPlugin((nuxtApp) => {
       observer.observe(element, { childList: true, subtree: true });
       element.__siliciumCleanup = () => {
         observer.disconnect();
-        cleanups.forEach(cleanup => cleanup());
+        cleanups.forEach((cleanup) => cleanup());
         cleanups.clear();
       };
     },

@@ -4,7 +4,10 @@
 // lists of bare values, keyframes (`x = { 0 = 1  48 = 5 }`) and libconfig
 // lists (`( ... )`).
 
-export type Value = { kind: 'number'; value: number } | { kind: 'word'; value: string } | { kind: 'block'; entries: Entry[] };
+export type Value =
+  | { kind: 'number'; value: number }
+  | { kind: 'word'; value: string }
+  | { kind: 'block'; entries: Entry[] };
 
 export interface Entry {
   key?: string;
@@ -14,10 +17,16 @@ export interface Entry {
 }
 
 export class SyntaxError {
-  constructor(public line: number, public code: 'unbalanced_braces' | 'syntax_error', public message: string) {}
+  constructor(
+    public line: number,
+    public code: 'unbalanced_braces' | 'syntax_error',
+    public message: string,
+  ) {}
 }
 
-type Token = { type: 'open' | 'close' | 'assign'; line: number } | { type: 'text'; text: string; quoted: boolean; line: number };
+type Token =
+  | { type: 'open' | 'close' | 'assign'; line: number }
+  | { type: 'text'; text: string; quoted: boolean; line: number };
 
 /** Rust's `str::parse::<f64>()` (no hex, no empty string). */
 export function parseRustFloat(text: string): number | undefined {
@@ -52,7 +61,8 @@ function tokenize(text: string): Token[] {
         index += 1;
         const next = chars[index];
         if (next === '"') break;
-        if (next === undefined || next === '\n') throw new SyntaxError(start, 'syntax_error', 'unterminated text: a `"` is missing');
+        if (next === undefined || next === '\n')
+          throw new SyntaxError(start, 'syntax_error', 'unterminated text: a `"` is missing');
         word += next;
       }
       tokens.push({ type: 'text', text: word, quoted: true, line: start });
@@ -87,15 +97,24 @@ export function parse(text: string): Entry[] {
       const line = lineAt();
       const token = tokens[position];
       if (!token) {
-        if (openedAt !== undefined) throw new SyntaxError(openedAt, 'unbalanced_braces', 'this block is never closed: a `}` is missing');
+        if (openedAt !== undefined)
+          throw new SyntaxError(
+            openedAt,
+            'unbalanced_braces',
+            'this block is never closed: a `}` is missing',
+          );
         return entries;
       }
       if (token.type === 'close') {
         position += 1;
-        if (openedAt === undefined) throw new SyntaxError(line, 'unbalanced_braces', 'this `}` closes nothing');
+        if (openedAt === undefined)
+          throw new SyntaxError(line, 'unbalanced_braces', 'this `}` closes nothing');
         return entries;
       }
-      if (token.type === 'assign') { position += 1; continue; }
+      if (token.type === 'assign') {
+        position += 1;
+        continue;
+      }
       if (token.type === 'open') {
         position += 1;
         entries.push({ value: { kind: 'block', entries: block(line) }, line });
@@ -127,10 +146,12 @@ export function parse(text: string): Entry[] {
 }
 
 /** First entry named `key`. */
-export const entry = (entries: Entry[], key: string): Entry | undefined => entries.find((item) => item.key === key);
+export const entry = (entries: Entry[], key: string): Entry | undefined =>
+  entries.find((item) => item.key === key);
 
 /** Every entry named `key`. */
-export const all = (entries: Entry[], key: string): Entry[] => entries.filter((item) => item.key === key);
+export const all = (entries: Entry[], key: string): Entry[] =>
+  entries.filter((item) => item.key === key);
 
 /** The block named `key`, if any. */
 export function block(entries: Entry[], key: string): Entry[] | undefined {
@@ -146,15 +167,22 @@ export function word(entries: Entry[], key: string): string | undefined {
 
 /** Bare numbers of a block (`vertices = { 0 0 0  1 0 0 }`). */
 export const numbers = (entries: Entry[]): number[] =>
-  entries.filter((item) => item.key === undefined && item.value.kind === 'number').map((item) => (item.value as { value: number }).value);
+  entries
+    .filter((item) => item.key === undefined && item.value.kind === 'number')
+    .map((item) => (item.value as { value: number }).value);
 
 /** Keyframes `{ 0 = 1  48 = 5  ease = smooth }`, sorted by frame. */
-export function keyframes(entries: Entry[]): { keys: [number, number][]; smooth: boolean } | undefined {
+export function keyframes(
+  entries: Entry[],
+): { keys: [number, number][]; smooth: boolean } | undefined {
   const keys: [number, number][] = [];
   let smooth = false;
   for (const item of entries) {
     if (item.key === undefined) return undefined;
-    if (item.key === 'ease') { smooth = item.value.kind === 'word' && item.value.value === 'smooth'; continue; }
+    if (item.key === 'ease') {
+      smooth = item.value.kind === 'word' && item.value.value === 'smooth';
+      continue;
+    }
     const frame = parseRustFloat(item.key);
     if (frame === undefined || item.value.kind !== 'number') return undefined;
     keys.push([frame, item.value.value]);

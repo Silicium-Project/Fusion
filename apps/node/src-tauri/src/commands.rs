@@ -346,11 +346,16 @@ pub fn pair_device(repo_root: String, node_id: String, code: String) -> Result<(
     if let Err(error) = file.write_all(&request_body) {
         drop(file);
         let _ = fs::remove_file(&request_path);
-        return Err(format!("Impossible de préparer la requête d’association : {error}"));
+        return Err(format!(
+            "Impossible de préparer la requête d’association : {error}"
+        ));
     }
     drop(file);
 
-    let url = format!("{}/devices/pair", default_api_base_url().trim_end_matches('/'));
+    let url = format!(
+        "{}/devices/pair",
+        default_api_base_url().trim_end_matches('/')
+    );
     let mut post = Command::new(curl_command());
     apply_tls_options(&mut post);
     post.arg("--fail-with-body")
@@ -372,7 +377,12 @@ pub fn pair_device(repo_root: String, node_id: String, code: String) -> Result<(
     if !response.status.success() {
         let message = serde_json::from_slice::<Value>(&response.stdout)
             .ok()
-            .and_then(|value| value.get("message").and_then(Value::as_str).map(str::to_string));
+            .and_then(|value| {
+                value
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            });
         return Err(message.unwrap_or_else(|| {
             "L’association a échoué. Vérifiez le code et la connexion réseau.".to_string()
         }));

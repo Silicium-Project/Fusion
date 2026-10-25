@@ -18,7 +18,16 @@ export interface PreviewRequest {
 }
 
 export type PreviewReply =
-  | { id: number; kind: 'image'; pixels: Uint8ClampedArray<ArrayBuffer>; width: number; height: number; samples: number; target: number; quick: boolean }
+  | {
+      id: number;
+      kind: 'image';
+      pixels: Uint8ClampedArray<ArrayBuffer>;
+      width: number;
+      height: number;
+      samples: number;
+      target: number;
+      quick: boolean;
+    }
   | { id: number; kind: 'error'; message: string };
 
 export async function runPreview(
@@ -31,13 +40,24 @@ export async function runPreview(
   try {
     scene = buildScene(request.text);
   } catch (error) {
-    post({ id: request.id, kind: 'error', message: error instanceof Error ? error.message : String(error) });
+    post({
+      id: request.id,
+      kind: 'error',
+      message: error instanceof Error ? error.message : String(error),
+    });
     return;
   }
   const stages: Accumulator[] = [];
   if (request.quick && request.width > 120) {
     const factor = 3;
-    stages.push(new Accumulator(scene, Math.max(1, Math.round(request.width / factor)), Math.max(1, Math.round(request.height / factor)), 1));
+    stages.push(
+      new Accumulator(
+        scene,
+        Math.max(1, Math.round(request.width / factor)),
+        Math.max(1, Math.round(request.height / factor)),
+        1,
+      ),
+    );
   }
   stages.push(new Accumulator(scene, request.width, request.height, Math.max(1, request.target)));
   let sliceStart = performance.now();
@@ -46,14 +66,25 @@ export async function runPreview(
       for (let y = 0; y < accumulator.height; y += 1) {
         accumulator.rows(y, y + 1);
         if (performance.now() - sliceStart > budgetMs) {
-          await new Promise<void>((resolve) => setTimeout(resolve, 0));
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, 0);
+          });
           if (!isCurrent()) return;
           sliceStart = performance.now();
         }
       }
       accumulator.samples += 1;
       const quick = accumulator !== stages[stages.length - 1];
-      post({ id: request.id, kind: 'image', pixels: accumulator.rgba(), width: accumulator.width, height: accumulator.height, samples: accumulator.samples, target: accumulator.target, quick });
+      post({
+        id: request.id,
+        kind: 'image',
+        pixels: accumulator.rgba(),
+        width: accumulator.width,
+        height: accumulator.height,
+        samples: accumulator.samples,
+        target: accumulator.target,
+        quick,
+      });
     }
   }
 }

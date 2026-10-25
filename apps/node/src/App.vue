@@ -5,9 +5,11 @@
         <p class="eyebrow">Silicium Node</p>
         <h1>{{ status.running ? 'Votre PC est dans le reseau' : 'Activez votre PC' }}</h1>
         <p class="subtitle">
-          {{ status.running
-            ? 'Votre machine reste disponible en arriere-plan. Silicium lui attribue automatiquement du calcul ou de la verification.'
-            : 'Un clic suffit pour connecter ce PC au reseau Silicium.' }}
+          {{
+            status.running
+              ? 'Votre machine reste disponible en arriere-plan. Silicium lui attribue automatiquement du calcul ou de la verification.'
+              : 'Un clic suffit pour connecter ce PC au reseau Silicium.'
+          }}
         </p>
       </div>
       <div class="status-pill" :class="{ online: status.running }">
@@ -17,19 +19,25 @@
 
     <p v-if="userMessage" class="app-banner info-banner">{{ userMessage }}</p>
     <p v-if="refreshError" class="app-banner error-banner">{{ refreshError }}</p>
-    <section class="app-banner release-banner" :class="{ warning: updateInfo.updateAvailable, error: updateInfo.state === 'error' }">
+    <section
+      class="app-banner release-banner"
+      :class="{ warning: updateInfo.updateAvailable, error: updateInfo.state === 'error' }"
+    >
       <div>
         <strong>{{ releaseBannerTitle }}</strong>
         <span>{{ releaseBannerDetail }}</span>
       </div>
-      <span class="release-channel">{{ updateInfo.currentChannel }} · {{ updateInfo.currentVersion }}</span>
+      <span class="release-channel"
+        >{{ updateInfo.currentChannel }} · {{ updateInfo.currentVersion }}</span
+      >
     </section>
 
     <section v-if="!status.running" class="activation-card compact-activation">
       <div class="activation-copy">
         <h2>Rejoindre le reseau</h2>
         <p>
-          Silicium prepare le runtime, connecte ce PC et affiche ensuite son activite. Aucun choix technique n est demande.
+          Silicium prepare le runtime, connecte ce PC et affiche ensuite son activite. Aucun choix
+          technique n est demande.
         </p>
       </div>
 
@@ -54,7 +62,6 @@
           </label>
         </div>
       </details>
-
     </section>
 
     <section v-else class="dashboard compact-dashboard">
@@ -93,16 +100,42 @@
         <div>
           <p class="eyebrow">Compte Silicium</p>
           <h2>Associer ce PC à votre compte</h2>
-          <p>Depuis l’espace worker du site, générez un code puis collez-le ici. Ce PC signe le code avec son identité réseau persistante.</p>
+          <p>
+            Depuis l’espace worker du site, générez un code puis collez-le ici. Ce PC signe le code
+            avec son identité réseau persistante.
+          </p>
         </div>
         <form class="device-link-form" @submit.prevent="associateCurrentDevice">
           <label for="device-link-code">Code à usage unique · valide 10 minutes</label>
-          <input id="device-link-code" v-model.trim="deviceLinkCode" class="device-link-code" type="text" inputmode="text" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" maxlength="64" placeholder="Collez le code généré sur le site" :disabled="deviceLinkBusy">
-          <button class="secondary-action" type="submit" :disabled="deviceLinkBusy || !deviceLinkCode">
+          <input
+            id="device-link-code"
+            v-model.trim="deviceLinkCode"
+            class="device-link-code"
+            type="text"
+            inputmode="text"
+            autocomplete="one-time-code"
+            autocapitalize="off"
+            spellcheck="false"
+            maxlength="64"
+            placeholder="Collez le code généré sur le site"
+            :disabled="deviceLinkBusy"
+          />
+          <button
+            class="secondary-action"
+            type="submit"
+            :disabled="deviceLinkBusy || !deviceLinkCode"
+          >
             {{ deviceLinkBusy ? 'Association…' : 'Associer ce PC' }}
           </button>
         </form>
-        <p v-if="deviceLinkMessage" class="device-link-message" :class="{ error: deviceLinkFailed }" role="status">{{ deviceLinkMessage }}</p>
+        <p
+          v-if="deviceLinkMessage"
+          class="device-link-message"
+          :class="{ error: deviceLinkFailed }"
+          role="status"
+        >
+          {{ deviceLinkMessage }}
+        </p>
       </section>
 
       <section v-if="localMachine" class="panel telemetry-panel">
@@ -112,15 +145,50 @@
             <h2>Charge de ce PC</h2>
             <p>Mesures du processus Silicium et de la machine, publiees dans l annuaire P2P.</p>
           </div>
-          <span class="telemetry-live"><i></i> {{ formatRelativeTime(localMachine.telemetry.sampledUnix) }}</span>
+          <span class="telemetry-live"
+            ><i></i> {{ formatRelativeTime(localMachine.telemetry.sampledUnix) }}</span
+          >
         </div>
         <div class="telemetry-grid">
-          <article><span>CPU machine</span><strong>{{ formatMetricPercent(localMachine.telemetry.systemCpuPercent) }}</strong><small>{{ localMachine.telemetry.logicalCpuCount || localMachine.cpuCount }} coeurs logiques</small></article>
-          <article><span>CPU Silicium</span><strong>{{ formatMetricPercent(localMachine.telemetry.processCpuPercent) }}</strong><small>{{ formatMetricPercent(localMachine.telemetry.processCpuPercentOneCore) }} d un coeur</small></article>
-          <article><span>RAM machine</span><strong>{{ formatMetricPercent(localMachine.telemetry.systemMemoryPercent) }}</strong><small>{{ formatBytes(localMachine.telemetry.systemMemoryUsedBytes) }} / {{ formatBytes(localMachine.telemetry.systemMemoryTotalBytes) }}</small></article>
-          <article><span>RAM Silicium</span><strong>{{ formatBytes(localMachine.telemetry.processRssBytes) }}</strong><small>pic {{ formatBytes(localMachine.telemetry.processPeakRssBytes) }}</small></article>
-          <article><span>Stockage</span><strong>{{ formatMetricPercent(localMachine.telemetry.storageUsedPercent) }}</strong><small>{{ formatBytes(localMachine.telemetry.storageFreeBytes) }} libres</small></article>
-          <article><span>Uptime node</span><strong>{{ formatElapsed(localMachine.telemetry.nodeUptimeSeconds * 1000) }}</strong><small>{{ localMachine.telemetry.runtimeThreadCount }} threads runtime</small></article>
+          <article>
+            <span>CPU machine</span
+            ><strong>{{ formatMetricPercent(localMachine.telemetry.systemCpuPercent) }}</strong
+            ><small
+              >{{ localMachine.telemetry.logicalCpuCount || localMachine.cpuCount }} coeurs
+              logiques</small
+            >
+          </article>
+          <article>
+            <span>CPU Silicium</span
+            ><strong>{{ formatMetricPercent(localMachine.telemetry.processCpuPercent) }}</strong
+            ><small
+              >{{ formatMetricPercent(localMachine.telemetry.processCpuPercentOneCore) }} d un
+              coeur</small
+            >
+          </article>
+          <article>
+            <span>RAM machine</span
+            ><strong>{{ formatMetricPercent(localMachine.telemetry.systemMemoryPercent) }}</strong
+            ><small
+              >{{ formatBytes(localMachine.telemetry.systemMemoryUsedBytes) }} /
+              {{ formatBytes(localMachine.telemetry.systemMemoryTotalBytes) }}</small
+            >
+          </article>
+          <article>
+            <span>RAM Silicium</span
+            ><strong>{{ formatBytes(localMachine.telemetry.processRssBytes) }}</strong
+            ><small>pic {{ formatBytes(localMachine.telemetry.processPeakRssBytes) }}</small>
+          </article>
+          <article>
+            <span>Stockage</span
+            ><strong>{{ formatMetricPercent(localMachine.telemetry.storageUsedPercent) }}</strong
+            ><small>{{ formatBytes(localMachine.telemetry.storageFreeBytes) }} libres</small>
+          </article>
+          <article>
+            <span>Uptime node</span
+            ><strong>{{ formatElapsed(localMachine.telemetry.nodeUptimeSeconds * 1000) }}</strong
+            ><small>{{ localMachine.telemetry.runtimeThreadCount }} threads runtime</small>
+          </article>
         </div>
       </section>
 
@@ -129,7 +197,10 @@
           <div>
             <p class="eyebrow">Task book partage</p>
             <h2>Queue de taches connue</h2>
-            <p>Travaux en attente ou en cours sur le reseau, avec role, workload, parcelle et attribution.</p>
+            <p>
+              Travaux en attente ou en cours sur le reseau, avec role, workload, parcelle et
+              attribution.
+            </p>
           </div>
           <strong class="queue-count">{{ networkTaskQueue.length }}</strong>
         </div>
@@ -137,26 +208,39 @@
           Aucune tache active dans le task book actuellement connu par ce node.
         </div>
         <div v-else class="task-queue-grid">
-          <article v-for="task in networkTaskQueue" :key="`${task.ownerNodeId}-${task.itemId}`" class="task-queue-card progress-card">
-            <span class="task-progress-background" :style="{ width: `${queueProgress(task)}%` }"></span>
+          <article
+            v-for="task in networkTaskQueue"
+            :key="`${task.ownerNodeId}-${task.itemId}`"
+            class="task-queue-card progress-card"
+          >
+            <span
+              class="task-progress-background"
+              :style="{ width: `${queueProgress(task)}%` }"
+            ></span>
             <div class="task-card-content">
-            <div class="task-queue-heading">
-              <span class="task-role" :class="task.role">{{ taskRoleLabel(task.role) }}</span>
-              <span class="task-status">{{ taskStatusLabel(task.status) }}</span>
-            </div>
-            <strong>{{ task.workload || task.activity || task.kind }}</strong>
-            <code>{{ task.itemId }}</code>
-            <small v-if="task.fragmentIndex !== ''">
-              Parcelle {{ Number(task.fragmentIndex) + 1 }}<template v-if="task.fragmentCount"> / {{ task.fragmentCount }}</template>
-              <template v-if="task.bounds"> · {{ task.bounds }}</template>
-            </small>
-            <small>Annonceur : {{ task.ownerNodeId }}</small>
-            <small>Attribuee : {{ task.assignedPeerId || 'en attente de claim' }}</small>
-            <small v-if="task.sourceNodeId">Resultat source : {{ task.sourceNodeId }} · {{ task.sourceTaskId }}</small>
-            <div v-if="queueActiveTask(task)" class="task-progress-detail">
-              <strong>{{ formatProgress(queueActiveTask(task)!.progressPercent) }}</strong>
-              <span>{{ phaseLabel(queueActiveTask(task)!.phase) }} / {{ progressSourceLabel(queueActiveTask(task)!.progressSource) }}</span>
-            </div>
+              <div class="task-queue-heading">
+                <span class="task-role" :class="task.role">{{ taskRoleLabel(task.role) }}</span>
+                <span class="task-status">{{ taskStatusLabel(task.status) }}</span>
+              </div>
+              <strong>{{ task.workload || task.activity || task.kind }}</strong>
+              <code>{{ task.itemId }}</code>
+              <small v-if="task.fragmentIndex !== ''">
+                Parcelle {{ Number(task.fragmentIndex) + 1
+                }}<template v-if="task.fragmentCount"> / {{ task.fragmentCount }}</template>
+                <template v-if="task.bounds"> · {{ task.bounds }}</template>
+              </small>
+              <small>Annonceur : {{ task.ownerNodeId }}</small>
+              <small>Attribuee : {{ task.assignedPeerId || 'en attente de claim' }}</small>
+              <small v-if="task.sourceNodeId"
+                >Resultat source : {{ task.sourceNodeId }} · {{ task.sourceTaskId }}</small
+              >
+              <div v-if="queueActiveTask(task)" class="task-progress-detail">
+                <strong>{{ formatProgress(queueActiveTask(task)!.progressPercent) }}</strong>
+                <span
+                  >{{ phaseLabel(queueActiveTask(task)!.phase) }} /
+                  {{ progressSourceLabel(queueActiveTask(task)!.progressSource) }}</span
+                >
+              </div>
             </div>
           </article>
         </div>
@@ -167,7 +251,10 @@
           <div>
             <p class="eyebrow">Confiance collective</p>
             <h2>Reputation bayesienne de ce node</h2>
-            <p>Posteriors Beta issus des preuves reseau. La borne basse pilote le scheduler, pas le score manuel historique.</p>
+            <p>
+              Posteriors Beta issus des preuves reseau. La borne basse pilote le scheduler, pas le
+              score manuel historique.
+            </p>
           </div>
           <strong class="queue-count">{{ localReputation.length }}/5</strong>
         </div>
@@ -177,9 +264,17 @@
               <strong>{{ reputationLabel(score.dimension) }}</strong>
               <span>{{ percent(score.mean) }}</span>
             </div>
-            <div class="reputation-meter"><span :style="{ width: percent(score.mean) }"></span></div>
-            <small>Borne sure {{ percent(score.lowerBound) }} · {{ formatEvidence(score.evidence) }} preuves</small>
-            <small>Court {{ percent(score.shortTermMean) }} · Long {{ percent(score.longTermMean) }}</small>
+            <div class="reputation-meter">
+              <span :style="{ width: percent(score.mean) }"></span>
+            </div>
+            <small
+              >Borne sure {{ percent(score.lowerBound) }} ·
+              {{ formatEvidence(score.evidence) }} preuves</small
+            >
+            <small
+              >Court {{ percent(score.shortTermMean) }} · Long
+              {{ percent(score.longTermMean) }}</small
+            >
           </article>
         </div>
         <div v-else class="empty-state">Le node doit publier son premier heartbeat bayesien.</div>
@@ -236,15 +331,27 @@
         <div class="ai-head">
           <div>
             <h2>Taches IA</h2>
-            <p>Votre PC aide aussi a traiter des listes de textes avec une IA (resumer, traduire, classer). Le modele tourne en local avec Ollama.</p>
+            <p>
+              Votre PC aide aussi a traiter des listes de textes avec une IA (resumer, traduire,
+              classer). Le modele tourne en local avec Ollama.
+            </p>
           </div>
           <label class="ai-switch">
-            <input type="checkbox" :checked="ai.enabled" :disabled="aiBusy || ai.state === 'unsupported'" @change="toggleAi(($event.target as HTMLInputElement).checked)">
+            <input
+              type="checkbox"
+              :checked="ai.enabled"
+              :disabled="aiBusy || ai.state === 'unsupported'"
+              @change="toggleAi(($event.target as HTMLInputElement).checked)"
+            />
             <span>{{ ai.enabled ? 'Active' : 'Desactive' }}</span>
           </label>
         </div>
         <p class="ai-state" :class="ai.state">{{ aiStateLabel }}</p>
-        <p v-if="!ai.enabled && ai.state !== 'unsupported'" class="ai-note">Activer telecharge Ollama {{ ai.version }} (environ 1,4 Go) puis le modele Qwen 2.5 1,5B (1,1 Go) a la premiere tache. Les textes traites viennent d autres utilisateurs ; vos fichiers ne sont pas lus.</p>
+        <p v-if="!ai.enabled && ai.state !== 'unsupported'" class="ai-note">
+          Activer telecharge Ollama {{ ai.version }} (environ 1,4 Go) puis le modele Qwen 2.5 1,5B
+          (1,1 Go) a la premiere tache. Les textes traites viennent d autres utilisateurs ; vos
+          fichiers ne sont pas lus.
+        </p>
       </section>
 
       <section class="panel network-directory">
@@ -252,23 +359,39 @@
           <div>
             <p class="eyebrow">Annuaire reseau connu</p>
             <h2>Nodes observes par ce PC</h2>
-            <p>Presence, release, identite P2P et activite des machines, d apres le dernier instantane des pairs du noeud.</p>
+            <p>
+              Presence, release, identite P2P et activite des machines, d apres le dernier
+              instantane des pairs du noeud.
+            </p>
           </div>
           <div class="directory-metrics">
-            <span><strong>{{ activity.machines.length }}</strong> connus</span>
-            <span class="metric-online"><strong>{{ onlineMachineCount }}</strong> en ligne</span>
-            <span :class="{ 'metric-warning': outdatedMachineCount > 0 }"><strong>{{ outdatedMachineCount }}</strong> a mettre a jour</span>
-            <span><strong>{{ directProofMachineCount }}</strong> avec preuve directe</span>
+            <span
+              ><strong>{{ activity.machines.length }}</strong> connus</span
+            >
+            <span class="metric-online"
+              ><strong>{{ onlineMachineCount }}</strong> en ligne</span
+            >
+            <span :class="{ 'metric-warning': outdatedMachineCount > 0 }"
+              ><strong>{{ outdatedMachineCount }}</strong> a mettre a jour</span
+            >
+            <span
+              ><strong>{{ directProofMachineCount }}</strong> avec preuve directe</span
+            >
           </div>
         </div>
 
         <div class="directory-toolbar">
-          <input v-model.trim="networkQuery" type="search" placeholder="Rechercher un node, role, endpoint, version..." />
+          <input
+            v-model.trim="networkQuery"
+            type="search"
+            placeholder="Rechercher un node, role, endpoint, version..."
+          />
           <span>{{ filteredMachines.length }} resultat(s)</span>
         </div>
 
         <div v-if="activity.machines.length === 0" class="empty-state">
-          Aucun node dans l annuaire local. Les entrees apparaitront apres la prochaine synchronisation P2P.
+          Aucun node dans l annuaire local. Les entrees apparaitront apres la prochaine
+          synchronisation P2P.
         </div>
         <div v-else-if="filteredMachines.length === 0" class="empty-state">
           Aucun node ne correspond a cette recherche.
@@ -282,23 +405,39 @@
             <span>Derniere presence</span>
           </div>
 
-          <article v-for="machine in filteredMachines" :key="machine.nodeId" class="directory-node" :class="{ offline: !machine.online }">
+          <article
+            v-for="machine in filteredMachines"
+            :key="machine.nodeId"
+            class="directory-node"
+            :class="{ offline: !machine.online }"
+          >
             <div class="directory-summary">
               <div class="directory-identity">
                 <span class="machine-light" :class="{ online: machine.online }"></span>
                 <div>
                   <strong>{{ machine.nodeId }}</strong>
-                  <small>{{ machine.selfNode ? 'Ce PC' : shortIdentity(machine.identityId) }}</small>
+                  <small>{{
+                    machine.selfNode ? 'Ce PC' : shortIdentity(machine.identityId)
+                  }}</small>
                 </div>
               </div>
 
               <div class="directory-release">
-                <strong :class="{ 'machine-version-warning': machineNeedsUpdate(machine) }">{{ machine.appVersion || 'version inconnue' }}</strong>
-                <small>{{ machine.releaseChannel || 'canal inconnu' }}<template v-if="machine.releaseBuild"> · {{ machine.releaseBuild }}</template></small>
+                <strong :class="{ 'machine-version-warning': machineNeedsUpdate(machine) }">{{
+                  machine.appVersion || 'version inconnue'
+                }}</strong>
+                <small
+                  >{{ machine.releaseChannel || 'canal inconnu'
+                  }}<template v-if="machine.releaseBuild">
+                    · {{ machine.releaseBuild }}</template
+                  ></small
+                >
               </div>
 
               <div class="directory-p2p">
-                <span class="p2p-badge" :class="p2pStatusClass(machine)">{{ p2pStatusLabel(machine) }}</span>
+                <span class="p2p-badge" :class="p2pStatusClass(machine)">{{
+                  p2pStatusLabel(machine)
+                }}</span>
                 <small>{{ transportProofSummary(machine) }}</small>
               </div>
 
@@ -316,55 +455,186 @@
             <details class="directory-details">
               <summary>Details techniques et candidats</summary>
               <div class="directory-detail-grid">
-                <div><span>Roles</span><code>{{ machine.roles.join(', ') || 'aucun' }}</code></div>
-                <div><span>Endpoint HTTP annonce</span><code>{{ machine.httpBaseUrl || 'non annonce' }}</code></div>
-                <div><span>Identite P2P</span><code>{{ machine.identityId || 'inconnue' }}</code></div>
-                <div><span>Plateforme / CPU</span><code>{{ machine.platform || 'inconnue' }} · {{ machine.cpuCount || '?' }} coeur(s)</code></div>
-                <div><span>Fonctions transport</span><code>{{ machine.features.join(', ') || 'non annoncees' }}</code></div>
-                <div><span>Relay</span><code>{{ machine.relayCapable ? 'capable' : 'non annonce' }}</code></div>
-                <div><span>Dernier claim</span><code>{{ machine.lastClaimPollUtc || 'aucun' }}</code></div>
-                <div><span>Derniere reponse</span><code>{{ responseLabel(machine) }}<template v-if="machine.lastResponseItemId"> · {{ machine.lastResponseItemId }}</template></code></div>
-                <div><span>Queue annoncee</span><code>{{ machine.taskQueue.length }} tache(s)</code></div>
-                <div><span>CPU machine / Silicium</span><code>{{ formatMetricPercent(machine.telemetry.systemCpuPercent) }} / {{ formatMetricPercent(machine.telemetry.processCpuPercent) }}</code></div>
-                <div><span>RAM machine</span><code>{{ formatBytes(machine.telemetry.systemMemoryUsedBytes) }} / {{ formatBytes(machine.telemetry.systemMemoryTotalBytes) }} ({{ formatMetricPercent(machine.telemetry.systemMemoryPercent) }})</code></div>
-                <div><span>RAM processus / pic</span><code>{{ formatBytes(machine.telemetry.processRssBytes) }} / {{ formatBytes(machine.telemetry.processPeakRssBytes) }}</code></div>
-                <div><span>Stockage / uptime</span><code>{{ formatMetricPercent(machine.telemetry.storageUsedPercent) }} utilise / {{ formatElapsed(machine.telemetry.nodeUptimeSeconds * 1000) }}</code></div>
+                <div>
+                  <span>Roles</span><code>{{ machine.roles.join(', ') || 'aucun' }}</code>
+                </div>
+                <div>
+                  <span>Endpoint HTTP annonce</span
+                  ><code>{{ machine.httpBaseUrl || 'non annonce' }}</code>
+                </div>
+                <div>
+                  <span>Identite P2P</span><code>{{ machine.identityId || 'inconnue' }}</code>
+                </div>
+                <div>
+                  <span>Plateforme / CPU</span
+                  ><code
+                    >{{ machine.platform || 'inconnue' }} ·
+                    {{ machine.cpuCount || '?' }} coeur(s)</code
+                  >
+                </div>
+                <div>
+                  <span>Fonctions transport</span
+                  ><code>{{ machine.features.join(', ') || 'non annoncees' }}</code>
+                </div>
+                <div>
+                  <span>Relay</span
+                  ><code>{{ machine.relayCapable ? 'capable' : 'non annonce' }}</code>
+                </div>
+                <div>
+                  <span>Dernier claim</span><code>{{ machine.lastClaimPollUtc || 'aucun' }}</code>
+                </div>
+                <div>
+                  <span>Derniere reponse</span
+                  ><code
+                    >{{ responseLabel(machine)
+                    }}<template v-if="machine.lastResponseItemId">
+                      · {{ machine.lastResponseItemId }}</template
+                    ></code
+                  >
+                </div>
+                <div>
+                  <span>Queue annoncee</span><code>{{ machine.taskQueue.length }} tache(s)</code>
+                </div>
+                <div>
+                  <span>CPU machine / Silicium</span
+                  ><code
+                    >{{ formatMetricPercent(machine.telemetry.systemCpuPercent) }} /
+                    {{ formatMetricPercent(machine.telemetry.processCpuPercent) }}</code
+                  >
+                </div>
+                <div>
+                  <span>RAM machine</span
+                  ><code
+                    >{{ formatBytes(machine.telemetry.systemMemoryUsedBytes) }} /
+                    {{ formatBytes(machine.telemetry.systemMemoryTotalBytes) }} ({{
+                      formatMetricPercent(machine.telemetry.systemMemoryPercent)
+                    }})</code
+                  >
+                </div>
+                <div>
+                  <span>RAM processus / pic</span
+                  ><code
+                    >{{ formatBytes(machine.telemetry.processRssBytes) }} /
+                    {{ formatBytes(machine.telemetry.processPeakRssBytes) }}</code
+                  >
+                </div>
+                <div>
+                  <span>Stockage / uptime</span
+                  ><code
+                    >{{ formatMetricPercent(machine.telemetry.storageUsedPercent) }} utilise /
+                    {{ formatElapsed(machine.telemetry.nodeUptimeSeconds * 1000) }}</code
+                  >
+                </div>
               </div>
               <div v-if="machine.resourceReputation.length" class="reputation-grid compact">
-                <article v-for="score in machine.resourceReputation" :key="`${machine.nodeId}-${score.dimension}`" class="reputation-card">
+                <article
+                  v-for="score in machine.resourceReputation"
+                  :key="`${machine.nodeId}-${score.dimension}`"
+                  class="reputation-card"
+                >
                   <div class="reputation-heading">
                     <strong>{{ reputationLabel(score.dimension) }}</strong>
                     <span>{{ percent(score.mean) }}</span>
                   </div>
-                  <div class="reputation-meter"><span :style="{ width: percent(score.mean) }"></span></div>
-                  <small>LCB {{ percent(score.lowerBound) }} · {{ formatEvidence(score.evidence) }} preuves</small>
-                  <small>Court {{ percent(score.shortTermMean) }} · Long {{ percent(score.longTermMean) }}</small>
+                  <div class="reputation-meter">
+                    <span :style="{ width: percent(score.mean) }"></span>
+                  </div>
+                  <small
+                    >LCB {{ percent(score.lowerBound) }} ·
+                    {{ formatEvidence(score.evidence) }} preuves</small
+                  >
+                  <small
+                    >Court {{ percent(score.shortTermMean) }} · Long
+                    {{ percent(score.longTermMean) }}</small
+                  >
                 </article>
               </div>
               <div v-if="machine.activeTasks.length" class="machine-task-list">
-                <article v-for="task in machine.activeTasks" :key="task.itemId" class="machine-task-card active progress-card">
-                  <span class="task-progress-background" :style="{ width: `${clampProgress(task.progressPercent)}%` }"></span>
+                <article
+                  v-for="task in machine.activeTasks"
+                  :key="task.itemId"
+                  class="machine-task-card active progress-card"
+                >
+                  <span
+                    class="task-progress-background"
+                    :style="{ width: `${clampProgress(task.progressPercent)}%` }"
+                  ></span>
                   <div class="task-card-content">
-                  <strong>{{ taskRoleLabel(task.role) }} · {{ task.workload || task.activity }}</strong>
-                  <code>{{ task.itemId }}</code>
-                  <small v-if="task.fragmentIndex !== ''">
-                    Parcelle {{ Number(task.fragmentIndex) + 1 }}<template v-if="task.fragmentCount"> / {{ task.fragmentCount }}</template>
-                    <template v-if="task.bounds"> · {{ task.bounds }}</template>
-                  </small>
-                  <small v-if="task.sourceNodeId">Verifie le resultat de {{ task.sourceNodeId }} · {{ task.sourceTaskId }}</small>
-                  <div class="task-metrics">
-                    <span>Progression <strong>{{ formatProgress(task.progressPercent) }}</strong></span>
-                    <span>Phase <strong>{{ phaseLabel(task.phase) }}</strong></span>
-                    <span>Mesure <strong>{{ progressSourceLabel(task.progressSource) }}</strong></span>
-                    <span>Ecoule <strong>{{ formatElapsed(task.elapsedMs) }}</strong></span>
-                    <span>ETA <strong>{{ task.etaSeconds > 0 ? formatElapsed(task.etaSeconds * 1000) : 'calcul...' }}</strong></span>
-                    <span v-if="task.totalUnits > 0">Unites <strong>{{ formatNumber(task.completedUnits) }} / {{ formatNumber(task.totalUnits) }} {{ task.unit }}</strong></span>
-                    <span v-if="task.throughputUnitsPerSecond > 0">Debit <strong>{{ formatNumber(task.throughputUnitsPerSecond) }} {{ task.unit }}/s</strong></span>
-                    <span v-if="task.pixelsTotal > 0">Pixels <strong>{{ formatNumber(task.pixelsCompleted) }} / {{ formatNumber(task.pixelsTotal) }}</strong></span>
-                    <span>Threads <strong>{{ task.workerThreads || task.resourceUsage.runtimeThreadCount || '?' }}</strong></span>
-                    <span>CPU / RAM <strong>{{ formatMetricPercent(task.resourceUsage.systemCpuPercent) }} / {{ formatBytes(task.resourceUsage.processRssBytes) }}</strong></span>
-                    <span>Essai <strong>{{ task.attempt || 1 }} / {{ (task.maxRetries || 0) + 1 }}</strong></span>
-                  </div>
+                    <strong
+                      >{{ taskRoleLabel(task.role) }} · {{ task.workload || task.activity }}</strong
+                    >
+                    <code>{{ task.itemId }}</code>
+                    <small v-if="task.fragmentIndex !== ''">
+                      Parcelle {{ Number(task.fragmentIndex) + 1
+                      }}<template v-if="task.fragmentCount"> / {{ task.fragmentCount }}</template>
+                      <template v-if="task.bounds"> · {{ task.bounds }}</template>
+                    </small>
+                    <small v-if="task.sourceNodeId"
+                      >Verifie le resultat de {{ task.sourceNodeId }} ·
+                      {{ task.sourceTaskId }}</small
+                    >
+                    <div class="task-metrics">
+                      <span
+                        >Progression
+                        <strong>{{ formatProgress(task.progressPercent) }}</strong></span
+                      >
+                      <span
+                        >Phase <strong>{{ phaseLabel(task.phase) }}</strong></span
+                      >
+                      <span
+                        >Mesure
+                        <strong>{{ progressSourceLabel(task.progressSource) }}</strong></span
+                      >
+                      <span
+                        >Ecoule <strong>{{ formatElapsed(task.elapsedMs) }}</strong></span
+                      >
+                      <span
+                        >ETA
+                        <strong>{{
+                          task.etaSeconds > 0 ? formatElapsed(task.etaSeconds * 1000) : 'calcul...'
+                        }}</strong></span
+                      >
+                      <span v-if="task.totalUnits > 0"
+                        >Unites
+                        <strong
+                          >{{ formatNumber(task.completedUnits) }} /
+                          {{ formatNumber(task.totalUnits) }} {{ task.unit }}</strong
+                        ></span
+                      >
+                      <span v-if="task.throughputUnitsPerSecond > 0"
+                        >Debit
+                        <strong
+                          >{{ formatNumber(task.throughputUnitsPerSecond) }}
+                          {{ task.unit }}/s</strong
+                        ></span
+                      >
+                      <span v-if="task.pixelsTotal > 0"
+                        >Pixels
+                        <strong
+                          >{{ formatNumber(task.pixelsCompleted) }} /
+                          {{ formatNumber(task.pixelsTotal) }}</strong
+                        ></span
+                      >
+                      <span
+                        >Threads
+                        <strong>{{
+                          task.workerThreads || task.resourceUsage.runtimeThreadCount || '?'
+                        }}</strong></span
+                      >
+                      <span
+                        >CPU / RAM
+                        <strong
+                          >{{ formatMetricPercent(task.resourceUsage.systemCpuPercent) }} /
+                          {{ formatBytes(task.resourceUsage.processRssBytes) }}</strong
+                        ></span
+                      >
+                      <span
+                        >Essai
+                        <strong
+                          >{{ task.attempt || 1 }} / {{ (task.maxRetries || 0) + 1 }}</strong
+                        ></span
+                      >
+                    </div>
                   </div>
                 </article>
               </div>
@@ -377,7 +647,10 @@
                 >
                   <div>
                     <strong>{{ transportRouteLabel(proof.route, proof.transportBackend) }}</strong>
-                    <small>{{ transportScopeLabel(proof.proofScope) }} · {{ formatRelativeTime(proof.timestampUnix) }}</small>
+                    <small
+                      >{{ transportScopeLabel(proof.proofScope) }} ·
+                      {{ formatRelativeTime(proof.timestampUnix) }}</small
+                    >
                   </div>
                   <code>{{ shortProof(proof.claimHash) }}</code>
                   <small>
@@ -386,21 +659,36 @@
                     <template v-else> · observation locale signee</template>
                   </small>
                   <small v-if="proof.sessionId">session {{ proof.sessionId }}</small>
-                  <small v-if="proof.failureReason" class="directory-error">{{ proof.failureReason }}</small>
+                  <small v-if="proof.failureReason" class="directory-error">{{
+                    proof.failureReason
+                  }}</small>
                 </div>
               </div>
               <p v-else class="candidate-empty">
-                Aucune preuve de chemin signee. Les candidats ci-dessous indiquent seulement une possibilite de connexion.
+                Aucune preuve de chemin signee. Les candidats ci-dessous indiquent seulement une
+                possibilite de connexion.
               </p>
               <div v-if="machine.candidates.length" class="candidate-list">
-                <div v-for="(candidate, index) in machine.candidates" :key="`${machine.nodeId}-${candidate.ip}-${candidate.port}-${index}`" class="candidate-card">
-                  <strong>{{ candidate.candidateType || 'host' }} / {{ candidate.transport || 'udp' }}</strong>
+                <div
+                  v-for="(candidate, index) in machine.candidates"
+                  :key="`${machine.nodeId}-${candidate.ip}-${candidate.port}-${index}`"
+                  class="candidate-card"
+                >
+                  <strong
+                    >{{ candidate.candidateType || 'host' }} /
+                    {{ candidate.transport || 'udp' }}</strong
+                  >
                   <code>{{ candidate.ip }}:{{ candidate.port }}</code>
-                  <small>{{ candidate.internetRoutable ? 'routable Internet' : 'adresse locale/NAT' }}<template v-if="candidate.source"> · {{ candidate.source }}</template></small>
+                  <small
+                    >{{ candidate.internetRoutable ? 'routable Internet' : 'adresse locale/NAT'
+                    }}<template v-if="candidate.source"> · {{ candidate.source }}</template></small
+                  >
                 </div>
               </div>
               <p v-else class="candidate-empty">Aucun candidat ICE annonce par ce node.</p>
-              <p v-if="machine.lastClaimError" class="directory-error">{{ machine.lastClaimError }}</p>
+              <p v-if="machine.lastClaimError" class="directory-error">
+                {{ machine.lastClaimError }}
+              </p>
             </details>
           </article>
         </div>
@@ -481,7 +769,9 @@
           <span>Supervisor PID</span>
           <code>{{ diagnostics.supervisorPid || 'aucun' }}</code>
           <span>Port local</span>
-          <code>{{ diagnostics.portReady ? 'daemon reseau pret' : 'daemon reseau indisponible' }}</code>
+          <code>{{
+            diagnostics.portReady ? 'daemon reseau pret' : 'daemon reseau indisponible'
+          }}</code>
         </div>
 
         <pre class="logs">{{ diagnostics.logTail }}</pre>
@@ -491,7 +781,30 @@
 </template>
 
 <script setup lang="ts">
-import { formatBytes, formatDate, friendlyEvent, machineWorkLabel, taskRoleLabel, machineWorkDetail, machinePresenceLabel, responseLabel, responseClass, shortIdentity, candidateSummary, latestTransportProof, transportProofSummary, p2pStatusLabel, p2pStatusClass, transportRouteLabel, transportScopeLabel, shortProof, formatRelativeTime, formatUpdateInterval, formatDurationMs, friendlyError } from './presentation';
+import {
+  formatBytes,
+  formatDate,
+  friendlyEvent,
+  machineWorkLabel,
+  taskRoleLabel,
+  machineWorkDetail,
+  machinePresenceLabel,
+  responseLabel,
+  responseClass,
+  shortIdentity,
+  candidateSummary,
+  latestTransportProof,
+  transportProofSummary,
+  p2pStatusLabel,
+  p2pStatusClass,
+  transportRouteLabel,
+  transportScopeLabel,
+  shortProof,
+  formatRelativeTime,
+  formatUpdateInterval,
+  formatDurationMs,
+  friendlyError,
+} from './presentation';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import {
   appDefaults,
@@ -538,7 +851,8 @@ function migrateOrchestratorUrl(value: string) {
   const normalized = value.trim().replace(/\/+$/, '');
   const base = normalized.toLowerCase().replace(/\/orchestrator$/, '');
   // Empty means "use the default of this build", filled in by loadDefaults().
-  return LEGACY_ORCHESTRATOR_URLS.has(base) || CHANNEL_DEFAULT_ORCHESTRATOR_URLS.has(normalized.toLowerCase())
+  return LEGACY_ORCHESTRATOR_URLS.has(base) ||
+    CHANNEL_DEFAULT_ORCHESTRATOR_URLS.has(normalized.toLowerCase())
     ? ''
     : normalized;
 }
@@ -552,17 +866,33 @@ const form = reactive({
 });
 
 const status = reactive({ running: false, roles: 'compute,verify' });
-const ai = reactive<AiStatus>({ enabled: false, state: 'off', message: '', downloadedBytes: 0, version: '', modelReady: false });
+const ai = reactive<AiStatus>({
+  enabled: false,
+  state: 'off',
+  message: '',
+  downloadedBytes: 0,
+  version: '',
+  modelReady: false,
+});
 const aiBusy = ref(false);
 const aiStateLabel = computed(() => {
   switch (ai.state) {
-    case 'downloading': return `Telechargement d Ollama... ${formatBytes(ai.downloadedBytes)}`;
-    case 'installing': return 'Installation d Ollama...';
-    case 'installed': return 'Ollama installe, demarrage avec le noeud...';
-    case 'running': return ai.modelReady ? 'Pret : ce PC prend des taches IA.' : 'Ollama demarre. Le modele sera telecharge a la premiere tache IA.';
-    case 'unsupported': return ai.message || 'Ollama n est pas disponible pour ce systeme.';
-    case 'error': return `Echec de l installation : ${ai.message}. Desactivez puis reactivez pour reessayer.`;
-    default: return 'Ce PC ne prend pas de taches IA.';
+    case 'downloading':
+      return `Telechargement d Ollama... ${formatBytes(ai.downloadedBytes)}`;
+    case 'installing':
+      return 'Installation d Ollama...';
+    case 'installed':
+      return 'Ollama installe, demarrage avec le noeud...';
+    case 'running':
+      return ai.modelReady
+        ? 'Pret : ce PC prend des taches IA.'
+        : 'Ollama demarre. Le modele sera telecharge a la premiere tache IA.';
+    case 'unsupported':
+      return ai.message || 'Ollama n est pas disponible pour ce systeme.';
+    case 'error':
+      return `Echec de l installation : ${ai.message}. Desactivez puis reactivez pour reessayer.`;
+    default:
+      return 'Ce PC ne prend pas de taches IA.';
   }
 });
 
@@ -598,7 +928,8 @@ async function associateCurrentDevice() {
   try {
     await pairDevice(form.repoRoot, form.nodeId, code);
     deviceLinkCode.value = '';
-    deviceLinkMessage.value = 'Ce PC est maintenant associé à votre compte. Son activité apparaîtra dans votre espace worker.';
+    deviceLinkMessage.value =
+      'Ce PC est maintenant associé à votre compte. Son activité apparaîtra dans votre espace worker.';
   } catch (error) {
     deviceLinkFailed.value = true;
     deviceLinkMessage.value = friendlyError(error);
@@ -725,31 +1056,46 @@ const friendlyHistory = computed(() =>
 );
 const recentFriendlyHistory = computed(() => friendlyHistory.value.slice(0, 5));
 const olderFriendlyHistory = computed(() => friendlyHistory.value.slice(5));
-const onlineMachineCount = computed(() => activity.machines.filter((machine) => machine.online).length);
+const onlineMachineCount = computed(
+  () => activity.machines.filter((machine) => machine.online).length,
+);
 const outdatedMachineCount = computed(() => activity.machines.filter(machineNeedsUpdate).length);
-const directProofMachineCount = computed(() => activity.machines.filter((machine) => (
-  machine.transportAttestations.some((proof) => proof.success && proof.route === 'direct')
-)).length);
-const localReputation = computed(() => (
-  activity.machines.find((machine) => machine.selfNode)?.resourceReputation || []
-));
+const directProofMachineCount = computed(
+  () =>
+    activity.machines.filter((machine) =>
+      machine.transportAttestations.some((proof) => proof.success && proof.route === 'direct'),
+    ).length,
+);
+const localReputation = computed(
+  () => activity.machines.find((machine) => machine.selfNode)?.resourceReputation || [],
+);
 const localMachine = computed(() => activity.machines.find((machine) => machine.selfNode));
 const networkTaskQueue = computed(() => {
-  const tasks = new Map<string, NodeActivity['machines'][number]['taskQueue'][number] & { ownerNodeId: string }>();
+  const tasks = new Map<
+    string,
+    NodeActivity['machines'][number]['taskQueue'][number] & { ownerNodeId: string }
+  >();
   for (const machine of activity.machines) {
     for (const task of machine.taskQueue) {
       const current = tasks.get(task.itemId);
       const candidate = { ...task, ownerNodeId: machine.nodeId };
-      if (!current || (task.assignedPeerId && !current.assignedPeerId) || task.status === 'running') {
+      if (
+        !current ||
+        (task.assignedPeerId && !current.assignedPeerId) ||
+        task.status === 'running'
+      ) {
         tasks.set(task.itemId, candidate);
       }
     }
   }
   return [...tasks.values()].sort((left, right) => {
-    const stateOrder = (value: string) => value === 'running' ? 0 : value === 'dispatched' ? 1 : 2;
-    return stateOrder(left.status) - stateOrder(right.status)
-      || Number(left.fragmentIndex || 0) - Number(right.fragmentIndex || 0)
-      || left.itemId.localeCompare(right.itemId);
+    const stateOrder = (value: string) =>
+      value === 'running' ? 0 : value === 'dispatched' ? 1 : 2;
+    return (
+      stateOrder(left.status) - stateOrder(right.status) ||
+      Number(left.fragmentIndex || 0) - Number(right.fragmentIndex || 0) ||
+      left.itemId.localeCompare(right.itemId)
+    );
   });
 });
 const filteredMachines = computed(() => {
@@ -766,7 +1112,12 @@ const filteredMachines = computed(() => {
       machine.platform,
       ...machine.roles,
       ...machine.features,
-      ...machine.candidates.flatMap((candidate) => [candidate.candidateType, candidate.transport, candidate.ip, candidate.source]),
+      ...machine.candidates.flatMap((candidate) => [
+        candidate.candidateType,
+        candidate.transport,
+        candidate.ip,
+        candidate.source,
+      ]),
       ...machine.transportAttestations.flatMap((proof) => [
         proof.route,
         proof.transportBackend,
@@ -789,12 +1140,15 @@ const filteredMachines = computed(() => {
         task.assignedPeerId,
         task.sourceNodeId,
       ]),
-    ].join(' ').toLowerCase();
+    ]
+      .join(' ')
+      .toLowerCase();
     return searchable.includes(query);
   });
 });
 const releaseBannerTitle = computed(() => {
-  if (updateInfo.state === 'waiting_for_idle') return `Mise a jour ${updateInfo.latestVersion} en attente`;
+  if (updateInfo.state === 'waiting_for_idle')
+    return `Mise a jour ${updateInfo.latestVersion} en attente`;
   if (updateInfo.state === 'installing') return 'Installation de la mise a jour...';
   if (updateInfo.state === 'downloading') return 'Telechargement de la mise a jour...';
   if (updateInfo.updateAvailable) return `Mise a jour ${updateInfo.latestVersion} requise`;
@@ -802,31 +1156,42 @@ const releaseBannerTitle = computed(() => {
   return 'Mises a jour automatiques actives';
 });
 const releaseBannerDetail = computed(() => {
-  if (updateInfo.state === 'waiting_for_idle') return 'Une tache est en cours. L installation demarrera automatiquement des que le node sera disponible.';
-  if (updateInfo.updateAvailable) return 'Le node sera mis a jour et redemarre automatiquement des que le paquet est verifie.';
-  if (updateInfo.state === 'error') return updateInfo.error || 'Le serveur de versions sera reinterroge automatiquement.';
+  if (updateInfo.state === 'waiting_for_idle')
+    return 'Une tache est en cours. L installation demarrera automatiquement des que le node sera disponible.';
+  if (updateInfo.updateAvailable)
+    return 'Le node sera mis a jour et redemarre automatiquement des que le paquet est verifie.';
+  if (updateInfo.state === 'error')
+    return updateInfo.error || 'Le serveur de versions sera reinterroge automatiquement.';
   const build = updateInfo.currentBuild ? ` build ${updateInfo.currentBuild.slice(0, 12)}` : '';
   return `Canal ${updateInfo.currentChannel}${build}; verification toutes les ${formatUpdateInterval(updateInfo.checkIntervalSeconds)}.`;
 });
 
-const reputationLabel = (dimension: string) => ({
-  connection: 'Connexion',
-  storage: 'Stockage',
-  compute: 'Calcul',
-  verify: 'Verification',
-  delegation: 'Delegation',
-}[dimension] || dimension);
+const reputationLabel = (dimension: string) =>
+  ({
+    connection: 'Connexion',
+    storage: 'Stockage',
+    compute: 'Calcul',
+    verify: 'Verification',
+    delegation: 'Delegation',
+  })[dimension] || dimension;
 const percent = (value: number) => `${Math.round(Math.max(0, Math.min(1, value || 0)) * 100)}%`;
-const formatEvidence = (value: number) => value >= 100 ? Math.round(value).toString() : value.toFixed(1);
-const formatNumber = (value: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(Number(value) || 0);
-const progressSourceLabel = (source: string) => source === 'measured' ? 'mesuree' : source === 'estimated' ? 'estimee' : 'indisponible';
+const formatEvidence = (value: number) =>
+  value >= 100 ? Math.round(value).toString() : value.toFixed(1);
+const formatNumber = (value: number) =>
+  new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(Number(value) || 0);
+const progressSourceLabel = (source: string) =>
+  source === 'measured' ? 'mesuree' : source === 'estimated' ? 'estimee' : 'indisponible';
 
 function queueActiveTask(task: NodeActivity['machines'][number]['taskQueue'][number]) {
   const preferred = task.assignedPeerId
     ? activity.machines.find((machine) => machine.nodeId === task.assignedPeerId)
     : undefined;
-  return preferred?.activeTasks.find((active) => active.itemId === task.itemId)
-    || activity.machines.flatMap((machine) => machine.activeTasks).find((active) => active.itemId === task.itemId);
+  return (
+    preferred?.activeTasks.find((active) => active.itemId === task.itemId) ||
+    activity.machines
+      .flatMap((machine) => machine.activeTasks)
+      .find((active) => active.itemId === task.itemId)
+  );
 }
 
 function queueProgress(task: NodeActivity['machines'][number]['taskQueue'][number]) {
@@ -837,7 +1202,9 @@ const shortResultName = computed(() => {
   if (!activity.lastResult || activity.lastResult === 'Aucun resultat local') {
     return 'Aucun';
   }
-  return activity.lastResult.length > 24 ? `${activity.lastResult.slice(0, 21)}...` : activity.lastResult;
+  return activity.lastResult.length > 24
+    ? `${activity.lastResult.slice(0, 21)}...`
+    : activity.lastResult;
 });
 
 function remember() {
@@ -958,11 +1325,14 @@ async function deactivateNode() {
 
 function machineNeedsUpdate(machine: NodeActivity['machines'][number]) {
   if (!machine.appVersion) return true;
-  if (machine.releaseChannel !== updateInfo.currentChannel || !updateInfo.latestVersion) return false;
+  if (machine.releaseChannel !== updateInfo.currentChannel || !updateInfo.latestVersion)
+    return false;
   if (machine.appVersion !== updateInfo.latestVersion) return true;
-  return machine.releaseBuild.length === 40
-    && updateInfo.latestBuild.length === 40
-    && machine.releaseBuild !== updateInfo.latestBuild;
+  return (
+    machine.releaseBuild.length === 40 &&
+    updateInfo.latestBuild.length === 40 &&
+    machine.releaseBuild !== updateInfo.latestBuild
+  );
 }
 
 function machineVersionLabel(machine: NodeActivity['machines'][number]) {
@@ -972,7 +1342,6 @@ function machineVersionLabel(machine: NodeActivity['machines'][number]) {
     ? `${machine.appVersion} (${channel}) - mise a jour requise`
     : `${machine.appVersion} (${channel})`;
 }
-
 
 function scheduleRefresh() {
   refreshTimer = window.setTimeout(async () => {

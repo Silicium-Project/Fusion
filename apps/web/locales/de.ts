@@ -4,14 +4,16 @@ import { publicDe } from './public/de';
 import { observabilityDe } from './observability/de';
 import { countOf, type Catalog, type MessageParams } from './types';
 
-const plural = (params: MessageParams, one: string, other: string) => (countOf(params) === 1 ? one : other);
+const plural = (params: MessageParams, one: string, other: string) =>
+  countOf(params) === 1 ? one : other;
 
 export const de: Catalog<typeof fr> = {
   experience: publicDe,
   observability: observabilityDe,
   meta: {
     title: 'Silicium — Verteiltes Rechnen',
-    description: 'Silicium koordiniert Ihre Rechner, verteilt Ihre Berechnungen und bündelt die Verfolgung der Ergebnisse.',
+    description:
+      'Silicium koordiniert Ihre Rechner, verteilt Ihre Berechnungen und bündelt die Verfolgung der Ergebnisse.',
   },
   language: {
     label: 'Sprache',
@@ -40,11 +42,33 @@ export const de: Catalog<typeof fr> = {
     mb: '{value} MB',
   },
   status: {
-    queued: 'Wartend', running: 'Läuft', cancelling: 'Wird gestoppt', completed: 'Abgeschlossen',
-    planned: 'Geplant', queued_compute: 'Wartet auf Berechnung', computed: 'Berechnet', queued_verify: 'Wartet auf Prüfung', verified: 'Geprüft', reassembled: 'Zusammengesetzt',
-    failed: 'Fehlgeschlagen', cancelled: 'Abgebrochen', canceled: 'Abgebrochen', expired: 'Abgelaufen', dead_lettered: 'Aufgegeben', finalized: 'Finalisiert', resolved: 'Gelöst', operational: 'Betriebsbereit',
-    degraded: 'Eingeschränkt', unavailable: 'Nicht verfügbar', current: 'Aktuell', outdated: 'Update erforderlich',
-    'outdated-build': 'Veralteter Build', unknown: 'Zu prüfen', server: 'Server', online: 'Online', offline: 'Offline',
+    queued: 'Wartend',
+    running: 'Läuft',
+    cancelling: 'Wird gestoppt',
+    completed: 'Abgeschlossen',
+    planned: 'Geplant',
+    queued_compute: 'Wartet auf Berechnung',
+    computed: 'Berechnet',
+    queued_verify: 'Wartet auf Prüfung',
+    verified: 'Geprüft',
+    reassembled: 'Zusammengesetzt',
+    failed: 'Fehlgeschlagen',
+    cancelled: 'Abgebrochen',
+    canceled: 'Abgebrochen',
+    expired: 'Abgelaufen',
+    dead_lettered: 'Aufgegeben',
+    finalized: 'Finalisiert',
+    resolved: 'Gelöst',
+    operational: 'Betriebsbereit',
+    degraded: 'Eingeschränkt',
+    unavailable: 'Nicht verfügbar',
+    current: 'Aktuell',
+    outdated: 'Update erforderlich',
+    'outdated-build': 'Veralteter Build',
+    unknown: 'Zu prüfen',
+    server: 'Server',
+    online: 'Online',
+    offline: 'Offline',
   },
   roles: {
     orchestration: 'Orchestrierung',
@@ -69,15 +93,19 @@ export const de: Catalog<typeof fr> = {
     statusLoad: 'Der Statusdienst antwortet gerade nicht.',
     resultUnavailable: 'Das Ergebnis ist nicht verfügbar.',
     documentUnavailable: 'Das Dokument ist nicht verfügbar.',
-    searchPreparing: 'Die Suchmaschine wird vorbereitet, versuchen Sie es in einigen Sekunden erneut.',
+    searchPreparing:
+      'Die Suchmaschine wird vorbereitet, versuchen Sie es in einigen Sekunden erneut.',
     searchUnavailable: 'Die Suche ist vorübergehend nicht verfügbar.',
     loginResponse: 'Die Antwort der Anmeldung ist ungültig.',
-    phantomRequired: 'Phantom ist in diesem Browser nicht installiert. Installieren Sie die Phantom-Erweiterung (phantom.com), laden Sie die Seite neu und versuchen Sie es erneut.',
+    phantomRequired:
+      'Phantom ist in diesem Browser nicht installiert. Installieren Sie die Phantom-Erweiterung (phantom.com), laden Sie die Seite neu und versuchen Sie es erneut.',
     walletRejected: 'Verbindung in Phantom abgebrochen.',
     walletFailed: 'Die Wallet kann nicht verbunden werden.',
-    walletBalanceUnavailable: 'Der SIL-Kontostand ist über den Solana-RPC nicht verfügbar. Prüfen Sie den Devnet-Mint und versuchen Sie es erneut.',
+    walletBalanceUnavailable:
+      'Der SIL-Kontostand ist über den Solana-RPC nicht verfügbar. Prüfen Sie den Devnet-Mint und versuchen Sie es erneut.',
     cancelReason: 'Stopp über die Website angefordert',
-    serverError: 'Der Server konnte die Anfrage nicht bearbeiten. Versuchen Sie es in ein paar Minuten erneut; wenn es weiter passiert, informieren Sie das Silicium-Team.',
+    serverError:
+      'Der Server konnte die Anfrage nicht bearbeiten. Versuchen Sie es in ein paar Minuten erneut; wenn es weiter passiert, informieren Sie das Silicium-Team.',
     tooLarge: 'Die Datei ist zu groß zum Senden.',
   },
   auth: {
@@ -125,8 +153,10 @@ export const de: Catalog<typeof fr> = {
   },
   validation: {
     emailInvalid: 'Geben Sie eine gültige E-Mail-Adresse ein.',
-    usernameInvalid: 'Benutzernamen haben 3 bis 30 Zeichen: Buchstaben, Ziffern, Punkt, Bindestrich oder Unterstrich.',
-    nameInvalid: 'Vor- und Nachname haben höchstens 50 Zeichen: Buchstaben, Leerzeichen, Bindestriche und Apostrophe.',
+    usernameInvalid:
+      'Benutzernamen haben 3 bis 30 Zeichen: Buchstaben, Ziffern, Punkt, Bindestrich oder Unterstrich.',
+    nameInvalid:
+      'Vor- und Nachname haben höchstens 50 Zeichen: Buchstaben, Leerzeichen, Bindestriche und Apostrophe.',
     passwordShort: 'Das Passwort muss mindestens 8 Zeichen lang sein.',
     passwordLong: 'Das Passwort überschreitet die Grenze von 72 Byte.',
     passwordMismatch: 'Die beiden neuen Passwörter stimmen nicht überein.',
@@ -173,7 +203,8 @@ export const de: Catalog<typeof fr> = {
     development: 'Entwicklung',
   },
   footer: {
-    tagline: 'Silicium gibt Ihren Projekten Zugang zu vielen Rechnern und liefert Ihnen ein geprüftes Ergebnis zurück.',
+    tagline:
+      'Silicium gibt Ihren Projekten Zugang zu vielen Rechnern und liefert Ihnen ein geprüftes Ergebnis zurück.',
     explore: 'Entdecken',
     access: 'Zugang',
     installMachine: 'Rechner installieren',
@@ -186,8 +217,10 @@ export const de: Catalog<typeof fr> = {
     incident: 'Isolierter Vorfall',
     notFoundTitle: 'Diese Seite existiert nicht.',
     incidentTitle: 'Etwas wurde unterbrochen.',
-    notFoundText: 'Der Link hat sich vielleicht geändert. Die wichtigen Seiten bleiben über die Einstiege unten erreichbar.',
-    incidentText: 'Der Vorfall wurde isoliert. Kehren Sie zu einer bekannten Seite zurück, um fortzufahren.',
+    notFoundText:
+      'Der Link hat sich vielleicht geändert. Die wichtigen Seiten bleiben über die Einstiege unten erreichbar.',
+    incidentText:
+      'Der Vorfall wurde isoliert. Kehren Sie zu einer bekannten Seite zurück, um fortzufahren.',
     seeProduct: 'Produkt ansehen',
     shortcuts: 'Navigationsabkürzungen',
     architecture: 'Architektur',
@@ -206,16 +239,26 @@ export const de: Catalog<typeof fr> = {
     principles: 'Prinzipien von Silicium',
     principleKicker: 'Das Prinzip',
     principleLead: 'Ihr Projekt hängt nicht mehr von einem einzigen Rechner ab.',
-    points: ['Senden Sie Ihr Projekt nur einmal.', 'Das Netzwerk findet die verfügbaren Rechner.', 'Erhalten Sie ein geprüftes Ergebnis.'],
+    points: [
+      'Senden Sie Ihr Projekt nur einmal.',
+      'Das Netzwerk findet die verfügbaren Rechner.',
+      'Erhalten Sie ein geprüftes Ergebnis.',
+    ],
     howKicker: 'So funktioniert es',
     howTitle: 'Sie senden.',
     howTitle2: 'Das Netzwerk arbeitet.',
-    howText: 'Silicium verteilt Ihr Projekt automatisch, prüft die Ergebnisse und gibt Ihnen eine klare Antwort.',
+    howText:
+      'Silicium verteilt Ihr Projekt automatisch, prüft die Ergebnisse und gibt Ihnen eine klare Antwort.',
     chainKicker: 'Blockchain und Zahlungen',
     chainTitle: 'Ihr Ergebnis, mit',
     chainTitleEm: 'sichtbarem Nachweis.',
-    chainText: 'Die Blockchain dokumentiert die Zahlungen und Prüfungen Ihres Projekts. Ihre Dateien bleiben im Netzwerk.',
-    chainItems: ['Ein Nachweis des Projekts', 'Klare Zahlungen', 'Ihre Schlüssel bleiben bei Ihnen'],
+    chainText:
+      'Die Blockchain dokumentiert die Zahlungen und Prüfungen Ihres Projekts. Ihre Dateien bleiben im Netzwerk.',
+    chainItems: [
+      'Ein Nachweis des Projekts',
+      'Klare Zahlungen',
+      'Ihre Schlüssel bleiben bei Ihnen',
+    ],
     chainCta: 'So funktioniert es',
     receiptBar: 'PROJEKT / ERGEBNIS',
     receiptLive: 'LIVE',
@@ -224,15 +267,31 @@ export const de: Catalog<typeof fr> = {
     receiptProgress: 'Projektfortschritt',
     receiptProgressValue: 'In Ihrem Bereich sichtbar',
     receiptRows: [
-      { title: 'Projekt verteilt', text: 'Die Teile werden den verfügbaren Rechnern zugewiesen.', tag: 'SCHRITT' },
-      { title: 'Ergebnisse geprüft', text: 'Die Prüfungen bleiben mit jedem Teil verknüpft.', tag: 'PRÜFUNG' },
-      { title: 'Ergebnis verfügbar', text: 'Verlauf und Details bleiben zugänglich.', tag: 'VERLAUF' },
+      {
+        title: 'Projekt verteilt',
+        text: 'Die Teile werden den verfügbaren Rechnern zugewiesen.',
+        tag: 'SCHRITT',
+      },
+      {
+        title: 'Ergebnisse geprüft',
+        text: 'Die Prüfungen bleiben mit jedem Teil verknüpft.',
+        tag: 'PRÜFUNG',
+      },
+      {
+        title: 'Ergebnis verfügbar',
+        text: 'Verlauf und Details bleiben zugänglich.',
+        tag: 'VERLAUF',
+      },
     ],
     followKicker: 'Klarer Verlauf',
     followTitle: 'Sie sehen, was',
     followTitleEm: 'passiert.',
     followText: 'Fortschritt, Ergebnis und nützliche Informationen sind an einem Ort gebündelt.',
-    followItems: ['Ein klarer Blick auf den Fortschritt', 'Nützliche Informationen zur richtigen Zeit', 'Ein Ergebnis mit sichtbarer Herkunft'],
+    followItems: [
+      'Ein klarer Blick auf den Fortschritt',
+      'Nützliche Informationen zur richtigen Zeit',
+      'Ein Ergebnis mit sichtbarer Herkunft',
+    ],
     followCta: 'Unseren Ansatz entdecken',
     ctaKicker: 'Bereit zum Ausprobieren?',
     ctaTitle: 'Bringen Sie Ihre Projekte voran',
@@ -240,7 +299,8 @@ export const de: Catalog<typeof fr> = {
     ctaText: 'Senden Sie Ihr Projekt und lassen Sie mehrere Rechner die Arbeit teilen.',
     ctaSpace: 'Zu meinem Bereich',
     seoTitle: 'Silicium — Mehr Leistung für Ihre Projekte',
-    seoDescription: 'Silicium verteilt Ihre Berechnungen auf ein Netzwerk von Rechnern und liefert Ihnen geprüfte Ergebnisse.',
+    seoDescription:
+      'Silicium verteilt Ihre Berechnungen auf ein Netzwerk von Rechnern und liefert Ihnen geprüfte Ergebnisse.',
   },
   service: {
     kicker: 'So funktioniert es',
@@ -263,23 +323,26 @@ export const de: Catalog<typeof fr> = {
     flowKicker: 'Der Ablauf',
     flowTitle: 'Einmal senden.',
     flowTitle2: 'Das Netzwerk erledigt den Rest.',
-    flowText: 'Ihr Projekt wird verteilt, berechnet, geprüft und zusammengesetzt, bevor es zu Ihnen zurückkommt.',
+    flowText:
+      'Ihr Projekt wird verteilt, berechnet, geprüft und zusammengesetzt, bevor es zu Ihnen zurückkommt.',
     nowKicker: 'Gerade jetzt',
     nowTitle: 'Das Netzwerk ist bereit',
     updated: 'Aktualisiert: {date}',
     updating: 'läuft',
     statusBackend: 'Konten, Projekte und Koordination der Berechnungen.',
     statusNetwork: 'Netzwerk',
-    activeMachines: (p: MessageParams) => `${p.count} ${plural(p, 'aktiver Rechner', 'aktive Rechner')}`,
+    activeMachines: (p: MessageParams) =>
+      `${p.count} ${plural(p, 'aktiver Rechner', 'aktive Rechner')}`,
     pendingUpdates: '{count} ausstehende Aktualisierung(en).',
     telemetryUnavailable: 'Telemetrie nicht verfügbar.',
-    payments: "Solana-Nachverfolgbarkeit",
-    paymentsReady: "Verankerung der Nachweise konfiguriert.",
-    paymentsPreparing: "Verankerung nicht konfiguriert.",
+    payments: 'Solana-Nachverfolgbarkeit',
+    paymentsReady: 'Verankerung der Nachweise konfiguriert.',
+    paymentsPreparing: 'Verankerung nicht konfiguriert.',
     contributorsKicker: 'Für Mitwirkende',
     contributorsTitle: 'Helfen Sie dem Netzwerk',
     contributorsTitleEm: 'zu wachsen.',
-    contributorsText: 'Installieren Sie die stabile Version, um dem Netzwerk einen Rechner zur Verfügung zu stellen. Entwicklungsversionen dienen zum Testen neuer Funktionen.',
+    contributorsText:
+      'Installieren Sie die stabile Version, um dem Netzwerk einen Rechner zur Verfügung zu stellen. Entwicklungsversionen dienen zum Testen neuer Funktionen.',
     windowsStable: 'Silicium für Windows',
     stableVersion: 'Stabile Version · {version}',
     windowsTest: 'Windows · Testversion',
@@ -293,7 +356,8 @@ export const de: Catalog<typeof fr> = {
     ariaLinuxDeb: 'Silicium für Linux herunterladen, Debian-Paket',
     ariaLinuxRpm: 'Silicium für Linux herunterladen, RPM-Paket',
     seoTitle: 'Wie funktioniert Silicium?',
-    seoDescription: 'Erfahren Sie, wie Silicium Ihre Berechnungen auf ein Netzwerk von Rechnern verteilt und Ihnen das Ergebnis liefert.',
+    seoDescription:
+      'Erfahren Sie, wie Silicium Ihre Berechnungen auf ein Netzwerk von Rechnern verteilt und Ihnen das Ergebnis liefert.',
   },
   about: {
     kicker: 'Unser Modell',
@@ -312,21 +376,52 @@ export const de: Catalog<typeof fr> = {
     rolesKicker: 'Wer macht was?',
     rolesTitle: 'Jeder hat seine Rolle.',
     rolesTitle2: 'Alle kommen gemeinsam voran.',
-    rolesText: 'Manche Rechner organisieren, andere rechnen oder prüfen. Für Sie bleibt es ein einziger Ablauf.',
+    rolesText:
+      'Manche Rechner organisieren, andere rechnen oder prüfen. Für Sie bleibt es ein einziger Ablauf.',
     roles: [
-      { kicker: 'Organisieren', title: 'Koordination', text: 'Entscheidet, wie das Projekt auf die verfügbaren Rechner verteilt wird.', output: 'Liefert · Arbeitsplan' },
-      { kicker: 'Rechnen', title: 'Rechner', text: 'Führen jeweils einen Teil des Projekts nach ihren Möglichkeiten aus.', output: 'Liefert · Zwischenergebnisse' },
-      { kicker: 'Prüfen', title: 'Prüfung', text: 'Vergleicht die Ergebnisse, bevor sie zusammengeführt werden.', output: 'Liefert · Prüfungen' },
-      { kicker: 'Aufbewahren', title: 'Dateien', text: 'Bewahrt auf, was nötig ist, um Projekt und Ergebnis wiederzufinden.', output: 'Liefert · verfügbare Dateien' },
+      {
+        kicker: 'Organisieren',
+        title: 'Koordination',
+        text: 'Entscheidet, wie das Projekt auf die verfügbaren Rechner verteilt wird.',
+        output: 'Liefert · Arbeitsplan',
+      },
+      {
+        kicker: 'Rechnen',
+        title: 'Rechner',
+        text: 'Führen jeweils einen Teil des Projekts nach ihren Möglichkeiten aus.',
+        output: 'Liefert · Zwischenergebnisse',
+      },
+      {
+        kicker: 'Prüfen',
+        title: 'Prüfung',
+        text: 'Vergleicht die Ergebnisse, bevor sie zusammengeführt werden.',
+        output: 'Liefert · Prüfungen',
+      },
+      {
+        kicker: 'Aufbewahren',
+        title: 'Dateien',
+        text: 'Bewahrt auf, was nötig ist, um Projekt und Ergebnis wiederzufinden.',
+        output: 'Liefert · verfügbare Dateien',
+      },
     ],
     principle: 'Prinzip',
     values: [
-      { title: 'Auf einen Blick verstehen', text: 'Fortschritt und Ergebnis bleiben lesbar, ohne die ganze Technik durchgehen zu müssen.' },
-      { title: 'Details bei Bedarf sehen', text: 'Erweiterte Informationen öffnen sich, wenn Sie etwas verstehen oder prüfen möchten.' },
-      { title: 'Dem Ergebnis vertrauen', text: 'Jedes Ergebnis bleibt mit dem Projekt und den beteiligten Rechnern verknüpft.' },
+      {
+        title: 'Auf einen Blick verstehen',
+        text: 'Fortschritt und Ergebnis bleiben lesbar, ohne die ganze Technik durchgehen zu müssen.',
+      },
+      {
+        title: 'Details bei Bedarf sehen',
+        text: 'Erweiterte Informationen öffnen sich, wenn Sie etwas verstehen oder prüfen möchten.',
+      },
+      {
+        title: 'Dem Ergebnis vertrauen',
+        text: 'Jedes Ergebnis bleibt mit dem Projekt und den beteiligten Rechnern verknüpft.',
+      },
     ],
     seoTitle: 'Über uns — Silicium',
-    seoDescription: 'Erfahren Sie, wie mehrere Rechner mit Silicium gemeinsam an einem Projekt arbeiten können.',
+    seoDescription:
+      'Erfahren Sie, wie mehrere Rechner mit Silicium gemeinsam an einem Projekt arbeiten können.',
   },
   contact: {
     kicker: 'Ideenbox',
@@ -334,7 +429,11 @@ export const de: Catalog<typeof fr> = {
     titleEm: 'Reden wir darüber.',
     lede: 'Dieses Formular dient nur dazu, eine Idee, einen Anwendungsfall oder eine Verbesserung vorzuschlagen. Berechnungen werden vom Dienst automatisch empfangen und verteilt.',
     briefLabel: 'Was Sie vorschlagen können',
-    brief: ['Einen Anwendungsfall oder eine Projektart zum Ausprobieren', 'Eine Verbesserung der Oberfläche oder des Verlaufs', 'Eine Idee für eine Rolle, Integration oder einen Rechner'],
+    brief: [
+      'Einen Anwendungsfall oder eine Projektart zum Ausprobieren',
+      'Eine Verbesserung der Oberfläche oder des Verlaufs',
+      'Eine Idee für eine Rolle, Integration oder einen Rechner',
+    ],
     productIdeas: 'Produktideen',
     productIdeasText: 'Anwendungsfälle, Abläufe und Prioritäten',
     experimental: 'Experimentelles Netzwerk',
@@ -348,50 +447,105 @@ export const de: Catalog<typeof fr> = {
     subject: 'Betreff',
     subjects: ['Produktidee', 'Idee für das Netzwerk', 'UX-Verbesserung', 'Andere Idee'],
     idea: 'Ihre Idee',
-    ideaPlaceholder: 'Beschreiben Sie die Idee, das Problem, das sie löst, und was Sie sich wünschen.',
+    ideaPlaceholder:
+      'Beschreiben Sie die Idee, das Problem, das sie löst, und was Sie sich wünschen.',
     submit: 'Idee vorbereiten',
-    noAddress: 'Die Kontaktadresse wird bald veröffentlicht. Ihre Nachricht bleibt in diesem Browser.',
+    noAddress:
+      'Die Kontaktadresse wird bald veröffentlicht. Ihre Nachricht bleibt in diesem Browser.',
     opened: 'Ihr E-Mail-Programm wurde mit der vorbereiteten Idee geöffnet.',
     mailSubject: '[Silicium — Idee] {subject}',
     mailGreeting: 'Hallo,',
     seoTitle: 'Ideen — Silicium',
-    seoDescription: 'Schlagen Sie dem Silicium-Team eine Idee für Anwendung, Oberfläche oder Netzwerk vor.',
+    seoDescription:
+      'Schlagen Sie dem Silicium-Team eine Idee für Anwendung, Oberfläche oder Netzwerk vor.',
   },
   blockchain: {
-    kicker: "Solana-Nachverfolgbarkeit",
-    title: "Von der Berechnung zum Beleg,",
-    titleEm: "ein prüfbarer Nachweis.",
-    lede: "Verknüpfen Sie ein Projektergebnis mit signierten Aufgaben und bei aktivierter Verankerung mit einer Solana-Transaktion. Dateien werden nicht auf der Blockchain veröffentlicht.",
+    kicker: 'Solana-Nachverfolgbarkeit',
+    title: 'Von der Berechnung zum Beleg,',
+    titleEm: 'ein prüfbarer Nachweis.',
+    lede: 'Verknüpfen Sie ein Projektergebnis mit signierten Aufgaben und bei aktivierter Verankerung mit einer Solana-Transaktion. Dateien werden nicht auf der Blockchain veröffentlicht.',
     connectWallet: 'Meine Wallet verbinden',
     seeFlow: 'Ablauf ansehen',
     note: 'Demonstrationsnetzwerk · die hier verwendeten Token haben keinen realen Wert.',
     bringsKicker: 'Was die Blockchain bringt',
     bringsTitle: 'Was zählt, bleibt sichtbar.',
     bringsTitle2: 'Ihre Dateien bleiben, wo sie sind.',
-    bringsText: "Die Blockchain speichert einen Hash der Berechnungsnachweise. Aufgabendetails und Signaturen zeigen, was ausgeführt und geprüft wurde.",
-    principles: [{"title": "Ausführen", "text": "Rechner führen die Teile eines Projekts aus.", "detail": "Aufgaben · Rechner · Ergebnis"}, {"title": "Prüfen", "text": "Prüfer kontrollieren die Ergebnisse je nach Berechnungsart.", "detail": "Prüfungen · Signaturen · Belege"}, {"title": "Nachweisen", "text": "Ein Hash der Nachweise kann auf Solana verankert und im Projekt geprüft werden.", "detail": "Hash · Transaktion · Nachweis"}],
-    flowKicker: "Vom Projekt zum Nachweis",
+    bringsText:
+      'Die Blockchain speichert einen Hash der Berechnungsnachweise. Aufgabendetails und Signaturen zeigen, was ausgeführt und geprüft wurde.',
+    principles: [
+      {
+        title: 'Ausführen',
+        text: 'Rechner führen die Teile eines Projekts aus.',
+        detail: 'Aufgaben · Rechner · Ergebnis',
+      },
+      {
+        title: 'Prüfen',
+        text: 'Prüfer kontrollieren die Ergebnisse je nach Berechnungsart.',
+        detail: 'Prüfungen · Signaturen · Belege',
+      },
+      {
+        title: 'Nachweisen',
+        text: 'Ein Hash der Nachweise kann auf Solana verankert und im Projekt geprüft werden.',
+        detail: 'Hash · Transaktion · Nachweis',
+      },
+    ],
+    flowKicker: 'Vom Projekt zum Nachweis',
     flowTitle: 'Vom Projekt zum Ergebnis,',
     flowTitle2: 'ohne böse Überraschung.',
-    flowText: "Verfolgen Sie Berechnung, Prüfungen und Verankerungsstatus. Der Solana-Status ist kein gezahlter Betrag.",
-    flowSteps: [{"label": "01 / PROJEKT", "title": "Das Projekt wird identifiziert", "text": "Das Projekt und seine Teile erhalten Kennungen zur Nachverfolgung."}, {"label": "02 / BERECHNUNG", "title": "Das Netzwerk rechnet", "text": "Rechner liefern Ergebnisse und signierte Aufzeichnungen."}, {"label": "03 / PRÜFUNG", "title": "Die Ergebnisse werden geprüft", "text": "Prüfungen und ihre Autoren sind den Aufgaben zugeordnet."}, {"label": "04 / NACHWEIS", "title": "Der Hash wird verankert", "text": "Bei erfolgreicher Verankerung lassen sich Transaktion und Nachweise im Projekt einsehen."}],
+    flowText:
+      'Verfolgen Sie Berechnung, Prüfungen und Verankerungsstatus. Der Solana-Status ist kein gezahlter Betrag.',
+    flowSteps: [
+      {
+        label: '01 / PROJEKT',
+        title: 'Das Projekt wird identifiziert',
+        text: 'Das Projekt und seine Teile erhalten Kennungen zur Nachverfolgung.',
+      },
+      {
+        label: '02 / BERECHNUNG',
+        title: 'Das Netzwerk rechnet',
+        text: 'Rechner liefern Ergebnisse und signierte Aufzeichnungen.',
+      },
+      {
+        label: '03 / PRÜFUNG',
+        title: 'Die Ergebnisse werden geprüft',
+        text: 'Prüfungen und ihre Autoren sind den Aufgaben zugeordnet.',
+      },
+      {
+        label: '04 / NACHWEIS',
+        title: 'Der Hash wird verankert',
+        text: 'Bei erfolgreicher Verankerung lassen sich Transaktion und Nachweise im Projekt einsehen.',
+      },
+    ],
     walletKicker: 'Ihre digitale Wallet',
     walletTitle: 'Ihre Wallet bleibt Ihre.',
     walletTitleEm: 'Ihre Schlüssel bleiben bei Ihnen.',
-    walletText: "Phantom bestätigt den Wallet-Besitz durch die Signatur einer Anmeldenachricht. Silicium fragt niemals nach Ihrem privaten Schlüssel.",
+    walletText:
+      'Phantom bestätigt den Wallet-Besitz durch die Signatur einer Anmeldenachricht. Silicium fragt niemals nach Ihrem privaten Schlüssel.',
     openProfile: 'Mein Profil öffnen',
     createSpace: 'Bereich erstellen',
-    paymentStatus: "Verankerungsstatus anzeigen",
-    walletChecks: [{"title": "Wallet bestätigt", "text": "Phantom-Verbindung und Eigentumsnachweis."}, {"title": "Private Schlüssel bleiben erhalten", "text": "Der private Schlüssel bleibt in Ihrer Wallet."}, {"title": "Prüfbare Nachweise", "text": "Verankerungstransaktionen sind in der Projektansicht verfügbar."}],
-    configured: "Die Solana-Verankerung ist in dieser Umgebung konfiguriert. Ihr Ergebnis ist pro Projekt einsehbar.",
-    notConfigured: "Die Solana-Verankerung ist in dieser Umgebung nicht konfiguriert.",
-    ctaKicker: "Netzwerk und Nachweise",
+    paymentStatus: 'Verankerungsstatus anzeigen',
+    walletChecks: [
+      { title: 'Wallet bestätigt', text: 'Phantom-Verbindung und Eigentumsnachweis.' },
+      {
+        title: 'Private Schlüssel bleiben erhalten',
+        text: 'Der private Schlüssel bleibt in Ihrer Wallet.',
+      },
+      {
+        title: 'Prüfbare Nachweise',
+        text: 'Verankerungstransaktionen sind in der Projektansicht verfügbar.',
+      },
+    ],
+    configured:
+      'Die Solana-Verankerung ist in dieser Umgebung konfiguriert. Ihr Ergebnis ist pro Projekt einsehbar.',
+    notConfigured: 'Die Solana-Verankerung ist in dieser Umgebung nicht konfiguriert.',
+    ctaKicker: 'Netzwerk und Nachweise',
     ctaTitle: 'Sehen Sie, wie alles zusammenhängt,',
     ctaTitleEm: 'vom Projekt zum Ergebnis.',
-    ctaText: "Entdecken Sie Messwerte und Überwachung für jede Berechnung.",
+    ctaText: 'Entdecken Sie Messwerte und Überwachung für jede Berechnung.',
     ctaButton: 'Produkt entdecken',
-    seoTitle: "Solana-Nachverfolgbarkeit — Silicium",
-    seoDescription: "Prüfen Sie signierte Aufzeichnungen, Kontrollen und verankerte Nachweise von Silicium-Berechnungen.",
+    seoTitle: 'Solana-Nachverfolgbarkeit — Silicium',
+    seoDescription:
+      'Prüfen Sie signierte Aufzeichnungen, Kontrollen und verankerte Nachweise von Silicium-Berechnungen.',
   },
   download: {
     kicker: 'Rechner installieren',
@@ -410,23 +564,53 @@ export const de: Catalog<typeof fr> = {
     versionsKicker: 'Verfügbare Versionen',
     versionsTitle: 'Das richtige',
     versionsTitle2: 'Artefakt herunterladen.',
-    versionsText: 'Die stabile Version steht an erster Stelle. Testversionen bleiben getrennt, damit sie nicht versehentlich auf einem Produktivrechner landen.',
-    errorSuffix: 'Die konfigurierten Links bleiben verfügbar, prüfen Sie aber die Version vor der Installation.',
+    versionsText:
+      'Die stabile Version steht an erster Stelle. Testversionen bleiben getrennt, damit sie nicht versehentlich auf einem Produktivrechner landen.',
+    errorSuffix:
+      'Die konfigurierten Links bleiben verfügbar, prüfen Sie aber die Version vor der Installation.',
     version: 'Version',
     format: 'Format',
     build: 'Build',
     note: 'Prüfsummen und Signaturen stellt das Release-Manifest bereit, sofern verfügbar. Installieren Sie keine Version, die nicht als kompatibel markiert ist.',
     releases: {
-      windowsStable: { label: 'Silicium für Windows', channel: 'Stabil, empfohlen', detail: 'Die Referenzversion, um einen Rechner mit dem Netzwerk zu verbinden.', format: 'Windows-Installer' },
-      windowsDev: { label: 'Windows · Testversion', channel: 'Test', detail: 'Um neue Funktionen vor ihrer allgemeinen Freigabe zu testen.', format: 'Windows-Installer' },
-      linuxDev: { label: 'Linux · Testversion', channel: 'Test', detail: 'Ein AppImage für Linux-Testumgebungen.', format: 'AppImage' },
-      linuxDeb: { label: 'Linux · Debian-Paket', channel: 'Test', detail: 'Das Debian-Paket installiert den Knoten und seine Abhängigkeiten unter Debian oder Ubuntu.', format: '.deb-Paket' },
-      linuxRpm: { label: 'Linux · RPM-Paket', channel: 'Test', detail: 'Das RPM-Paket installiert den Knoten und seine Abhängigkeiten unter Fedora oder RHEL.', format: '.rpm-Paket' },
+      windowsStable: {
+        label: 'Silicium für Windows',
+        channel: 'Stabil, empfohlen',
+        detail: 'Die Referenzversion, um einen Rechner mit dem Netzwerk zu verbinden.',
+        format: 'Windows-Installer',
+      },
+      windowsDev: {
+        label: 'Windows · Testversion',
+        channel: 'Test',
+        detail: 'Um neue Funktionen vor ihrer allgemeinen Freigabe zu testen.',
+        format: 'Windows-Installer',
+      },
+      linuxDev: {
+        label: 'Linux · Testversion',
+        channel: 'Test',
+        detail: 'Ein AppImage für Linux-Testumgebungen.',
+        format: 'AppImage',
+      },
+      linuxDeb: {
+        label: 'Linux · Debian-Paket',
+        channel: 'Test',
+        detail:
+          'Das Debian-Paket installiert den Knoten und seine Abhängigkeiten unter Debian oder Ubuntu.',
+        format: '.deb-Paket',
+      },
+      linuxRpm: {
+        label: 'Linux · RPM-Paket',
+        channel: 'Test',
+        detail:
+          'Das RPM-Paket installiert den Knoten und seine Abhängigkeiten unter Fedora oder RHEL.',
+        format: '.rpm-Paket',
+      },
     },
     nativeKicker: 'Native Linux-Installation',
     nativeTitle: 'Das richtige Paket',
     nativeTitleEm: 'für Ihre Distribution.',
-    nativeText: 'Laden Sie das passende Format herunter und lassen Sie den Paketmanager die Abhängigkeiten des Knotens installieren.',
+    nativeText:
+      'Laden Sie das passende Format herunter und lassen Sie den Paketmanager die Abhängigkeiten des Knotens installieren.',
     debPackage: '.deb-Paket · apt',
     rpmPackage: '.rpm-Paket · dnf',
     downloadDeb: '.deb herunterladen',
@@ -434,14 +618,19 @@ export const de: Catalog<typeof fr> = {
     afterKicker: 'Nach dem Download',
     afterTitle: 'Drei Schritte, um',
     afterTitleEm: 'loszulegen.',
-    afterText: 'Sobald der Knoten installiert ist, erscheinen sein Verbindungsstatus und seine Version auf der Seite Rechner.',
+    afterText:
+      'Sobald der Knoten installiert ist, erscheinen sein Verbindungsstatus und seine Version auf der Seite Rechner.',
     steps: [
-      { title: 'Installieren', text: 'Öffnen Sie den Installer und erteilen Sie die nötigen Berechtigungen.' },
+      {
+        title: 'Installieren',
+        text: 'Öffnen Sie den Installer und erteilen Sie die nötigen Berechtigungen.',
+      },
       { title: 'Starten', text: 'Starten Sie den Knoten mit der mitgelieferten Konfiguration.' },
       { title: 'Prüfen', text: 'Warten Sie auf den Status „Online“ in Ihrem Bereich.' },
     ],
     seoTitle: 'Knoten herunterladen — Silicium',
-    seoDescription: 'Laden Sie die kompatible Version des Silicium-Knotens herunter und verbinden Sie einen Rechner mit dem Netzwerk.',
+    seoDescription:
+      'Laden Sie die kompatible Version des Silicium-Knotens herunter und verbinden Sie einen Rechner mit dem Netzwerk.',
   },
   platformDownload: {
     back: 'Zurück zu den Downloads',
@@ -460,12 +649,25 @@ export const de: Catalog<typeof fr> = {
     testChannel: 'Testversion',
     dailyUse: 'täglichen Einsatz',
     trial: 'Tests',
-    windows: { label: 'Silicium für Windows', detail: 'Die stabile Version, um einen Windows-Rechner am Netzwerk teilnehmen zu lassen.', note: 'Laden Sie den stabilen Installer herunter und öffnen Sie ihn, um den Silicium-Knoten zu installieren.' },
-    windowsDev: { label: 'Windows · Testversion', detail: 'Eine Testversion, um neue Funktionen vor ihrer Veröffentlichung auszuprobieren.', note: 'Laden Sie den Test-Installer herunter, um die neuen Funktionen des Silicium-Knotens zu entdecken.' },
-    linuxDev: { label: 'Linux · Testversion', detail: 'Eine Linux-Version, um Silicium auf einem Testrechner auszuprobieren.', note: 'Laden Sie das AppImage herunter, machen Sie es bei Bedarf ausführbar und starten Sie es. Debian- und RPM-Pakete stehen für eine integrierte Installation mit apt oder dnf bereit.' },
+    windows: {
+      label: 'Silicium für Windows',
+      detail: 'Die stabile Version, um einen Windows-Rechner am Netzwerk teilnehmen zu lassen.',
+      note: 'Laden Sie den stabilen Installer herunter und öffnen Sie ihn, um den Silicium-Knoten zu installieren.',
+    },
+    windowsDev: {
+      label: 'Windows · Testversion',
+      detail: 'Eine Testversion, um neue Funktionen vor ihrer Veröffentlichung auszuprobieren.',
+      note: 'Laden Sie den Test-Installer herunter, um die neuen Funktionen des Silicium-Knotens zu entdecken.',
+    },
+    linuxDev: {
+      label: 'Linux · Testversion',
+      detail: 'Eine Linux-Version, um Silicium auf einem Testrechner auszuprobieren.',
+      note: 'Laden Sie das AppImage herunter, machen Sie es bei Bedarf ausführbar und starten Sie es. Debian- und RPM-Pakete stehen für eine integrierte Installation mit apt oder dnf bereit.',
+    },
     downloadDeb: '.deb-Paket herunterladen',
     downloadRpm: '.rpm-Paket herunterladen',
-    seoDescription: 'Laden Sie eine Silicium-Version herunter, damit ein Rechner am Netzwerk teilnimmt.',
+    seoDescription:
+      'Laden Sie eine Silicium-Version herunter, damit ein Rechner am Netzwerk teilnimmt.',
   },
   glassPanel: {
     aria: 'Übersicht des Silicium-Netzwerks',
@@ -484,16 +686,20 @@ export const de: Catalog<typeof fr> = {
     toUpdate: 'Zu aktualisieren',
   },
   ledger: {
-    aria: "Ablauf des Silicium-Nachweises",
-    title: "Einen Nachweis lesen",
+    aria: 'Ablauf des Silicium-Nachweises',
+    title: 'Einen Nachweis lesen',
     solana: 'SOLANA-NETZWERK',
-    enabled: "Verankerung konfiguriert",
+    enabled: 'Verankerung konfiguriert',
     available: 'Konfiguration verfügbar',
     programFallback: 'Kennung wird von der Umgebung bereitgestellt',
-    entries: [{"title": "Projekt identifiziert", "text": "Projekt- und Aufgabenkennungen"}, {"title": "Ergebnisse geprüft", "text": "Signierte Berechnung und Prüfung"}, {"title": "Hash verankert", "text": "Prüfbare Transaktion bei erfolgreicher Verankerung"}],
-    signed: "Status in jedem Projekt verfügbar",
+    entries: [
+      { title: 'Projekt identifiziert', text: 'Projekt- und Aufgabenkennungen' },
+      { title: 'Ergebnisse geprüft', text: 'Signierte Berechnung und Prüfung' },
+      { title: 'Hash verankert', text: 'Prüfbare Transaktion bei erfolgreicher Verankerung' },
+    ],
+    signed: 'Status in jedem Projekt verfügbar',
     verifiable: 'ÜBERPRÜFBAR',
-    trail: "AUFGABEN · PRÜFUNGEN · NACHWEISE",
+    trail: 'AUFGABEN · PRÜFUNGEN · NACHWEISE',
   },
   processFlow: {
     eyebrow: 'Illustration des Ablaufs',
@@ -502,12 +708,47 @@ export const de: Catalog<typeof fr> = {
     hint: 'Scrollen Sie, um der Kamera bei der Arbeit zu folgen',
     loading3d: '3D-Netzwerk wird geladen…',
     steps: [
-      { navLabel: 'Senden', kicker: 'Ihr Projekt', title: 'Sie senden es, nur einmal.', text: 'Silicium empfängt Ihr Projekt und bereitet die Arbeit automatisch vor, ohne dass Sie jeden Rechner auswählen müssen.', result: 'Ein Projekt, bereit zur Verteilung', networkCaption: 'Die Kamera fährt zum Rechner, der das Projekt empfängt' },
-      { navLabel: 'Verteilen', kicker: 'Das Netzwerk', title: 'Die richtigen Rechner stimmen sich ab.', text: 'Die verfügbaren Ressourcen wechseln sich selbstständig ab und übernehmen jeweils den nützlichen Teil der Arbeit.', result: 'Die nützlichen Ressourcen, zur richtigen Zeit', networkCaption: 'Die Kamera nähert sich dem ausgewählten Relais' },
-      { navLabel: 'Rechnen', kicker: 'Die Berechnung', title: 'Alles läuft parallel.', text: 'Jeder Rechner bearbeitet seinen Teil, während Silicium den Fortschritt verfolgt und den Fluss der Ergebnisse prüft.', result: 'Gemeinsam bearbeitete Teile', networkCaption: 'Die Kamera folgt dem Rechner, der gerade rechnet' },
-      { navLabel: 'Erhalten', kicker: 'Für Sie', title: 'Sie erhalten ein geprüftes Ergebnis.', text: 'Die Antworten werden verglichen, zusammengeführt und als einsatzbereites Ergebnis dargestellt.', result: 'Eine einsatzbereite Antwort', networkCaption: 'Die Kamera erreicht das Endergebnis' },
+      {
+        navLabel: 'Senden',
+        kicker: 'Ihr Projekt',
+        title: 'Sie senden es, nur einmal.',
+        text: 'Silicium empfängt Ihr Projekt und bereitet die Arbeit automatisch vor, ohne dass Sie jeden Rechner auswählen müssen.',
+        result: 'Ein Projekt, bereit zur Verteilung',
+        networkCaption: 'Die Kamera fährt zum Rechner, der das Projekt empfängt',
+      },
+      {
+        navLabel: 'Verteilen',
+        kicker: 'Das Netzwerk',
+        title: 'Die richtigen Rechner stimmen sich ab.',
+        text: 'Die verfügbaren Ressourcen wechseln sich selbstständig ab und übernehmen jeweils den nützlichen Teil der Arbeit.',
+        result: 'Die nützlichen Ressourcen, zur richtigen Zeit',
+        networkCaption: 'Die Kamera nähert sich dem ausgewählten Relais',
+      },
+      {
+        navLabel: 'Rechnen',
+        kicker: 'Die Berechnung',
+        title: 'Alles läuft parallel.',
+        text: 'Jeder Rechner bearbeitet seinen Teil, während Silicium den Fortschritt verfolgt und den Fluss der Ergebnisse prüft.',
+        result: 'Gemeinsam bearbeitete Teile',
+        networkCaption: 'Die Kamera folgt dem Rechner, der gerade rechnet',
+      },
+      {
+        navLabel: 'Erhalten',
+        kicker: 'Für Sie',
+        title: 'Sie erhalten ein geprüftes Ergebnis.',
+        text: 'Die Antworten werden verglichen, zusammengeführt und als einsatzbereites Ergebnis dargestellt.',
+        result: 'Eine einsatzbereite Antwort',
+        networkCaption: 'Die Kamera erreicht das Endergebnis',
+      },
     ],
-    nodes: { source: 'Projekt', relayA: 'Relais A', relayB: 'Relais B', computeA: 'Rechner A', computeB: 'Rechner B', result: 'Ergebnis' },
+    nodes: {
+      source: 'Projekt',
+      relayA: 'Relais A',
+      relayB: 'Relais B',
+      computeA: 'Rechner A',
+      computeB: 'Rechner B',
+      result: 'Ergebnis',
+    },
   },
   graph3d: {
     aria: '3D-Graph des Netzwerks. Die Kamera konzentriert sich auf {node}.',
@@ -518,8 +759,10 @@ export const de: Catalog<typeof fr> = {
     fallback: 'Der Ablauf bleibt im Bereich links lesbar.',
   },
   dashboard: {
-    intro: 'Starten Sie eine Berechnung, verfolgen Sie Ihre Projekte und holen Sie Ihre Ergebnisse an einem Ort ab.',
-    partialData: 'Einige Daten sind nicht verfügbar. Sie können die übrigen Funktionen weiter nutzen.',
+    intro:
+      'Starten Sie eine Berechnung, verfolgen Sie Ihre Projekte und holen Sie Ihre Ergebnisse an einem Ort ab.',
+    partialData:
+      'Einige Daten sind nicht verfügbar. Sie können die übrigen Funktionen weiter nutzen.',
     metrics: 'Kennzahlen',
     projects: 'Meine Projekte',
     inYourSpace: 'in Ihrem Bereich',
@@ -534,7 +777,8 @@ export const de: Catalog<typeof fr> = {
     allProjects: 'Alle Projekte ansehen',
     networkText: 'Die verfügbare Kapazität für Ihre nächsten Berechnungen.',
     online: (p: MessageParams) => `${p.count} ${plural(p, 'Rechner', 'Rechner')} online`,
-    upToDate: (p: MessageParams) => `${p.current} aktuell · ${p.count} ${plural(p, 'aktive Berechnung', 'aktive Berechnungen')}`,
+    upToDate: (p: MessageParams) =>
+      `${p.current} aktuell · ${p.count} ${plural(p, 'aktive Berechnung', 'aktive Berechnungen')}`,
     activeJobs: 'Aktive Berechnungen',
     seeNetwork: 'Netzwerkstatus ansehen',
     quick: 'Schnellzugriff',
@@ -547,26 +791,37 @@ export const de: Catalog<typeof fr> = {
     quickInstall: 'Knoten installieren',
     quickInstallText: 'Empfohlene Version herunterladen',
     stopTitle: 'Dieses Projekt stoppen?',
-    stopText: 'Die noch laufenden Teile erhalten eine Stopp-Anfrage. Bereits geprüfte Ergebnisse bleiben erhalten.',
+    stopText:
+      'Die noch laufenden Teile erhalten eine Stopp-Anfrage. Bereits geprüfte Ergebnisse bleiben erhalten.',
     stopConfirm: 'Projekt stoppen',
   },
   network: {
     eyebrow: 'Ressourcen · technische Ansicht',
     intro: 'Prüfen Sie die verfügbare Kapazität und die aktiven Berechnungen Ihres Bereichs.',
-    queueNoWorkers: '{count} Aufgabe(n) warten: Kein Rechen-Worker ist mit dem Orchestrator verbunden.',
-    queueNoCompatible: '{count} Aufgabe(n) warten: {online} Rechen-Worker sind verbunden, aber keiner meldet die erforderlichen Workloads ({workloads}).',
-    queueNotClaiming: '{count} Aufgabe(n) warten seit {seconds} s trotz {compatible} sichtbarer kompatibler Worker. Der Orchestrator hat keine Anfrage erhalten.',
-    queueMixed: '{count} Aufgabe(n) warten für {workloads}. Die Ursachen unterscheiden sich je nach Workload; Details folgen unten.',
-    queueUnknown: '{count} Aufgabe(n) warten. Die Ursache ist nicht bestimmbar, da der Netzwerkstatus nicht verfügbar ist.',
-    queueWorkloadNoWorkers: '{workload} · {count} warten seit {seconds} s: Kein Rechen-Worker ist verbunden.',
-    queueWorkloadNoCompatible: '{workload} · {count} warten seit {seconds} s: {online} Worker sind verbunden, keiner unterstützt diesen Workload.',
-    queueWorkloadNotClaiming: '{workload} · {count} warten seit {seconds} s trotz {compatible} sichtbarer kompatibler Worker. Der Orchestrator hat keine Anfrage erhalten.',
-    queueWorkloadUnknown: '{workload} · {count} warten seit {seconds} s: Netzwerkstatus nicht verfügbar.',
+    queueNoWorkers:
+      '{count} Aufgabe(n) warten: Kein Rechen-Worker ist mit dem Orchestrator verbunden.',
+    queueNoCompatible:
+      '{count} Aufgabe(n) warten: {online} Rechen-Worker sind verbunden, aber keiner meldet die erforderlichen Workloads ({workloads}).',
+    queueNotClaiming:
+      '{count} Aufgabe(n) warten seit {seconds} s trotz {compatible} sichtbarer kompatibler Worker. Der Orchestrator hat keine Anfrage erhalten.',
+    queueMixed:
+      '{count} Aufgabe(n) warten für {workloads}. Die Ursachen unterscheiden sich je nach Workload; Details folgen unten.',
+    queueUnknown:
+      '{count} Aufgabe(n) warten. Die Ursache ist nicht bestimmbar, da der Netzwerkstatus nicht verfügbar ist.',
+    queueWorkloadNoWorkers:
+      '{workload} · {count} warten seit {seconds} s: Kein Rechen-Worker ist verbunden.',
+    queueWorkloadNoCompatible:
+      '{workload} · {count} warten seit {seconds} s: {online} Worker sind verbunden, keiner unterstützt diesen Workload.',
+    queueWorkloadNotClaiming:
+      '{workload} · {count} warten seit {seconds} s trotz {compatible} sichtbarer kompatibler Worker. Der Orchestrator hat keine Anfrage erhalten.',
+    queueWorkloadUnknown:
+      '{workload} · {count} warten seit {seconds} s: Netzwerkstatus nicht verfügbar.',
     emitter: 'Sender · {id}',
     seeMachines: 'Rechner ansehen',
     readKicker: 'Das Netzwerk lesen',
     readTitle: 'Vom Projekt zum Ergebnis, Schritt für Schritt.',
-    readText: 'Die Rechner sind nach Rolle gruppiert. Die Details eines Projekts oder Rechners öffnen sich erst, wenn sie nützlich werden.',
+    readText:
+      'Die Rechner sind nach Rolle gruppiert. Die Details eines Projekts oder Rechners öffnen sich erst, wenn sie nützlich werden.',
     flow: [
       { title: 'Neues Projekt', detail: 'Projekt empfangen' },
       { title: 'Verteilung', detail: 'Rechner ausgewählt' },
@@ -602,7 +857,8 @@ export const de: Catalog<typeof fr> = {
     text: 'Die Rechner werden live aktualisiert und die leuchtenden Punkte zeigen die Arbeit, die unterwegs ist.',
     updated: 'Aktualisiert',
     noObservation: 'keine Beobachtung',
-    aria: (p: MessageParams) => `Live-Ansicht des Netzwerks: ${p.active} aktive von ${p.total} verbundenen Rechnern, ${p.count} ${plural(p, 'laufendes Projekt', 'laufende Projekte')}.`,
+    aria: (p: MessageParams) =>
+      `Live-Ansicht des Netzwerks: ${p.active} aktive von ${p.total} verbundenen Rechnern, ${p.count} ${plural(p, 'laufendes Projekt', 'laufende Projekte')}.`,
     announced: 'gemeldete Rechner',
     noData: 'keine Daten',
     planning: 'PLANUNG',
@@ -613,15 +869,18 @@ export const de: Catalog<typeof fr> = {
     activeMachines: 'aktive Rechner',
     telemetry: 'Netzwerk-Telemetrie',
     cpu: 'Durchschnittliche System-CPU',
-    instrumented: (p: MessageParams) => `${p.count} ${plural(p, 'erfasster Rechner', 'erfasste Rechner')}`,
+    instrumented: (p: MessageParams) =>
+      `${p.count} ${plural(p, 'erfasster Rechner', 'erfasste Rechner')}`,
     memory: 'Durchschnittlicher Arbeitsspeicher',
     cores: (p: MessageParams) => `${p.count} ${plural(p, 'logischer Kern', 'logische Kerne')}`,
     queue: 'Netzwerk-Warteschlange',
-    tasks: (p: MessageParams) => `${p.count} ${plural(p, 'aktive Aufgabe', 'aktive Aufgaben')} · ${p.projects} ${Number(p.projects) === 1 ? 'Projekt' : 'Projekte'}`,
+    tasks: (p: MessageParams) =>
+      `${p.count} ${plural(p, 'aktive Aufgabe', 'aktive Aufgaben')} · ${p.projects} ${Number(p.projects) === 1 ? 'Projekt' : 'Projekte'}`,
   },
   networkSummary: {
     eyebrow: 'Silicium-Netzwerk',
-    connected: (p: MessageParams) => `${p.count} ${plural(p, 'verbundener Rechner', 'verbundene Rechner')}`,
+    connected: (p: MessageParams) =>
+      `${p.count} ${plural(p, 'verbundener Rechner', 'verbundene Rechner')}`,
     text: 'Ein klarer Blick auf das Netzwerk, auch wenn es wächst.',
     toUpdate: 'zu aktualisieren',
   },
@@ -668,14 +927,25 @@ export const de: Catalog<typeof fr> = {
     search: 'Projekt oder Kennung suchen',
     searchAria: 'Projekt suchen',
     statusFilter: 'Nach Status filtern',
-    filters: { all: 'Alle Projekte', running: 'Laufend', queued: 'Wartend', completed: 'Abgeschlossen', failed: 'Fehlgeschlagen', cancelled: 'Abgebrochen', expired: 'Abgelaufen' },
-    page: (p: MessageParams) => `Seite ${p.page} von ${p.pages} · ${p.count} ${plural(p, 'Projekt', 'Projekte')}`,
+    filters: {
+      all: 'Alle Projekte',
+      running: 'Laufend',
+      queued: 'Wartend',
+      completed: 'Abgeschlossen',
+      failed: 'Fehlgeschlagen',
+      cancelled: 'Abgebrochen',
+      expired: 'Abgelaufen',
+    },
+    page: (p: MessageParams) =>
+      `Seite ${p.page} von ${p.pages} · ${p.count} ${plural(p, 'Projekt', 'Projekte')}`,
     stopTitle: 'Dieses Projekt stoppen?',
-    stopText: 'Damit wird das Netzwerk aufgefordert, die noch laufenden Teile zu stoppen. Weder das Projekt noch sein Verlauf werden gelöscht.',
+    stopText:
+      'Damit wird das Netzwerk aufgefordert, die noch laufenden Teile zu stoppen. Weder das Projekt noch sein Verlauf werden gelöscht.',
     confirmStop: 'Stopp bestätigen',
     table: {
       emptyTitle: 'Kein Projekt in dieser Ansicht',
-      emptyText: 'Von Ihrem Konto erstellte Projekte erscheinen hier. Ändern Sie die Filter oder starten Sie eine neue Berechnung.',
+      emptyText:
+        'Von Ihrem Konto erstellte Projekte erscheinen hier. Ändern Sie die Filter oder starten Sie eine neue Berechnung.',
       project: 'Projekt',
       status: 'Status',
       split: 'Aufteilung',
@@ -691,7 +961,8 @@ export const de: Catalog<typeof fr> = {
   newJob: {
     back: 'Zurück zu den Projekten',
     title: 'Berechnung starten',
-    intro: 'Fügen Sie Ihre Datei hinzu, wählen Sie die passende Konfiguration und verfolgen Sie das Ergebnis in Ihrem Bereich.',
+    intro:
+      'Fügen Sie Ihre Datei hinzu, wählen Sie die passende Konfiguration und verfolgen Sie das Ergebnis in Ihrem Bereich.',
     card: 'Projekt erstellen',
     cardText: 'Das Netzwerk kümmert sich um Verteilung und Prüfung.',
     help: 'Nicht sicher, was Sie senden sollen?',
@@ -715,7 +986,8 @@ export const de: Catalog<typeof fr> = {
     type: 'Berechnungsart',
     typeHelp: 'Welche Art soll ich wählen?',
     addingTitle: 'Zu Ihrer Suche hinzufügen',
-    addingText: 'Die neuen Dokumente kommen zu den bereits gesendeten hinzu: Eine einzige Suche umfasst sie alle.',
+    addingText:
+      'Die neuen Dokumente kommen zu den bereits gesendeten hinzu: Eine einzige Suche umfasst sie alle.',
     documentsReady: (p: MessageParams) => `${p.count} ${plural(p, 'Dokument', 'Dokumente')} bereit`,
     dropDocuments: 'Dokumente hier ablegen',
     documentsHint: 'PDF, Word, Text, Markdown oder ein ZIP · insgesamt 64 MB',
@@ -724,17 +996,23 @@ export const de: Catalog<typeof fr> = {
     chosen: 'Ausgewählte Dokumente',
     remove: '{name} entfernen',
     consent: 'Mir ist bewusst, dass die Rechner des Netzwerks den Text meiner Dokumente lesen.',
-    consentHint: 'Senden Sie keine vertraulichen Dokumente (unterschriebene Verträge, Gesundheitsdaten, Passwörter …).',
+    consentHint:
+      'Senden Sie keine vertraulichen Dokumente (unterschriebene Verträge, Gesundheitsdaten, Passwörter …).',
     addInput: 'Eingabedatei hinzufügen',
     maxSize: '{hint} · höchstens 16 MB',
     replace: 'Ersetzen',
     optionsTitle: 'Wie möchten Sie sie ausführen?',
-    optionsText: 'Die empfohlene Konfiguration passt für die meisten Projekte. Technische Einstellungen bleiben bei Bedarf verfügbar.',
+    optionsText:
+      'Die empfohlene Konfiguration passt für die meisten Projekte. Technische Einstellungen bleiben bei Bedarf verfügbar.',
     recommended: 'Empfohlene Konfiguration',
-    recommendedDocuments: 'Silicium teilt Ihre Dokumente auf, verteilt sie auf die Rechner des Netzwerks und prüft jeden Teil: nichts einzustellen.',
-    recommendedBatchAI: 'Silicium verteilt Ihre Liste auf die Rechner des Netzwerks, jeweils einige Elemente, und lässt jeden Teil von einem anderen Rechner prüfen: nichts einzustellen.',
-    recommendedCatalogAI: 'Silicium teilt Ihre Liste in Teile aus einigen Elementen, lässt sie von den Rechnern mit dem Modell berechnen und jeden Teil von einem anderen Rechner prüfen: nichts einzustellen.',
-    recommendedDefault: 'Silicium verteilt die Berechnung automatisch auf kompatible Rechner und prüft die Ergebnisse.',
+    recommendedDocuments:
+      'Silicium teilt Ihre Dokumente auf, verteilt sie auf die Rechner des Netzwerks und prüft jeden Teil: nichts einzustellen.',
+    recommendedBatchAI:
+      'Silicium verteilt Ihre Liste auf die Rechner des Netzwerks, jeweils einige Elemente, und lässt jeden Teil von einem anderen Rechner prüfen: nichts einzustellen.',
+    recommendedCatalogAI:
+      'Silicium teilt Ihre Liste in Teile aus einigen Elementen, lässt sie von den Rechnern mit dem Modell berechnen und jeden Teil von einem anderen Rechner prüfen: nichts einzustellen.',
+    recommendedDefault:
+      'Silicium verteilt die Berechnung automatisch auf kompatible Rechner und prüft die Ergebnisse.',
     recommendedBadge: 'Empfohlen',
     advanced: 'Erweiterte Optionen',
     parts: 'Anzahl der Teile',
@@ -745,25 +1023,36 @@ export const de: Catalog<typeof fr> = {
     priority: 'Priorität',
     priorities: { low: 'Niedrig', normal: 'Normal', high: 'Hoch', urgent: 'Dringend' },
     reviewTitle: 'Prüfen und starten',
-    reviewText: 'Alles ist bereit. Prüfen Sie die wichtigsten Angaben, bevor Sie die Berechnung starten.',
+    reviewText:
+      'Alles ist bereit. Prüfen Sie die wichtigsten Angaben, bevor Sie die Berechnung starten.',
     paymentTitle: 'Devnet-Zahlung und Prämien',
-    paymentQuote: 'Bis zu {fragments} Fragmente reserviert · {total} SIL im Escrow. Das Netzwerk kann Arbeit weiter aufteilen; ungenutztes Guthaben wird bei Abschluss zurückgegeben. Pro bestätigtem Blatt gehen 1 SIL an die Berechnung und 2 SIL an die Prüfungen.',
-    paymentUsdEstimate: 'Richtwert zum aktuellen Spotkurs: {amount} USD, vor Gebühren und Marktbewegungen. Die Abrechnung bleibt auf SIL festgelegt.',
+    paymentQuote:
+      'Bis zu {fragments} Fragmente reserviert · {total} SIL im Escrow. Das Netzwerk kann Arbeit weiter aufteilen; ungenutztes Guthaben wird bei Abschluss zurückgegeben. Pro bestätigtem Blatt gehen 1 SIL an die Berechnung und 2 SIL an die Prüfungen.',
+    paymentUsdEstimate:
+      'Richtwert zum aktuellen Spotkurs: {amount} USD, vor Gebühren und Marktbewegungen. Die Abrechnung bleibt auf SIL festgelegt.',
     paymentReserve: 'Bis zu {fragments} Fragmente · {total} SIL reserviert',
     paymentBalance: 'Verfügbares SIL-Guthaben',
-    paymentInsufficient: 'Das verknüpfte Wallet deckt diesen Betrag nicht. Fügen Sie Devnet-Test-SIL hinzu oder verringern Sie die Fragmentzahl.',
+    paymentInsufficient:
+      'Das verknüpfte Wallet deckt diesen Betrag nicht. Fügen Sie Devnet-Test-SIL hinzu oder verringern Sie die Fragmentzahl.',
     paymentWalletRequired: 'Verifizieren Sie zuerst ein Solana-Wallet in Ihrem Profil.',
-    paymentWalletMismatch: 'Verbinden Sie in Phantom dasselbe Wallet, das in Ihrem Konto verifiziert ist.',
-    paymentPhantomRequired: 'Phantom muss installiert sein und Solana-Transaktionen signieren können.',
+    paymentWalletMismatch:
+      'Verbinden Sie in Phantom dasselbe Wallet, das in Ihrem Konto verifiziert ist.',
+    paymentPhantomRequired:
+      'Phantom muss installiert sein und Solana-Transaktionen signieren können.',
     paymentHashOnly: 'Devnet-Zahlungen sind derzeit nur für SHA-256-Aufträge aktiviert.',
     paymentBrowserRequired: 'Erstellen Sie das Escrow in einem Browser mit Phantom.',
-    paymentRefundRecovery: 'Der Auftrag wurde nicht übermittelt. Zu erstattendes Escrow: {job}. Öffnen Sie die Seite mit Ihrem Konto-Wallet erneut.',
-    paymentSubmissionCheck: 'Die Serverantwort ist unklar. Prüfen Sie die Auftragsliste, bevor Sie dieses Escrow schließen: {job}.',
+    paymentRefundRecovery:
+      'Der Auftrag wurde nicht übermittelt. Zu erstattendes Escrow: {job}. Öffnen Sie die Seite mit Ihrem Konto-Wallet erneut.',
+    paymentSubmissionCheck:
+      'Die Serverantwort ist unklar. Prüfen Sie die Auftragsliste, bevor Sie dieses Escrow schließen: {job}.',
     paymentJobMissing: 'Dieses SIL-Escrow ist keinem Auftrag zugeordnet.',
-    paymentRpcRateLimited: 'Der Solana-Devnet-RPC ist vorübergehend ausgelastet. Es wurde keine Transaktion gesendet. Bitte versuchen Sie es in einigen Sekunden erneut.',
-    paymentBlockhashExpired: 'Der Devnet-RPC hat den Blockhash auch nach der Erneuerung abgelehnt. Aktualisieren Sie Projekt und Kontostand, bevor Sie es erneut versuchen, um den Transaktionsstatus zu prüfen.',
+    paymentRpcRateLimited:
+      'Der Solana-Devnet-RPC ist vorübergehend ausgelastet. Es wurde keine Transaktion gesendet. Bitte versuchen Sie es in einigen Sekunden erneut.',
+    paymentBlockhashExpired:
+      'Der Devnet-RPC hat den Blockhash auch nach der Erneuerung abgelehnt. Aktualisieren Sie Projekt und Kontostand, bevor Sie es erneut versuchen, um den Transaktionsstatus zu prüfen.',
     paymentFinalizeTitle: 'Berechnung abschließen',
-    paymentFinalizeText: 'Sobald alle Fragmente validiert sind, schließt Ihre Wallet-Signatur das Escrow und sendet den Rest an das Konto-Wallet zurück. Die Website erhält dadurch keinen dauerhaften Zugriff auf Ihr Wallet.',
+    paymentFinalizeText:
+      'Sobald alle Fragmente validiert sind, schließt Ihre Wallet-Signatur das Escrow und sendet den Rest an das Konto-Wallet zurück. Die Website erhält dadurch keinen dauerhaften Zugriff auf Ihr Wallet.',
     paymentFinalizeButton: 'Abschließen und Rest zurückholen',
     paymentRefundButton: 'Devnet-Restbetrag zurückerstatten',
     project: 'Projekt',
@@ -779,14 +1068,16 @@ export const de: Catalog<typeof fr> = {
     partCount: '{count} Teile',
     maximum: 'höchstens {duration}',
     afterLaunch: 'Nach dem Start',
-    afterLaunchText: 'Das Projekt erscheint sofort in Ihren Projekten mit seinem Vorbereitungsstatus.',
+    afterLaunchText:
+      'Das Projekt erscheint sofort in Ihren Projekten mit seinem Vorbereitungsstatus.',
     footerEdit: 'Sie können die Optionen vor dem Start noch ändern.',
     footerLaunch: 'Das Netzwerk übernimmt, sobald die Datei angenommen ist.',
     launch: 'Berechnung starten',
     emptyFile: 'Die Eingabedatei darf nicht leer sein.',
     tooLarge: 'Die Datei darf 16 MB nicht überschreiten.',
     nameRequired: 'Geben Sie Ihrem Projekt einen Namen, um fortzufahren.',
-    consentRequired: 'Setzen Sie das Häkchen, um zu bestätigen, dass die Rechner des Netzwerks Ihre Dokumente lesen dürfen.',
+    consentRequired:
+      'Setzen Sie das Häkchen, um zu bestätigen, dass die Rechner des Netzwerks Ihre Dokumente lesen dürfen.',
     fileRequired: 'Fügen Sie eine Eingabedatei hinzu, um fortzufahren.',
     scene: 'Szene',
     sceneModes: {
@@ -804,20 +1095,49 @@ export const de: Catalog<typeof fr> = {
     sceneEmpty: 'Fügen Sie der Szene mindestens ein Objekt hinzu, um fortzufahren.',
     sceneInvalid: 'Beheben Sie die Fehler der Szenendatei oder öffnen Sie sie im Editor.',
     workloads: {
-      raytracer: { label: 'Bild-Rendering', hint: 'Eine Szene, in Kacheln aufgeteilt, von den Rechnern des Netzwerks gerendert und geprüft.', fileHint: 'CFG, SCENE oder Text' },
-      sha256: { label: 'SHA-256-Hash', hint: 'Die Datei wird in Stücke geteilt; jedes Stück wird gehasht und von einem anderen Rechner geprüft.', fileHint: 'Jede Art von Datei' },
-      documents: { label: 'In meinen Dokumenten suchen', hint: 'Legen Sie Ihre PDFs, Word-Dateien oder Notizen ab und durchsuchen Sie sie mit Ihren eigenen Worten: Die Passagen, die Ihre Frage beantworten, erscheinen, auch ohne dieselben Wörter.', fileHint: 'PDF, Word, Text, Markdown oder ZIP' },
-      batchAI: { label: 'KI-Verarbeitung', hint: 'Eine Anweisung, die eine KI auf jede Zeile Ihrer Datei anwendet: zusammenfassen, übersetzen, einordnen, Informationen herausziehen.', fileHint: 'CSV, JSON Lines oder Text' },
-      catalogAI: { label: 'KI-Katalog (Hugging Face)', hint: 'Eine KI-Aufgabe (klassifizieren, übersetzen, transkribieren, Objekte erkennen…), angewendet auf jedes Element Ihrer Daten durch ein Modell des Hugging-Face-Katalogs.', fileHint: 'Text, CSV, Bilder oder Audio' },
+      raytracer: {
+        label: 'Bild-Rendering',
+        hint: 'Eine Szene, in Kacheln aufgeteilt, von den Rechnern des Netzwerks gerendert und geprüft.',
+        fileHint: 'CFG, SCENE oder Text',
+      },
+      sha256: {
+        label: 'SHA-256-Hash',
+        hint: 'Die Datei wird in Stücke geteilt; jedes Stück wird gehasht und von einem anderen Rechner geprüft.',
+        fileHint: 'Jede Art von Datei',
+      },
+      documents: {
+        label: 'In meinen Dokumenten suchen',
+        hint: 'Legen Sie Ihre PDFs, Word-Dateien oder Notizen ab und durchsuchen Sie sie mit Ihren eigenen Worten: Die Passagen, die Ihre Frage beantworten, erscheinen, auch ohne dieselben Wörter.',
+        fileHint: 'PDF, Word, Text, Markdown oder ZIP',
+      },
+      batchAI: {
+        label: 'KI-Verarbeitung',
+        hint: 'Eine Anweisung, die eine KI auf jede Zeile Ihrer Datei anwendet: zusammenfassen, übersetzen, einordnen, Informationen herausziehen.',
+        fileHint: 'CSV, JSON Lines oder Text',
+      },
+      catalogAI: {
+        label: 'KI-Katalog (Hugging Face)',
+        hint: 'Eine KI-Aufgabe (klassifizieren, übersetzen, transkribieren, Objekte erkennen…), angewendet auf jedes Element Ihrer Daten durch ein Modell des Hugging-Face-Katalogs.',
+        fileHint: 'Text, CSV, Bilder oder Audio',
+      },
     },
   },
   sceneEditor: {
     templatesTitle: 'Mit einer Vorlage beginnen',
-    templates: { showcase: 'Schaufenster', cornell: 'Cornell-Box', demo: 'Demo', mirrors: 'Spiegel', studio: 'Studio', sunset: 'Dämmerung', blank: 'Einfache Szene' },
+    templates: {
+      showcase: 'Schaufenster',
+      cornell: 'Cornell-Box',
+      demo: 'Demo',
+      mirrors: 'Spiegel',
+      studio: 'Studio',
+      sunset: 'Dämmerung',
+      blank: 'Einfache Szene',
+    },
     loaded: 'Vorlage „{name}“ geladen.',
     undo: 'Zurück zu meiner Szene',
     previewAria: 'Vorschau der Szene. Klicken Sie auf ein Objekt, um es zu bearbeiten.',
-    previewCaption: 'In Ihrem Browser mit derselben Engine wie das Netzwerk berechnet. Klicken Sie auf ein Objekt, um es zu bearbeiten.',
+    previewCaption:
+      'In Ihrem Browser mit derselben Engine wie das Netzwerk berechnet. Klicken Sie auf ein Objekt, um es zu bearbeiten.',
     previewNetwork: 'Das Netzwerk berechnet {samples} Strahlen pro Pixel.',
     previewRunning: 'Vorschau läuft… {samples} / {target} Strahlen pro Pixel',
     previewDone: 'Vorschau fertig · {samples} Strahlen pro Pixel',
@@ -825,7 +1145,14 @@ export const de: Catalog<typeof fr> = {
     tabsAria: 'Szeneneinstellungen',
     tabs: { objects: 'Objekte', lights: 'Lichter', camera: 'Kamera', render: 'Rendern' },
     resolution: 'Bildgröße',
-    resolutions: { draft: 'Entwurf — 320 × 200', hd: 'HD — 1280 × 720', fullHd: 'Full HD — 1920 × 1080', uhd: '4K — 3840 × 2160', square: 'Quadrat — 1080 × 1080', custom: 'Eigene — {width} × {height}' },
+    resolutions: {
+      draft: 'Entwurf — 320 × 200',
+      hd: 'HD — 1280 × 720',
+      fullHd: 'Full HD — 1920 × 1080',
+      uhd: '4K — 3840 × 2160',
+      square: 'Quadrat — 1080 × 1080',
+      custom: 'Eigene — {width} × {height}',
+    },
     pixels: '{pixels} Pixel zu berechnen',
     fov: 'Blickwinkel',
     fovHint: 'größer = weiter',
@@ -870,7 +1197,17 @@ export const de: Catalog<typeof fr> = {
     turn: 'Drehung',
     color: 'Farbe',
     material: 'Material',
-    materials: { matte: 'Matt', glossy: 'Glänzend', satin: 'Seidenmatt', mirror: 'Spiegel', metal: 'Gebürstetes Metall', glass: 'Glas', diamond: 'Diamant', light: 'Leuchtend', custom: 'Eigenes' },
+    materials: {
+      matte: 'Matt',
+      glossy: 'Glänzend',
+      satin: 'Seidenmatt',
+      mirror: 'Spiegel',
+      metal: 'Gebürstetes Metall',
+      glass: 'Glas',
+      diamond: 'Diamant',
+      light: 'Leuchtend',
+      custom: 'Eigenes',
+    },
     materialHints: {
       phong: 'Lackierte Oberfläche: scharfe oder unscharfe Spiegelung und ein kleiner Glanzpunkt.',
       diffuse: 'Matte Oberfläche: streut das Licht in alle Richtungen.',
@@ -880,7 +1217,13 @@ export const de: Catalog<typeof fr> = {
     },
     fine: 'Feineinstellungen',
     materialType: 'Materialart',
-    materialTypes: { phong: 'Lackiert', diffuse: 'Matt', metal: 'Metall', glass: 'Glas', emissive: 'Leuchtend' },
+    materialTypes: {
+      phong: 'Lackiert',
+      diffuse: 'Matt',
+      metal: 'Metall',
+      glass: 'Glas',
+      emissive: 'Leuchtend',
+    },
     reflection: 'Spiegelung',
     specular: 'Glanz',
     shininess: 'Schärfe des Glanzes',
@@ -890,10 +1233,20 @@ export const de: Catalog<typeof fr> = {
     iorHint: '1,33 Wasser · 1,5 Glas · 2,4 Diamant',
     strength: 'Leuchtstärke',
     orientation: 'Ausrichtung',
-    orientations: { floor: 'Boden', ceiling: 'Decke', back: 'Rückwand', left: 'Linke Wand', right: 'Rechte Wand', custom: 'Eigene' },
+    orientations: {
+      floor: 'Boden',
+      ceiling: 'Decke',
+      back: 'Rückwand',
+      left: 'Linke Wand',
+      right: 'Rechte Wand',
+      custom: 'Eigene',
+    },
     lightKind: 'Lichtart',
     lightKinds: { point: 'Punkt', area: 'Fläche' },
-    lightHints: { point: 'Ein Lichtpunkt: harte Schatten.', area: 'Eine leuchtende Kugel: weiche, realistischere Schatten.' },
+    lightHints: {
+      point: 'Ein Lichtpunkt: harte Schatten.',
+      area: 'Eine leuchtende Kugel: weiche, realistischere Schatten.',
+    },
     lightSize: 'Lichtgröße',
     lightSizeHint: 'größer = weichere Schatten',
     intensity: 'Stärke',
@@ -910,42 +1263,69 @@ export const de: Catalog<typeof fr> = {
     qualityHints: {
       draft: '1 Strahl pro Pixel, klassische Beleuchtung: schnell.',
       smooth: '16 Strahlen pro Pixel: glatte Kanten, unscharfe Spiegelungen und weiche Schatten.',
-      photo: '256 Strahlen pro Pixel, globale Beleuchtung: indirektes Licht, leuchtende Objekte, realistisches Glas und Metall. Zu lang für einen einzelnen Rechner.',
+      photo:
+        '256 Strahlen pro Pixel, globale Beleuchtung: indirektes Licht, leuchtende Objekte, realistisches Glas und Metall. Zu lang für einen einzelnen Rechner.',
     },
     cost: '≈ {rays} Strahlen zu berechnen.',
   },
   sceneCheck: {
     ok: 'Gültige Szenendatei',
-    errorsTitle: (p: MessageParams) => `${p.count} ${plural(p, 'Fehler zu beheben', 'Fehler zu beheben')}`,
-    warningsTitle: (p: MessageParams) => `${p.count} ${plural(p, 'Punkt zu prüfen', 'Punkte zu prüfen')}`,
+    errorsTitle: (p: MessageParams) =>
+      `${p.count} ${plural(p, 'Fehler zu beheben', 'Fehler zu beheben')}`,
+    warningsTitle: (p: MessageParams) =>
+      `${p.count} ${plural(p, 'Punkt zu prüfen', 'Punkte zu prüfen')}`,
     line: 'Zeile {line}',
     wholeScene: 'Szene',
     suggestion: 'Meinten Sie „{suggestion}“?',
     openEditor: 'Im Editor öffnen',
-    openEditorHint: 'Der Editor übernimmt, was die Engine von der Datei versteht, und schreibt eine saubere Datei.',
-    editorLimited: 'Der visuelle Editor kann {what} noch nicht anzeigen: senden Sie diese Datei unverändert.',
-    limits: { shapes: 'Quader, Dreiecke, Netze und Transformationen', materials: 'Glas und leuchtende Materialien', camera: 'eine frei ausgerichtete Kamera', lights: 'Flächenlichter', animation: 'Animationen' },
+    openEditorHint:
+      'Der Editor übernimmt, was die Engine von der Datei versteht, und schreibt eine saubere Datei.',
+    editorLimited:
+      'Der visuelle Editor kann {what} noch nicht anzeigen: senden Sie diese Datei unverändert.',
+    limits: {
+      shapes: 'Quader, Dreiecke, Netze und Transformationen',
+      materials: 'Glas und leuchtende Materialien',
+      camera: 'eine frei ausgerichtete Kamera',
+      lights: 'Flächenlichter',
+      animation: 'Animationen',
+    },
     codes: {
       unknown_key: 'Unbekannter Schlüssel „{key}“: er wird ignoriert.',
       unknown_block: 'Unbekannter Block „{key}“: sein Inhalt wird ignoriert.',
       unsupported: '„{key}“ gibt es in diesem Renderer nicht: es wird ignoriert.',
       misplaced: '„{key}“ gehört in „{parent}“: hier wird es ignoriert.',
       not_a_number: '„{key}“ muss eine Zahl oder Schlüsselbilder sein (erhalten: „{value}“).',
-      invalid_value: (p: MessageParams) => (p.allowed ? `„${p.key}“ kann ${p.allowed} sein, nicht „${p.value}“.` : `„${p.key}“ muss ein Wort sein.`),
+      invalid_value: (p: MessageParams) =>
+        p.allowed
+          ? `„${p.key}“ kann ${p.allowed} sein, nicht „${p.value}“.`
+          : `„${p.key}“ muss ein Wort sein.`,
       unknown_material: 'Kein Material „{key}“ in „materials“.',
       duplicate_key: '„{key}“ ist zweimal angegeben: nur der erste Wert zählt.',
-      duplicate_reflection: '„reflection“ und „reflectivity“ sind dieselbe Einstellung: „reflectivity“ gewinnt.',
-      out_of_range: (p: MessageParams) => `„${p.key}“ sollte ${p.max === '' ? `mindestens ${p.min}` : `zwischen ${p.min} und ${p.max}`} sein (erhalten: ${p.value}).`,
-      unbalanced_braces: (p: MessageParams) => (p.extra ? 'Diese „}“ schließt keinen Block.' : 'Hier wird ein Block geöffnet und nie geschlossen: eine „}“ fehlt.'),
-      syntax_error: 'Syntaxfehler: ein Text in Anführungszeichen ist nicht geschlossen oder ein Schlüssel hat keinen Wert.',
+      duplicate_reflection:
+        '„reflection“ und „reflectivity“ sind dieselbe Einstellung: „reflectivity“ gewinnt.',
+      out_of_range: (p: MessageParams) =>
+        `„${p.key}“ sollte ${p.max === '' ? `mindestens ${p.min}` : `zwischen ${p.min} und ${p.max}`} sein (erhalten: ${p.value}).`,
+      unbalanced_braces: (p: MessageParams) =>
+        p.extra
+          ? 'Diese „}“ schließt keinen Block.'
+          : 'Hier wird ein Block geöffnet und nie geschlossen: eine „}“ fehlt.',
+      syntax_error:
+        'Syntaxfehler: ein Text in Anführungszeichen ist nicht geschlossen oder ein Schlüssel hat keinen Wert.',
       unexpected_token: 'Ein Wert ohne Schlüssel wird ignoriert.',
       zero_normal: 'Die Normale dieser Ebene ist (0, 0, 0): sie kann nicht gezeichnet werden.',
-      bad_mesh: (p: MessageParams) => (p.reason === 'index' ? `Eine Fläche nutzt Eckpunkt ${p.index}, das Netz hat ${p.count} (ab 0 nummeriert).` : p.reason === 'vertices' ? 'Eckpunktkoordinaten kommen in Dreiergruppen.' : 'Flächen sind Gruppen von 3 Eckpunktnummern.'),
+      bad_mesh: (p: MessageParams) =>
+        p.reason === 'index'
+          ? `Eine Fläche nutzt Eckpunkt ${p.index}, das Netz hat ${p.count} (ab 0 nummeriert).`
+          : p.reason === 'vertices'
+            ? 'Eckpunktkoordinaten kommen in Dreiergruppen.'
+            : 'Flächen sind Gruppen von 3 Eckpunktnummern.',
       engine_too_new: 'Die Szene braucht Engine {value}, das Netzwerk nutzt Version {max}.',
       engine_error: 'Die Engine lehnt die Szene ab: {message}',
       resolution_large: 'Mehr als 8K: das Rendern wird lang und teuer.',
-      missing_resolution: 'Kein „resolution = { width = … height = … }“ in der Kamera: Kacheln und Bild würden nicht übereinstimmen.',
-      resolution_mismatch: 'Die Kacheln würden für {planned} geschnitten, das Bild ist aber {actual}: schreiben Sie „resolution = { width = B height = H }“, Breite zuerst.',
+      missing_resolution:
+        'Kein „resolution = { width = … height = … }“ in der Kamera: Kacheln und Bild würden nicht übereinstimmen.',
+      resolution_mismatch:
+        'Die Kacheln würden für {planned} geschnitten, das Bild ist aber {actual}: schreiben Sie „resolution = { width = B height = H }“, Breite zuerst.',
       empty_scene: 'Kein Objekt: das Bild zeigt nur den Himmel.',
       no_light: 'Kein Licht: ein weißes Standardlicht wird hinzugefügt.',
       dark_scene: 'Kein Licht, kein leuchtendes Objekt und kein Himmel: das Bild wird schwarz.',
@@ -957,7 +1337,8 @@ export const de: Catalog<typeof fr> = {
       none: 'Fügen Sie mindestens ein Dokument hinzu.',
       tooMany: 'Senden Sie höchstens {max} Dateien oder ein ZIP des Ordners.',
       zipAndFiles: 'Senden Sie entweder ein ZIP oder Dokumente, nicht beides zusammen.',
-      unsupported: '{name} wird nicht unterstützt: Senden Sie PDF-, Word- (.docx), Text-, Markdown-Dateien oder ein ZIP.',
+      unsupported:
+        '{name} wird nicht unterstützt: Senden Sie PDF-, Word- (.docx), Text-, Markdown-Dateien oder ein ZIP.',
       empty: 'Eines der Dokumente ist leer.',
       tooLarge: 'Die Dokumente sind zusammen größer als 64 MB. Senden Sie sie in mehreren Teilen.',
     },
@@ -975,7 +1356,8 @@ export const de: Catalog<typeof fr> = {
     passagesRead: '{done} / {total} Passagen gelesen',
     preparing: 'Dokumente werden vorbereitet',
     ready: 'Ihre Dokumente sind bereit: Stellen Sie Ihre Frage.',
-    summary: (p: MessageParams) => `${p.count} ${plural(p, 'Dokument', 'Dokumente')} gelesen, ${p.passages} ${Number(p.passages) === 1 ? 'Passage' : 'Passagen'}. Die Suche umfasst auch später hinzugefügte Dokumente.`,
+    summary: (p: MessageParams) =>
+      `${p.count} ${plural(p, 'Dokument', 'Dokumente')} gelesen, ${p.passages} ${Number(p.passages) === 1 ? 'Passage' : 'Passagen'}. Die Suche umfasst auch später hinzugefügte Dokumente.`,
     skippedMany: (p: MessageParams) => `${p.count} Dateien konnten nicht gelesen werden`,
     skippedOne: 'Eine Datei konnte nicht gelesen werden',
     searchedIn: 'Suche in',
@@ -986,7 +1368,8 @@ export const de: Catalog<typeof fr> = {
     placeholder: 'Stellen Sie Ihre Frage, zum Beispiel: Wie kündige ich den Vertrag?',
     search: 'Suchen',
     engineTitle: 'Die Suchmaschine wird vorbereitet',
-    engineText: 'Die erste Suche dauert etwas länger. Neuer Versuch automatisch in einigen Sekunden…',
+    engineText:
+      'Die erste Suche dauert etwas länger. Neuer Versuch automatisch in einigen Sekunden…',
     noMatch: 'Keine Passage passt. Versuchen Sie es mit anderen Wörtern.',
     hits: 'Gefundene Passagen',
     hitCount: (p: MessageParams) => `${p.count} ${plural(p, 'Passage', 'Passagen')} gefunden`,
@@ -996,12 +1379,14 @@ export const de: Catalog<typeof fr> = {
     scrollHint: 'Scrollen Sie in der Liste, um die nächsten zu sehen.',
     addDocuments: 'Dokumente hinzufügen',
     advanced: 'Erweitert',
-    advancedText: 'Der Index enthält den Text der Passagen und ihre Vektoren, um sie in Ihren eigenen Werkzeugen weiterzuverwenden (Python, Vektordatenbank …).',
+    advancedText:
+      'Der Index enthält den Text der Passagen und ihre Vektoren, um sie in Ihren eigenen Werkzeugen weiterzuverwenden (Python, Vektordatenbank …).',
     downloadIndex: 'Index herunterladen',
   },
   catalogAI: {
     syncFailedTitle: 'Katalog möglicherweise veraltet',
-    syncFailed: 'Die letzte Aktualisierung von Hugging Face ist nicht abgeschlossen: Die Liste ist die zuletzt bekannte.',
+    syncFailed:
+      'Die letzte Aktualisierung von Hugging Face ist nicht abgeschlossen: Die Liste ist die zuletzt bekannte.',
     taskTitle: '1. Aufgabe wählen',
     categories: {
       multimodal: 'Multimodal',
@@ -1025,7 +1410,8 @@ export const de: Catalog<typeof fr> = {
     downloads: (params: MessageParams) => plural(params, '{count} Download', '{count} Downloads'),
     onHub: 'Auf Hugging Face ansehen',
     dataTitle: '3. Ihre Daten und Einstellungen',
-    filesReady: (params: MessageParams) => plural(params, '{count} Datei bereit', '{count} Dateien bereit'),
+    filesReady: (params: MessageParams) =>
+      plural(params, '{count} Datei bereit', '{count} Dateien bereit'),
     drop: {
       image: 'Bilder hier ablegen',
       audio: 'Audiodateien hier ablegen',
@@ -1095,12 +1481,23 @@ export const de: Catalog<typeof fr> = {
     },
     warm: 'Modell bereits installiert',
     cold: 'Modell muss installiert werden',
-    warmText: (params: MessageParams) => plural(params, '{count} Rechner des Netzwerks hat dieses Modell bereits: Die Berechnung startet sofort.', '{count} Rechner des Netzwerks haben dieses Modell bereits: Die Berechnung startet sofort.'),
-    coldText: (params: MessageParams) => plural(params, 'Das Modell wird auf {count} Rechner installiert ({size} GB herunterzuladen): Der Start dauert einige Minuten und kostet etwas mehr.', 'Das Modell wird auf {count} Rechnern installiert ({size} GB herunterzuladen): Der Start dauert einige Minuten und kostet etwas mehr.'),
+    warmText: (params: MessageParams) =>
+      plural(
+        params,
+        '{count} Rechner des Netzwerks hat dieses Modell bereits: Die Berechnung startet sofort.',
+        '{count} Rechner des Netzwerks haben dieses Modell bereits: Die Berechnung startet sofort.',
+      ),
+    coldText: (params: MessageParams) =>
+      plural(
+        params,
+        'Das Modell wird auf {count} Rechner installiert ({size} GB herunterzuladen): Der Start dauert einige Minuten und kostet etwas mehr.',
+        'Das Modell wird auf {count} Rechnern installiert ({size} GB herunterzuladen): Der Start dauert einige Minuten und kostet etwas mehr.',
+      ),
     verification: {
       exact: 'Prüfung: Eine Stichprobe wird neu berechnet und muss dasselbe Ergebnis liefern.',
       similarity: 'Prüfung: Eine Stichprobe wird neu berechnet und nach Ähnlichkeit verglichen.',
-      perceptual: 'Prüfung: Eine Stichprobe wird von einem gleichwertigen Rechner neu berechnet und visuell verglichen.',
+      perceptual:
+        'Prüfung: Eine Stichprobe wird von einem gleichwertigen Rechner neu berechnet und visuell verglichen.',
       'full-recompute': 'Prüfung: Alles wird ein zweites Mal berechnet.',
     },
     compute: 'Berechnung',
@@ -1109,10 +1506,14 @@ export const de: Catalog<typeof fr> = {
     total: 'Gesamt',
     credits: '{count} Credits',
     estimate: 'Schätzung: Credits werden noch nicht abgebucht.',
-    networkUnknown: 'Das Netzwerk war nicht erreichbar: Der Preis geht von einem zu installierenden Modell aus.',
-    consent: 'Ich bestätige, dass meine Daten von den Rechnern des Netzwerks gelesen werden dürfen.',
-    consentHint: 'Jedes Element wird an die PCs gesendet, die es berechnen und prüfen. Senden Sie keine sensiblen personenbezogenen Daten.',
-    consentRequired: 'Bestätigen Sie, dass Ihre Daten von den Rechnern des Netzwerks gelesen werden dürfen.',
+    networkUnknown:
+      'Das Netzwerk war nicht erreichbar: Der Preis geht von einem zu installierenden Modell aus.',
+    consent:
+      'Ich bestätige, dass meine Daten von den Rechnern des Netzwerks gelesen werden dürfen.',
+    consentHint:
+      'Jedes Element wird an die PCs gesendet, die es berechnen und prüfen. Senden Sie keine sensiblen personenbezogenen Daten.',
+    consentRequired:
+      'Bestätigen Sie, dass Ihre Daten von den Rechnern des Netzwerks gelesen werden dürfen.',
     itemCount: (params: MessageParams) => plural(params, '{count} Element', '{count} Elemente'),
     loadFailed: 'Der Katalog konnte nicht geladen werden. Versuchen Sie es gleich noch einmal.',
     problems: {
@@ -1123,7 +1524,8 @@ export const de: Catalog<typeof fr> = {
       emptyItem: 'Ein Element ist leer.',
       itemTooLong: 'Ein Element ist länger als 20.000 Zeichen.',
       itemTooLarge: 'Ein Element überschreitet die erlaubte Größe (6 MB pro Datei).',
-      requestTooLarge: 'Die Daten überschreiten die erlaubte Größe: Senden Sie sie in mehreren Teilen.',
+      requestTooLarge:
+        'Die Daten überschreiten die erlaubte Größe: Senden Sie sie in mehreren Teilen.',
       labels: 'Geben Sie 1 bis 50 Kategorien an (je höchstens 80 Zeichen).',
       parameter: 'Eine Einstellung liegt außerhalb der Grenzen.',
       missingField: 'Einer Zeile fehlen verlangte Felder.',
@@ -1134,7 +1536,8 @@ export const de: Catalog<typeof fr> = {
       stopped: 'Berechnung abgebrochen',
       running: 'Berechnung läuft',
       runningHint: 'Die Ergebnisse erscheinen hier, sobald alle Teile geprüft sind.',
-      done: (params: MessageParams) => plural(params, '{count} geprüftes Ergebnis.', '{count} geprüfte Ergebnisse.'),
+      done: (params: MessageParams) =>
+        plural(params, '{count} geprüftes Ergebnis.', '{count} geprüfte Ergebnisse.'),
       input: 'Element',
       output: 'Ergebnis',
       previous: 'Vorherige',
@@ -1146,7 +1549,8 @@ export const de: Catalog<typeof fr> = {
   },
   batchAI: {
     drop: 'Legen Sie Ihre Datei ab oder klicken Sie, um sie auszuwählen',
-    dropHint: 'CSV (Excel: „Speichern unter… CSV“), JSON Lines oder Text · höchstens 16 MB und 20.000 Elemente',
+    dropHint:
+      'CSV (Excel: „Speichern unter… CSV“), JSON Lines oder Text · höchstens 16 MB und 20.000 Elemente',
     itemCount: (p: MessageParams) => `${p.count} ${plural(p, 'Element', 'Elemente')}`,
     skipped: (p: MessageParams) => `${p.count} leere ${plural(p, 'Zeile', 'Zeilen')} übersprungen`,
     splitAria: 'Aufteilung des Textes',
@@ -1155,15 +1559,46 @@ export const de: Catalog<typeof fr> = {
     preview: 'Erste Elemente',
     taskTitle: 'Was soll die KI tun?',
     tasks: {
-      summarize: { label: 'Zusammenfassen', hint: 'Ein oder zwei Sätze pro Element', placeholder: 'Fasse diesen Text in zwei Sätzen zusammen.', default: 'Fasse diesen Text in zwei Sätzen zusammen.', names: '' },
-      translate: { label: 'Übersetzen', hint: 'In die Sprache Ihrer Wahl', placeholder: 'Übersetze diesen Text ins Englische.', default: 'Übersetze diesen Text ins Englische.', names: '' },
-      classify: { label: 'Einordnen', hint: 'Eine Kategorie aus Ihrer Liste', placeholder: 'Ordne diese Kundenbewertung nach ihrem Ton ein.', default: 'Ordne diese Kundenbewertung nach ihrem Ton ein.', names: 'positiv, negativ, neutral' },
-      extract: { label: 'Herausziehen', hint: 'Bestimmte Felder, als Spalten', placeholder: 'Ziehe die gewünschten Informationen aus diesem Text heraus.', default: 'Ziehe die gewünschten Informationen aus diesem Text heraus.', names: 'Produkt, Problem, vorgeschlagene Lösung' },
-      free: { label: 'Frei', hint: 'Ihre eigene Anweisung, oder jede Zeile ist eine Frage', placeholder: 'Z. B.: Schlage einen packenden Titel für diesen Text vor.', default: '', names: '' },
+      summarize: {
+        label: 'Zusammenfassen',
+        hint: 'Ein oder zwei Sätze pro Element',
+        placeholder: 'Fasse diesen Text in zwei Sätzen zusammen.',
+        default: 'Fasse diesen Text in zwei Sätzen zusammen.',
+        names: '',
+      },
+      translate: {
+        label: 'Übersetzen',
+        hint: 'In die Sprache Ihrer Wahl',
+        placeholder: 'Übersetze diesen Text ins Englische.',
+        default: 'Übersetze diesen Text ins Englische.',
+        names: '',
+      },
+      classify: {
+        label: 'Einordnen',
+        hint: 'Eine Kategorie aus Ihrer Liste',
+        placeholder: 'Ordne diese Kundenbewertung nach ihrem Ton ein.',
+        default: 'Ordne diese Kundenbewertung nach ihrem Ton ein.',
+        names: 'positiv, negativ, neutral',
+      },
+      extract: {
+        label: 'Herausziehen',
+        hint: 'Bestimmte Felder, als Spalten',
+        placeholder: 'Ziehe die gewünschten Informationen aus diesem Text heraus.',
+        default: 'Ziehe die gewünschten Informationen aus diesem Text heraus.',
+        names: 'Produkt, Problem, vorgeschlagene Lösung',
+      },
+      free: {
+        label: 'Frei',
+        hint: 'Ihre eigene Anweisung, oder jede Zeile ist eine Frage',
+        placeholder: 'Z. B.: Schlage einen packenden Titel für diesen Text vor.',
+        default: '',
+        names: '',
+      },
     },
     instruction: 'Anweisung',
     instructionOptional: 'Anweisung (optional)',
-    instructionHint: 'Sie wird auf jedes Element einzeln angewendet. Seien Sie genau: Länge, Sprache, Ton.',
+    instructionHint:
+      'Sie wird auf jedes Element einzeln angewendet. Seien Sie genau: Länge, Sprache, Ton.',
     freeHint: 'Ohne Anweisung wird jedes Element unverändert an die KI geschickt, wie eine Frage.',
     labels: 'Kategorien',
     labelsPlaceholder: 'positiv, negativ, neutral',
@@ -1172,8 +1607,10 @@ export const de: Catalog<typeof fr> = {
     fieldsPlaceholder: 'Name, Datum, Betrag',
     fieldsHint: 'Durch Kommas getrennt: Jedes wird eine Spalte der Ergebnistabelle.',
     consent: 'Die Rechner des Netzwerks dürfen meine Liste lesen',
-    consentHint: 'Jedes Element wird vom Computer einer Privatperson gelesen, der die Antwort berechnet, und von dem, der sie prüft. Senden Sie keine persönlichen oder vertraulichen Daten.',
-    consentRequired: 'Setzen Sie das Häkchen, um zu bestätigen, dass die Rechner des Netzwerks Ihre Liste lesen dürfen.',
+    consentHint:
+      'Jedes Element wird vom Computer einer Privatperson gelesen, der die Antwort berechnet, und von dem, der sie prüft. Senden Sie keine persönlichen oder vertraulichen Daten.',
+    consentRequired:
+      'Setzen Sie das Häkchen, um zu bestätigen, dass die Rechner des Netzwerks Ihre Liste lesen dürfen.',
     problems: {
       noFile: 'Fügen Sie die Datei mit Ihrer Liste hinzu.',
       noItems: 'Die gewählte Spalte enthält keine Elemente.',
@@ -1187,7 +1624,8 @@ export const de: Catalog<typeof fr> = {
       twice: '„{name}“ ist doppelt angegeben.',
     },
     file: {
-      unsupported: '{name} wird nicht unterstützt: Senden Sie eine CSV-, JSON-Lines- oder Textdatei.',
+      unsupported:
+        '{name} wird nicht unterstützt: Senden Sie eine CSV-, JSON-Lines- oder Textdatei.',
       badLine: 'Zeile {line} ist kein gültiges JSON.',
       badJson: 'Die JSON-Datei muss eine Liste von Texten oder Objekten enthalten.',
       tooLarge: 'Die Datei ist größer als {size}: Senden Sie sie in mehreren Teilen.',
@@ -1203,13 +1641,15 @@ export const de: Catalog<typeof fr> = {
       stopped: 'Die Verarbeitung wurde angehalten',
       verified: '{done} / {total} Antworten geprüft',
       liveHint: 'Antworten erscheinen, sobald ein Teil geprüft ist.',
-      done: (p: MessageParams) => `${p.count} ${plural(p, 'Element verarbeitet', 'Elemente verarbeitet')}, ${p.answered} mit Antwort`,
+      done: (p: MessageParams) =>
+        `${p.count} ${plural(p, 'Element verarbeitet', 'Elemente verarbeitet')}, ${p.answered} mit Antwort`,
       model: 'Modell {name}',
       input: 'Element',
       output: 'Antwort',
       none: 'Keine Antwort',
       emptyTitle: 'Noch keine Antwort',
-      emptyText: 'Die ersten Antworten kommen, wenn ein Rechner seinen Teil beendet und ein anderer ihn geprüft hat.',
+      emptyText:
+        'Die ersten Antworten kommen, wenn ein Rechner seinen Teil beendet und ein anderer ihn geprüft hat.',
       previous: 'Vorherige',
       next: 'Nächste',
       range: '{from}–{to} von {total}',
@@ -1241,9 +1681,11 @@ export const de: Catalog<typeof fr> = {
     searchTitle: 'Suche in Ihren Dokumenten',
     resultTitle: 'Ihr Ergebnis',
     imageDescription: 'Vorschau des zusammengesetzten Artefakts.',
-    documentsDescription: 'Stellen Sie eine Frage: Die Passagen, die sie beantworten, erscheinen mit ihrem Dokument und ihrer Seite.',
+    documentsDescription:
+      'Stellen Sie eine Frage: Die Passagen, die sie beantworten, erscheinen mit ihrem Dokument und ihrer Seite.',
     answersTitle: 'Antworten der KI',
-    answersDescription: 'Eine Antwort pro Element Ihrer Liste, sichtbar, sobald ihr Teil von einem anderen Rechner geprüft ist.',
+    answersDescription:
+      'Eine Antwort pro Element Ihrer Liste, sichtbar, sobald ihr Teil von einem anderen Rechner geprüft ist.',
     hashDescription: 'Vom Netzwerk berechnete und geprüfte Hashes.',
     downloadableTitle: 'Herunterladbares Ergebnis',
     downloadableText: 'Diese Berechnungsart hat keine Vorschau: Verwenden Sie „Herunterladen“.',
@@ -1252,7 +1694,8 @@ export const de: Catalog<typeof fr> = {
     fragments: 'Fragmente',
     fragmentsText: '{done} fertig, {active} aktiv, {failed} mit Fehler.',
     noFragments: 'Kein Fragment veröffentlicht',
-    noFragmentsText: 'Die Fragmente erscheinen, sobald der Orchestrator den Ausführungsplan erstellt hat.',
+    noFragmentsText:
+      'Die Fragmente erscheinen, sobald der Orchestrator den Ausführungsplan erstellt hat.',
     fragment: 'Fragment',
     stage: 'Schritt',
     node: 'Knoten',
@@ -1271,7 +1714,8 @@ export const de: Catalog<typeof fr> = {
     loadFailed: 'Die Details dieser Berechnung können nicht geladen werden.',
     backToProjects: 'Zurück zu den Projekten',
     stopTitle: 'Berechnung stoppen?',
-    stopText: 'Die noch laufenden Teile erhalten eine Stopp-Anfrage. Bereits geprüfte Ergebnisse bleiben gespeichert.',
+    stopText:
+      'Die noch laufenden Teile erhalten eine Stopp-Anfrage. Bereits geprüfte Ergebnisse bleiben gespeichert.',
     keepRunning: 'Berechnung fortsetzen',
     stopNow: 'Jetzt stoppen',
     waiting: 'Wartend',
@@ -1282,11 +1726,14 @@ export const de: Catalog<typeof fr> = {
     orchestration: 'Orchestrierung gestartet',
     awaiting: 'Wartet auf Zuweisung',
     computing: 'Verteilte Berechnung',
-    computingDetail: (p: MessageParams) => `${p.count} ${plural(p, 'Fragment', 'Fragmente')} in Berechnung · ${p.done}/${p.total} fertig`,
-    doneDetail: (p: MessageParams) => `${p.count} von ${p.total} ${plural(p, 'Fragment', 'Fragmenten')} fertig`,
+    computingDetail: (p: MessageParams) =>
+      `${p.count} ${plural(p, 'Fragment', 'Fragmente')} in Berechnung · ${p.done}/${p.total} fertig`,
+    doneDetail: (p: MessageParams) =>
+      `${p.count} von ${p.total} ${plural(p, 'Fragment', 'Fragmenten')} fertig`,
     verification: 'Prüfung & Ergebnis',
     ready: 'Ergebnis bereit zur Vorschau oder zum Download',
-    validating: (p: MessageParams) => `${p.count} ${plural(p, 'Fragment wird', 'Fragmente werden')} geprüft`,
+    validating: (p: MessageParams) =>
+      `${p.count} ${plural(p, 'Fragment wird', 'Fragmente werden')} geprüft`,
     fetching: 'Artefakt wird abgerufen',
     interrupted: 'Ausführung ohne Ergebnis abgebrochen',
     upcoming: 'Ausstehend',
@@ -1294,7 +1741,8 @@ export const de: Catalog<typeof fr> = {
   hash: {
     fileHash: 'SHA-256-Hash der Datei',
     listHash: 'Hash der Stückliste',
-    summary: (p: MessageParams) => `${p.size} · ${p.count} ${plural(p, 'Stück', 'Stücke')} vom Netzwerk gehasht und geprüft`,
+    summary: (p: MessageParams) =>
+      `${p.size} · ${p.count} ${plural(p, 'Stück', 'Stücke')} vom Netzwerk gehasht und geprüft`,
     note: 'Die Datei wurde in Stücke geteilt, die auf mehreren Rechnern berechnet wurden: Jedes Stück hat seinen eigenen Hash, und die Zeile oben ist der Hash ihrer Liste.',
     chunk: 'Stück',
     bytes: 'Bytes',
@@ -1319,11 +1767,19 @@ export const de: Catalog<typeof fr> = {
   },
   chainTrace: {
     title: 'Blockchain-Nachweis',
-    description: 'Jede Aufgabe, signiert von der Maschine, die sie berechnet hat, und von denen, die sie geprüft haben, verankert auf Solana.',
-    status: { anchored: 'Auf Solana verankert', pending: 'Verankerung läuft', failed: 'Verankerung fehlgeschlagen', disabled: 'Nicht verankert' },
-    anchoredText: (p: MessageParams) => `${p.count} ${plural(p, 'Aufgabe ist', 'Aufgaben sind')} in einer Transaktion festgehalten: Jede Änderung ihres Nachweises würde die veröffentlichte Wurzel ändern.`,
+    description:
+      'Jede Aufgabe, signiert von der Maschine, die sie berechnet hat, und von denen, die sie geprüft haben, verankert auf Solana.',
+    status: {
+      anchored: 'Auf Solana verankert',
+      pending: 'Verankerung läuft',
+      failed: 'Verankerung fehlgeschlagen',
+      disabled: 'Nicht verankert',
+    },
+    anchoredText: (p: MessageParams) =>
+      `${p.count} ${plural(p, 'Aufgabe ist', 'Aufgaben sind')} in einer Transaktion festgehalten: Jede Änderung ihres Nachweises würde die veröffentlichte Wurzel ändern.`,
     pendingText: 'Die Transaktion mit dem Nachweis dieser Berechnung wird gesendet.',
-    failedText: 'Die Berechnung ist abgeschlossen und gültig, aber ihr Nachweis konnte nicht in der Blockchain festgehalten werden.',
+    failedText:
+      'Die Berechnung ist abgeschlossen und gültig, aber ihr Nachweis konnte nicht in der Blockchain festgehalten werden.',
     failedTitle: 'Grund',
     waitingText: 'Der Nachweis wird am Ende der Berechnung in der Blockchain festgehalten.',
     disabledText: 'Der Blockchain-Nachweis ist in diesem Netzwerk nicht aktiviert.',
@@ -1333,7 +1789,8 @@ export const de: Catalog<typeof fr> = {
     payer: 'Signierendes Konto',
     cluster: 'Solana-Netzwerk',
     check: 'Über die Blockchain prüfen',
-    checkText: 'Ihr Browser liest die Transaktion von Solana und berechnet den Nachweis jeder Aufgabe neu, ohne der Website zu vertrauen.',
+    checkText:
+      'Ihr Browser liest die Transaktion von Solana und berechnet den Nachweis jeder Aufgabe neu, ohne der Website zu vertrauen.',
     task: 'Aufgabe',
     worker: 'Berechnet von',
     verification: 'Prüfung',
@@ -1348,10 +1805,14 @@ export const de: Catalog<typeof fr> = {
       ok: 'Nachweis intakt',
       partial: 'Nachweise gültig, Transaktion nicht gelesen',
       broken: 'Nachweis widersprüchlich',
-      match: (p: MessageParams) => `Die auf Solana festgehaltene Wurzel stimmt überein: ${p.count} ${plural(p, 'Aufgabe', 'Aufgaben')} geprüft.`,
-      mismatch: 'Die Solana-Transaktion enthält diese Wurzel nicht: Der angezeigte Nachweis ist nicht der verankerte.',
-      unreachable: (p: MessageParams) => `Die Nachweise der ${p.count} ${plural(p, 'Aufgabe', 'Aufgaben')} sind gültig, aber die Transaktion konnte gerade nicht von Solana gelesen werden.`,
-      invalidTasks: (p: MessageParams) => `${p.count} ${plural(p, 'Aufgabe passt', 'Aufgaben passen')} nicht zur verankerten Wurzel.`,
+      match: (p: MessageParams) =>
+        `Die auf Solana festgehaltene Wurzel stimmt überein: ${p.count} ${plural(p, 'Aufgabe', 'Aufgaben')} geprüft.`,
+      mismatch:
+        'Die Solana-Transaktion enthält diese Wurzel nicht: Der angezeigte Nachweis ist nicht der verankerte.',
+      unreachable: (p: MessageParams) =>
+        `Die Nachweise der ${p.count} ${plural(p, 'Aufgabe', 'Aufgaben')} sind gültig, aber die Transaktion konnte gerade nicht von Solana gelesen werden.`,
+      invalidTasks: (p: MessageParams) =>
+        `${p.count} ${plural(p, 'Aufgabe passt', 'Aufgaben passen')} nicht zur verankerten Wurzel.`,
     },
   },
   technical: {
@@ -1387,14 +1848,16 @@ export const de: Catalog<typeof fr> = {
     confirmation: 'Bestätigung',
     updatePassword: 'Passwort aktualisieren',
     wallet: 'Solana-Wallet',
-    walletText: 'Die Verbindung erfordert eine Signatur; der private Schlüssel verlässt Phantom nie.',
+    walletText:
+      'Die Verbindung erfordert eine Signatur; der private Schlüssel verlässt Phantom nie.',
     walletProof: 'Durch Signatur geprüfte Adresse',
     balance: 'Devnet-Guthaben',
     solBalance: 'SOL-Guthaben',
     silBalance: 'SIL-Guthaben',
     verifyAgain: 'Erneut prüfen',
     noWallet: 'Keine Wallet',
-    noWalletText: 'Verbinden Sie Phantom, um eine Adresse zu verknüpfen, deren Besitz Sie nachweisen.',
+    noWalletText:
+      'Verbinden Sie Phantom, um eine Adresse zu verknüpfen, deren Besitz Sie nachweisen.',
     connectPhantom: 'Phantom verbinden',
     session: 'Sitzung',
     renewal: 'Verlängerung',
@@ -1409,11 +1872,13 @@ export const de: Catalog<typeof fr> = {
     passwordFailed: 'Das aktuelle Passwort ist falsch oder der Dienst ist nicht verfügbar.',
     walletConnected: 'Die Wallet wurde geprüft und verbunden.',
     economyTitle: 'SIL-Markt — Devnet',
-    economyText: 'Kurs aus dem SIL/SOL-Pool, in USD umgerechnet mit dem Pyth-SOL/USD-Feed. Die Anzeige ist ein Richtwert; nur bestätigte Swaps verändern Ihre Token.',
+    economyText:
+      'Kurs aus dem SIL/SOL-Pool, in USD umgerechnet mit dem Pyth-SOL/USD-Feed. Die Anzeige ist ein Richtwert; nur bestätigte Swaps verändern Ihre Token.',
     economyPrice: 'Geschätzter Preis pro SIL',
     economyPythFresh: 'Pyth-Feed vor {seconds} s aktualisiert',
     economyPythUnavailable: 'Pyth-SOL/USD-Kurs nicht verfügbar oder veraltet',
-    economyMarketError: 'Der Devnet-Markt ist vorübergehend nicht erreichbar. Prüfen Sie die RPC-Verbindung und versuchen Sie es erneut.',
+    economyMarketError:
+      'Der Devnet-Markt ist vorübergehend nicht erreichbar. Prüfen Sie die RPC-Verbindung und versuchen Sie es erneut.',
     economyRate: 'Spotkurs des Pools',
     economyLoading: 'Devnet-Pool wird gelesen…',
     economyDirection: 'Umrechnungsrichtung',
@@ -1428,25 +1893,33 @@ export const de: Catalog<typeof fr> = {
     economyWalletRequired: 'Verknüpfen Sie vor dem Tausch eine Solana-Wallet mit Ihrem Konto.',
     economyWalletMismatch: 'Verbinden Sie in Phantom die mit diesem Konto verknüpfte Wallet.',
     economyInsufficient: 'Ihr Guthaben reicht für diesen Betrag nicht aus.',
-    economyBalanceUnavailable: 'Das Guthaben der Wallet konnte auf Solana Devnet nicht gelesen werden.',
-    economySolFeeReserve: 'Lassen Sie mindestens 0,01 SOL für Netzwerkgebühren und die Einrichtung des SIL-Kontos in dieser Wallet.',
-    economyPhantomRequired: 'Installieren Sie Phantom und erlauben Sie das Signieren von Solana-Transaktionen.',
+    economyBalanceUnavailable:
+      'Das Guthaben der Wallet konnte auf Solana Devnet nicht gelesen werden.',
+    economySolFeeReserve:
+      'Lassen Sie mindestens 0,01 SOL für Netzwerkgebühren und die Einrichtung des SIL-Kontos in dieser Wallet.',
+    economyPhantomRequired:
+      'Installieren Sie Phantom und erlauben Sie das Signieren von Solana-Transaktionen.',
     economySwapRejected: 'Die Signaturanfrage wurde in Phantom abgelehnt.',
-    economySwapFailed: 'Der Tausch wurde nicht abgeschlossen. Versuchen Sie es erneut oder prüfen Sie den Transaktionsstatus in Ihrer Wallet.',
+    economySwapFailed:
+      'Der Tausch wurde nicht abgeschlossen. Versuchen Sie es erneut oder prüfen Sie den Transaktionsstatus in Ihrer Wallet.',
     economySwapComplete: 'Tausch auf Devnet bestätigt.',
     economyViewTransaction: 'Transaktion anzeigen',
-    economyTestOnly: 'Devnet-SIL und SOL sind Test-Token ohne Geldwert. Der USD-Kurs ist eine Schätzung aus Pool und Pyth.',
+    economyTestOnly:
+      'Devnet-SIL und SOL sind Test-Token ohne Geldwert. Der USD-Kurs ist eine Schätzung aus Pool und Pyth.',
     economyLinks: 'SIL-Marktlinks',
     economyViewPool: 'Pool im Solana Explorer anzeigen',
     economyGetDevnetSol: 'Test-SOL erhalten',
-    economyCreditMapping: 'Anzeigewert: 1 Credit = 1 SIL; daraus ergibt sich nicht der Berechnungspreis.',
-    economyRewardText: 'Prämie: 3 SIL pro bestätigtem Blatt — 1 SIL für die Berechnung und 2 SIL für angenommene Prüfungsstimmen.',
+    economyCreditMapping:
+      'Anzeigewert: 1 Credit = 1 SIL; daraus ergibt sich nicht der Berechnungspreis.',
+    economyRewardText:
+      'Prämie: 3 SIL pro bestätigtem Blatt — 1 SIL für die Berechnung und 2 SIL für angenommene Prüfungsstimmen.',
     seoTitle: 'Kontoeinstellungen — Silicium',
   },
   workloads: {
     eyebrow: 'Ressourcen',
     title: 'Berechnungsarten',
-    intro: 'Jede Berechnungsart teilt Ihre Datei in Teile, lässt sie von den Rechnern des Netzwerks berechnen, lässt jeden Teil von einem anderen Rechner prüfen und setzt dann das Ergebnis zusammen. Hier sehen Sie, was jede Art macht und was sie erwartet.',
+    intro:
+      'Jede Berechnungsart teilt Ihre Datei in Teile, lässt sie von den Rechnern des Netzwerks berechnen, lässt jeden Teil von einem anderen Rechner prüfen und setzt dann das Ergebnis zusammen. Hier sehen Sie, was jede Art macht und was sie erwartet.',
     toc: 'Auf dieser Seite',
     purpose: 'Wozu sie dient',
     how: 'So funktioniert es',
@@ -1459,16 +1932,29 @@ export const de: Catalog<typeof fr> = {
     identifier: 'Technische Kennung',
     commonTitle: 'Was alle Berechnungen gemeinsam haben',
     common: [
-      { title: 'Aufteilung', text: 'Der Knoten, der das Projekt empfängt, teilt es in unabhängige Teile, die im Netzwerk veröffentlicht werden.' },
-      { title: 'Berechnung', text: 'Jeder verfügbare Rechner übernimmt einen Teil, berechnet ihn und veröffentlicht sein Ergebnis mit einem Hash.' },
-      { title: 'Prüfung', text: 'Ein anderer Rechner berechnet das Ergebnis ganz oder teilweise neu und vergleicht. Ein abgelehnter Teil wird anderswo neu berechnet.' },
-      { title: 'Zusammenführung', text: 'Sind alle Teile geprüft, wird das Endergebnis zusammengesetzt und erscheint in Ihrem Projekt.' },
+      {
+        title: 'Aufteilung',
+        text: 'Der Knoten, der das Projekt empfängt, teilt es in unabhängige Teile, die im Netzwerk veröffentlicht werden.',
+      },
+      {
+        title: 'Berechnung',
+        text: 'Jeder verfügbare Rechner übernimmt einen Teil, berechnet ihn und veröffentlicht sein Ergebnis mit einem Hash.',
+      },
+      {
+        title: 'Prüfung',
+        text: 'Ein anderer Rechner berechnet das Ergebnis ganz oder teilweise neu und vergleicht. Ein abgelehnter Teil wird anderswo neu berechnet.',
+      },
+      {
+        title: 'Zusammenführung',
+        text: 'Sind alle Teile geprüft, wird das Endergebnis zusammengesetzt und erscheint in Ihrem Projekt.',
+      },
     ],
     items: {
       raytracer: {
         name: 'Bild-Rendering',
         tagline: 'Ein 3D-Bild berechnen, aufgeteilt auf mehrere Rechner.',
-        purpose: 'Ein Bild aus einer 3D-Szene erzeugen: Kugeln, Ebenen, Quader, Flächen und 3D-Modelle (.obj), matte, lackierte, metallische, gläserne oder leuchtende Materialien, Punkt- oder Flächenlichter, Tiefenunschärfe. In fotorealistischer Qualität berechnet die Engine globale Beleuchtung (indirektes Licht, weiche Schatten). Stellen Sie die Szene im visuellen Editor zusammen oder senden Sie eine .cfg-Datei.',
+        purpose:
+          'Ein Bild aus einer 3D-Szene erzeugen: Kugeln, Ebenen, Quader, Flächen und 3D-Modelle (.obj), matte, lackierte, metallische, gläserne oder leuchtende Materialien, Punkt- oder Flächenlichter, Tiefenunschärfe. In fotorealistischer Qualität berechnet die Engine globale Beleuchtung (indirektes Licht, weiche Schatten). Stellen Sie die Szene im visuellen Editor zusammen oder senden Sie eine .cfg-Datei.',
         how: [
           'Das Bild wird in rechteckige Kacheln geteilt (standardmäßig 64, einstellbar von 1 bis 256).',
           'Jeder Rechner rendert seine Kacheln und veröffentlicht pro Zeilenblock Kontroll-Hashes („Meilensteine“).',
@@ -1477,13 +1963,16 @@ export const de: Catalog<typeof fr> = {
         ],
         give: 'Eine im Editor erstellte Szene oder eine Szenendatei als Text (.cfg) mit höchstens 16 MB: render (Qualität, Beleuchtungsart), camera (Auflösung, Position, Ausrichtung, Objektiv), materials, primitives (sphere, plane, box, quad, triangle, mesh) und lights (point, area). Die Datei wird vor dem Senden in Ihrem Browser geprüft.',
         get: 'Das fertige Bild als PNG, im Projekt sichtbar und herunterladbar, mit dem Fortschritt Kachel für Kachel während der Berechnung.',
-        limits: 'Das Rendering ist deterministisch: Zwei Rechner erzeugen genau dieselben Pixel, was die Prüfung erst möglich macht. Texturen werden nicht unterstützt, und eine Animation wird Bild für Bild gesendet.',
-        exampleText: 'Die Szene „Schaufenster“ des Editors: Glaskugel, goldenes Metall, Spiegel, Edelstein, Ring und Quader unter einer leuchtenden Fläche, mit globaler Beleuchtung und Tiefenunschärfe. 1280 × 720, 256 Strahlen pro Pixel: eine Berechnung, die nur verteilt auf mehrere Rechner sinnvoll ist.',
+        limits:
+          'Das Rendering ist deterministisch: Zwei Rechner erzeugen genau dieselben Pixel, was die Prüfung erst möglich macht. Texturen werden nicht unterstützt, und eine Animation wird Bild für Bild gesendet.',
+        exampleText:
+          'Die Szene „Schaufenster“ des Editors: Glaskugel, goldenes Metall, Spiegel, Edelstein, Ring und Quader unter einer leuchtenden Fläche, mit globaler Beleuchtung und Tiefenunschärfe. 1280 × 720, 256 Strahlen pro Pixel: eine Berechnung, die nur verteilt auf mehrere Rechner sinnvoll ist.',
       },
       sha256: {
         name: 'SHA-256-Hash',
         tagline: 'Die Hashes einer großen Datei berechnen und prüfen.',
-        purpose: 'Den SHA-256-Hash einer Datei erhalten, um zu beweisen, dass sie nicht verändert wurde (Archiv, Sicherung, Disk-Image …), mit einem Hash pro Stück, um einen beschädigten Bereich zu finden.',
+        purpose:
+          'Den SHA-256-Hash einer Datei erhalten, um zu beweisen, dass sie nicht verändert wurde (Archiv, Sicherung, Disk-Image …), mit einem Hash pro Stück, um einen beschädigten Bereich zu finden.',
         how: [
           'Die Datei wird in aufeinanderfolgende Byte-Stücke geteilt.',
           'Jeder Rechner hasht sein Stück und veröffentlicht den Hash.',
@@ -1492,13 +1981,16 @@ export const de: Catalog<typeof fr> = {
         ],
         give: 'Eine beliebige, nicht leere Datei mit höchstens 16 MB. Um den Hash der ganzen Datei zu erhalten, wählen Sie in den erweiterten Optionen einen einzigen Teil.',
         get: 'Ein JSON-Bericht: Größe, Anzahl der Stücke, Hash jedes Stücks (Position und Länge), Hash der Liste und, mit einem einzigen Teil, der Hash der ganzen Datei.',
-        limits: 'Mit mehreren Teilen ist der Hash der Liste nicht der Hash der Datei: Er dient zum Vergleich zweier Berechnungen mit derselben Aufteilung.',
-        exampleText: 'Eine kurze Textdatei: Vergleichen Sie ihren Hash mit dem von „sha256sum“ oder „Get-FileHash“.',
+        limits:
+          'Mit mehreren Teilen ist der Hash der Liste nicht der Hash der Datei: Er dient zum Vergleich zweier Berechnungen mit derselben Aufteilung.',
+        exampleText:
+          'Eine kurze Textdatei: Vergleichen Sie ihren Hash mit dem von „sha256sum“ oder „Get-FileHash“.',
       },
       documents: {
         name: 'In meinen Dokumenten suchen',
         tagline: 'Ihren Dokumenten Fragen stellen, auch ohne die richtigen Stichwörter.',
-        purpose: 'Eine Passage in Verträgen, Notizen oder Berichten finden, indem Sie eine Frage in Alltagssprache stellen. Die Suche arbeitet nach Bedeutung: „kündigen“ findet auch „den Vertrag beenden“.',
+        purpose:
+          'Eine Passage in Verträgen, Notizen oder Berichten finden, indem Sie eine Frage in Alltagssprache stellen. Die Suche arbeitet nach Bedeutung: „kündigen“ findet auch „den Vertrag beenden“.',
         how: [
           'Der Text der Dokumente wird gelesen und in sich überlappende Passagen von etwa 200 Wörtern geteilt, die ihre Seitenzahl behalten.',
           'Jeder Rechner wandelt seine Passagen mit einem mehrsprachigen Modell (multilingual-e5-small, über seinen Hash festgelegt) in Vektoren um.',
@@ -1507,13 +1999,16 @@ export const de: Catalog<typeof fr> = {
         ],
         give: 'PDFs (mit Text, keine Scans), Word-Dateien (.docx), Text oder Markdown oder ein ZIP mit diesen Dateien: höchstens 200 Dateien und 64 MB pro Upload. Sie können später weitere zur selben Suche hinzufügen.',
         get: 'Eine Suchseite: Jede gefundene Passage zeigt ihr Dokument und ihre Seite und öffnet sich mit einem Klick. Der Index kann heruntergeladen werden (Option „Erweitert“).',
-        limits: 'Die Rechner des Netzwerks lesen den Text der Dokumente: Senden Sie nichts Vertrauliches. Gescannte Bilder ohne Text werden nicht gelesen (noch keine Texterkennung).',
-        exampleText: 'Ein ZIP mit drei kurzen fiktiven Dokumenten: ein Mietvertrag als PDF (2 Seiten, auf Französisch), eine Hausordnung (auf Französisch) und eine FAQ auf Englisch. Probieren Sie „Welche Kündigungsfrist gilt?“ oder „Wo stelle ich mein Fahrrad ab?“: Die Antwort kann aus einem Dokument in einer anderen Sprache kommen.',
+        limits:
+          'Die Rechner des Netzwerks lesen den Text der Dokumente: Senden Sie nichts Vertrauliches. Gescannte Bilder ohne Text werden nicht gelesen (noch keine Texterkennung).',
+        exampleText:
+          'Ein ZIP mit drei kurzen fiktiven Dokumenten: ein Mietvertrag als PDF (2 Seiten, auf Französisch), eine Hausordnung (auf Französisch) und eine FAQ auf Englisch. Probieren Sie „Welche Kündigungsfrist gilt?“ oder „Wo stelle ich mein Fahrrad ab?“: Die Antwort kann aus einem Dokument in einer anderen Sprache kommen.',
       },
       batchAI: {
         name: 'KI-Verarbeitung',
         tagline: 'Eine Anweisung mit einer KI auf jede Zeile einer Datei anwenden.',
-        purpose: 'Hunderte oder Tausende Texte auf einmal verarbeiten: Protokolle zusammenfassen, Produktblätter übersetzen, Kundenbewertungen einordnen, Name, Datum oder Betrag aus Briefen herausziehen. Die Elemente sind unabhängig, daher verarbeitet das Netzwerk sie parallel.',
+        purpose:
+          'Hunderte oder Tausende Texte auf einmal verarbeiten: Protokolle zusammenfassen, Produktblätter übersetzen, Kundenbewertungen einordnen, Name, Datum oder Betrag aus Briefen herausziehen. Die Elemente sind unabhängig, daher verarbeitet das Netzwerk sie parallel.',
         how: [
           'Ihre Datei wird in Ihrem Browser gelesen: Sie wählen die Spalte und sehen die ersten Elemente vor dem Senden.',
           'Die Liste wird in Teile von einigen Elementen zerlegt; jeder Rechner lässt sie vom selben Modell (Qwen 2.5, 1,5 Milliarden Parameter, durch seinen Hash festgelegt) mit Ollama verarbeiten.',
@@ -1522,8 +2017,10 @@ export const de: Catalog<typeof fr> = {
         ],
         give: 'Eine CSV-Datei (mit Kopfzeile), eine JSON-Lines-Datei oder Text (ein Element pro Zeile oder Absatz): höchstens 16 MB, 20.000 Elemente und 6.000 Zeichen pro Element. Dann eine Anweisung und die Liste der Kategorien oder Felder für eine Einordnung oder ein Herausziehen.',
         get: 'Eine Tabelle: jedes Element mit seiner Antwort, als CSV (öffnet sich in Excel oder LibreOffice, eine Spalte pro herausgezogenem Feld) oder JSON Lines.',
-        limits: 'Ein kleines Modell irrt sich manchmal: Prüfen Sie wichtige Antworten. Die Rechner des Netzwerks lesen Ihre Texte: nichts Vertrauliches. Nur Computer, deren Besitzer KI-Aufgaben in der App eingeschaltet haben, nehmen teil.',
-        exampleText: 'Zwölf Kundenbewertungen (auf Französisch) zu Alltagsprodukten. Wählen Sie „Einordnen“ mit den Kategorien positiv, negativ, neutral oder „Herausziehen“ mit Produkt, Problem, vorgeschlagene Lösung.',
+        limits:
+          'Ein kleines Modell irrt sich manchmal: Prüfen Sie wichtige Antworten. Die Rechner des Netzwerks lesen Ihre Texte: nichts Vertrauliches. Nur Computer, deren Besitzer KI-Aufgaben in der App eingeschaltet haben, nehmen teil.',
+        exampleText:
+          'Zwölf Kundenbewertungen (auf Französisch) zu Alltagsprodukten. Wählen Sie „Einordnen“ mit den Kategorien positiv, negativ, neutral oder „Herausziehen“ mit Produkt, Problem, vorgeschlagene Lösung.',
       },
     },
     seoTitle: 'Berechnungsarten — Silicium',

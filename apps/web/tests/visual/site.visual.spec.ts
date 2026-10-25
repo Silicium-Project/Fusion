@@ -3,24 +3,45 @@ import path from 'node:path';
 import { authenticate, mockAPI } from '../e2e/fixtures';
 
 const publicPages = [
-  ['home', '/'], ['service', '/service'], ['download', '/download'], ['blockchain', '/blockchain'], ['about', '/about'], ['contact', '/contact'], ['auth', '/auth'],
+  ['home', '/'],
+  ['service', '/service'],
+  ['download', '/download'],
+  ['blockchain', '/blockchain'],
+  ['about', '/about'],
+  ['contact', '/contact'],
+  ['auth', '/auth'],
 ] as const;
 
 const privatePages = [
-  ['dashboard', '/dashboard'], ['jobs', '/jobs'], ['job-new', '/jobs/new'], ['job-detail', '/jobs/1'],
-  ['network', '/network'], ['nodes', '/nodes'], ['profile', '/profile'],
+  ['dashboard', '/dashboard'],
+  ['jobs', '/jobs'],
+  ['job-new', '/jobs/new'],
+  ['job-detail', '/jobs/1'],
+  ['network', '/network'],
+  ['nodes', '/nodes'],
+  ['profile', '/profile'],
 ] as const;
 
-async function capture(page: Parameters<typeof mockAPI>[0], projectName: string, name: string, route: string, authenticated = false) {
+async function capture(
+  page: Parameters<typeof mockAPI>[0],
+  projectName: string,
+  name: string,
+  route: string,
+  authenticated = false,
+) {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await mockAPI(page);
   if (authenticated) await authenticate(page);
   const errors: string[] = [];
-  page.on('pageerror', error => errors.push(error.message));
+  page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(route, { waitUntil: 'networkidle' });
   await page.waitForTimeout(250);
   await expect(page.locator('h1:visible, h2:visible').first()).toBeVisible();
-  const layout = await page.evaluate(() => ({ width: document.documentElement.scrollWidth, viewport: innerWidth, bodyFont: getComputedStyle(document.body).fontFamily }));
+  const layout = await page.evaluate(() => ({
+    width: document.documentElement.scrollWidth,
+    viewport: innerWidth,
+    bodyFont: getComputedStyle(document.body).fontFamily,
+  }));
   expect(layout.width).toBeLessThanOrEqual(layout.viewport);
   expect(layout.bodyFont).toContain('Geist');
   expect(errors).toEqual([]);
@@ -32,11 +53,13 @@ async function capture(page: Parameters<typeof mockAPI>[0], projectName: string,
 }
 
 for (const [name, route] of publicPages) {
-  test(`capture public ${name}`, async ({ page }, testInfo) => capture(page, testInfo.project.name, name, route));
+  test(`capture public ${name}`, async ({ page }, testInfo) =>
+    capture(page, testInfo.project.name, name, route));
 }
 
 for (const [name, route] of privatePages) {
-  test(`capture private ${name}`, async ({ page }, testInfo) => capture(page, testInfo.project.name, name, route, true));
+  test(`capture private ${name}`, async ({ page }, testInfo) =>
+    capture(page, testInfo.project.name, name, route, true));
 }
 
 test('home distinguishes the diagram from observed network status', async ({ page }, testInfo) => {
@@ -48,7 +71,10 @@ test('home distinguishes the diagram from observed network status', async ({ pag
 });
 
 test('live network telemetry displays the API snapshot', async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== 'desktop', 'The live sample check runs once on the desktop project.');
+  test.skip(
+    testInfo.project.name !== 'desktop',
+    'The live sample check runs once on the desktop project.',
+  );
   await mockAPI(page);
   await authenticate(page);
   await page.goto('/network', { waitUntil: 'networkidle' });
@@ -58,8 +84,13 @@ test('live network telemetry displays the API snapshot', async ({ page }, testIn
   await expect(telemetry).toContainText('2');
 });
 
-test('scroll story keeps the 3D network visible and changes its stage', async ({ page }, testInfo) => {
-  test.skip(!['desktop-wide', 'iphone-se'].includes(testInfo.project.name), 'The scroll story is checked on wide desktop and iPhone SE.');
+test('scroll story keeps the 3D network visible and changes its stage', async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    !['desktop-wide', 'iphone-se'].includes(testInfo.project.name),
+    'The scroll story is checked on wide desktop and iPhone SE.',
+  );
   await mockAPI(page);
   await page.goto('/service', { waitUntil: 'networkidle' });
   await page.waitForTimeout(1000);
@@ -69,7 +100,7 @@ test('scroll story keeps the 3D network visible and changes its stage', async ({
   await expect(network.locator('canvas')).toBeVisible();
   const snapshots: string[] = [];
   const targets: string[] = [];
-  for (const [index, ratio] of [0, .25, .5, .75, 1].entries()) {
+  for (const [index, ratio] of [0, 0.25, 0.5, 0.75, 1].entries()) {
     await page.evaluate((value) => {
       const section = document.querySelector<HTMLElement>('.process-story');
       if (!section) return null;
@@ -79,19 +110,33 @@ test('scroll story keeps the 3D network visible and changes its stage', async ({
       window.scrollTo(0, top);
       document.documentElement.scrollTop = top;
       window.dispatchEvent(new Event('scroll'));
-      return { target: top, scrollY: window.scrollY, rectTop: section.getBoundingClientRect().top, scrollable };
+      return {
+        target: top,
+        scrollY: window.scrollY,
+        rectTop: section.getBoundingClientRect().top,
+        scrollable,
+      };
     }, ratio);
     await page.waitForTimeout(500);
     await expect(story).toBeVisible();
     await expect(network).toBeVisible();
-    await expect(story.locator('.process-story__counter')).toContainText(`${String(Math.min(index + 1, 4)).padStart(2, '0')}`);
+    await expect(story.locator('.process-story__counter')).toContainText(
+      `${String(Math.min(index + 1, 4)).padStart(2, '0')}`,
+    );
     targets.push((await network.getAttribute('data-camera-target')) || '');
     snapshots.push((await network.getAttribute('data-camera-position')) || '');
-    await page.screenshot({ path: path.resolve('artifacts/design-audit/after', testInfo.project.name, `scroll-story-${index + 1}.png`), animations: 'disabled' });
+    await page.screenshot({
+      path: path.resolve(
+        'artifacts/design-audit/after',
+        testInfo.project.name,
+        `scroll-story-${index + 1}.png`,
+      ),
+      animations: 'disabled',
+    });
   }
   expect(new Set(snapshots).size).toBeGreaterThan(3);
   expect(targets).toEqual(['source', 'relay-a', 'compute-a', 'result', 'result']);
-  const cameraCoordinates = snapshots.map(snapshot => snapshot.split(',').map(Number));
+  const cameraCoordinates = snapshots.map((snapshot) => snapshot.split(',').map(Number));
   expect(new Set(cameraCoordinates.map(([x]) => x)).size).toBeGreaterThan(2);
   expect(new Set(cameraCoordinates.map(([, y]) => y)).size).toBeGreaterThan(2);
   expect(new Set(cameraCoordinates.map(([, , z]) => z)).size).toBeGreaterThan(2);
@@ -102,5 +147,12 @@ test('scroll story keeps the 3D network visible and changes its stage', async ({
   await expect(network).toHaveAttribute('data-camera-target', 'source');
   await expect(network).toHaveAttribute('data-camera-moving', 'true');
   await page.waitForTimeout(350);
-  await page.screenshot({ path: path.resolve('artifacts/design-audit/after', testInfo.project.name, 'scroll-story-camera-jump.png'), animations: 'disabled' });
+  await page.screenshot({
+    path: path.resolve(
+      'artifacts/design-audit/after',
+      testInfo.project.name,
+      'scroll-story-camera-jump.png',
+    ),
+    animations: 'disabled',
+  });
 });

@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { isUserRejection, phantomProvider } from '../utils/wallet';
 
-const provider = (isPhantom: boolean) => ({ isPhantom, connect: async () => ({ publicKey: { toString: () => 'k' } }), signMessage: async () => ({ signature: new Uint8Array() }) });
+const provider = (isPhantom: boolean) => ({
+  isPhantom,
+  connect: async () => ({ publicKey: { toString: () => 'k' } }),
+  signMessage: async () => ({ signature: new Uint8Array() }),
+});
 
 describe('wallet helpers', () => {
   it('finds Phantom where current and older versions put it', () => {

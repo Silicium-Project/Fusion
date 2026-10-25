@@ -101,6 +101,17 @@
       "steps": [
         {
           "command": [
+            "npm",
+            "ci",
+            "--ignore-scripts",
+            "--no-audit",
+            "--no-fund"
+          ],
+          "cwd": "tools/quality",
+          "kind": "check"
+        },
+        {
+          "command": [
             "node",
             "--test",
             "--test-reporter=tap",
@@ -115,6 +126,23 @@
             "node",
             "tools/tasks/quality.mjs",
             "repository"
+          ],
+          "cwd": ".",
+          "kind": "check"
+        },
+        {
+          "command": [
+            "node",
+            "tools/quality/run.mjs",
+            "check"
+          ],
+          "cwd": ".",
+          "kind": "check"
+        },
+        {
+          "command": [
+            "node",
+            "tools/quality/shell.mjs"
           ],
           "cwd": ".",
           "kind": "check"
@@ -208,6 +236,17 @@
           "command": [
             "npm",
             "ci"
+          ],
+          "cwd": "apps/web",
+          "kind": "check"
+        },
+        {
+          "command": [
+            "npm",
+            "exec",
+            "--",
+            "nuxi",
+            "typecheck"
           ],
           "cwd": "apps/web",
           "kind": "check"
@@ -554,6 +593,28 @@
           "format": "rust"
         }
       ]
+    },
+    "powershell": {
+      "components": [
+        "tooling",
+        "infra",
+        "node"
+      ],
+      "steps": [
+        {
+          "command": [
+            "pwsh",
+            "-NoProfile",
+            "-File",
+            "tools/quality/powershell.ps1"
+          ],
+          "cwd": ".",
+          "kind": "check"
+        }
+      ],
+      "timeout_minutes": 10,
+      "runner": "windows-2022",
+      "tier": "pr"
     }
   }
 }

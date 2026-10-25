@@ -9,7 +9,9 @@ export function tokenExpiry(token: unknown, now = Date.now()): Date | undefined 
     if (typeof exp !== 'number' || !Number.isFinite(exp)) return;
     const expires = new Date(exp * 1000);
     return Number.isFinite(expires.getTime()) && expires.getTime() > now ? expires : undefined;
-  } catch { return; }
+  } catch {
+    return;
+  }
 }
 
 export function authErrorMessage(error: unknown): string {
@@ -25,6 +27,13 @@ export function authErrorMessage(error: unknown): string {
 
 /** A redirect target that stays on this site (`/jobs/3`), else `fallback`. */
 export function safeRedirect(value: unknown, fallback = '/dashboard'): string {
-  if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//') || value.startsWith('/\\') || /[\u0000-\u001f]/.test(value)) return fallback;
+  if (
+    typeof value !== 'string' ||
+    !value.startsWith('/') ||
+    value.startsWith('//') ||
+    value.startsWith('/\\') ||
+    /[\u0000-\u001f]/.test(value)
+  )
+    return fallback;
   return value;
 }

@@ -2,7 +2,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { de } from '../locales/de';
 import { en } from '../locales/en';
 import { fr } from '../locales/fr';
-import { activeLocale, formatBytes, normalizeLocale, translate, translateList } from '../utils/i18n';
+import {
+  activeLocale,
+  formatBytes,
+  normalizeLocale,
+  translate,
+  translateList,
+} from '../utils/i18n';
 import { statusLabel } from '../utils/format';
 import { fragmentStateLabel } from '../utils/jobs';
 
@@ -11,11 +17,15 @@ function shape(node: unknown, prefix = ''): string[] {
   if (typeof node === 'function') return [`${prefix}:function`];
   if (typeof node === 'string') return [`${prefix}:string`];
   if (Array.isArray(node)) return node.flatMap((item, index) => shape(item, `${prefix}[${index}]`));
-  return Object.entries(node as Record<string, unknown>).flatMap(([key, value]) => shape(value, prefix ? `${prefix}.${key}` : key));
+  return Object.entries(node as Record<string, unknown>).flatMap(([key, value]) =>
+    shape(value, prefix ? `${prefix}.${key}` : key),
+  );
 }
 
 describe('translation', () => {
-  afterEach(() => { activeLocale.value = 'fr'; });
+  afterEach(() => {
+    activeLocale.value = 'fr';
+  });
 
   it('has the same messages, lists and plurals in every language', () => {
     const reference = shape(fr).sort();
@@ -25,9 +35,13 @@ describe('translation', () => {
 
   it('fills placeholders and plurals in the current language', () => {
     expect(translate('jobDetail.partsDone', { count: 3 })).toBe('3 terminées');
-    expect(translate('documents.summary', { count: 1, passages: 40 })).toMatch(/^1 document lu, 40 passages\./);
+    expect(translate('documents.summary', { count: 1, passages: 40 })).toMatch(
+      /^1 document lu, 40 passages\./,
+    );
     activeLocale.value = 'en';
-    expect(translate('documents.summary', { count: 2, passages: 1 })).toMatch(/^2 documents read, 1 passage\./);
+    expect(translate('documents.summary', { count: 2, passages: 1 })).toMatch(
+      /^2 documents read, 1 passage\./,
+    );
     expect(statusLabel('running')).toBe('Running');
     expect(fragmentStateLabel('verified')).toBe('Done');
     activeLocale.value = 'de';
