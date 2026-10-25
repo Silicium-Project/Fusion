@@ -55,7 +55,10 @@ git show --no-patch --format='%H%n%P%n%T' ed5983d8
 Les trois premières commandes doivent réussir. Les quatre imports (Fusion,
 Network, BackEnd et FrontEnd) et leurs merges deviennent ainsi des ancêtres
 de la branche. La PR doit conserver tous ces commits et passer `ci/required`.
-La modification d'`AGENTS.md` exige une qualification conservatrice complète.
+Le plan de cette correction documentaire exige les quatre suites `docs`,
+`powershell`, `security` et `tooling`. Le code applicatif a le même arbre que
+la révision qualifiée ; ces quatre suites ne sont pas une nouvelle
+qualification complète des applications.
 
 Après décision humaine de fusion avec **Merge commit** :
 
