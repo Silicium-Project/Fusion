@@ -195,7 +195,7 @@ async function main() {
         ],
       },
       node: { cwd: 'apps/node', command: ['npm', 'run', 'build'] },
-      sdk: { cwd: 'packages/solana-sdk', command: ['npm', 'run', 'build'] },
+      sdk: { cwd: 'chain/sdk', command: ['npm', 'run', 'build'] },
       solana: {
         cwd: 'chain/solana',
         command: ['anchor', 'build', '--provider.cluster', 'localnet'],

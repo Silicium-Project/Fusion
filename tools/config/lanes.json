@@ -33,7 +33,7 @@
     },
     "sdk": {
       "paths": [
-        "packages/solana-sdk/"
+        "chain/sdk/"
       ],
       "depends_on": [
         "solana"
@@ -592,7 +592,7 @@
             "npm",
             "ci"
           ],
-          "cwd": "packages/solana-sdk",
+          "cwd": "chain/sdk",
           "kind": "check"
         },
         {
@@ -601,7 +601,7 @@
             "run",
             "build"
           ],
-          "cwd": "packages/solana-sdk",
+          "cwd": "chain/sdk",
           "kind": "build"
         },
         {

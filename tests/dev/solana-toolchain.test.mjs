@@ -17,7 +17,7 @@ test('Anchor program, SDK, tests and CLI keep the reviewed version and a tracked
   for (const name of ['anchor-lang', 'anchor-spl'])
     assert.equal(lock.match(new RegExp(`name = "${name}"\\nversion = "([^"]+)"`))?.[1], version);
   assert.equal(
-    readJson(resolve(root, 'packages/solana-sdk/package.json')).dependencies['@coral-xyz/anchor'],
+    readJson(resolve(root, 'chain/sdk/package.json')).dependencies['@coral-xyz/anchor'],
     version,
   );
   const tests = readJson(resolve(root, 'chain/solana/package.json'));

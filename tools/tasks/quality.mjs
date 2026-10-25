@@ -29,7 +29,7 @@ if (mode === 'docs') {
         'apps/node',
         'network',
         'chain/solana',
-        'packages/solana-sdk',
+        'chain/sdk',
         'infra',
       ]
         .flatMap((path) => [path + '/AGENTS.md', path + '/README.md'])

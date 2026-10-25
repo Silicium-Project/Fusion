@@ -10,7 +10,7 @@ communes ci-dessous restent la référence locale et GitHub.
 - `apps/node` : application Tauri/Vue et supervision locale, Rust/TypeScript.
 - `network` : workspace Rust du réseau P2P et des workloads.
 - `chain/solana` : programme Anchor, toolchain isolée et tests localnet.
-- `packages/solana-sdk` : SDK TypeScript.
+- `chain/sdk` : SDK TypeScript.
 - `contracts` : contrats partagés ; `infra` : exploitation et livraison.
 - `tools` : commandes communes ; `docs` : procédures normatives et archives.
 

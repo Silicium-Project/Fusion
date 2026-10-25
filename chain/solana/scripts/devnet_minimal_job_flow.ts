@@ -21,7 +21,7 @@
  */
 
 import * as anchor from '@coral-xyz/anchor';
-import { quoteDevnetSilFragments } from '../../../packages/solana-sdk/src';
+import { quoteDevnetSilFragments } from '../../sdk/src';
 import {
   Connection,
   Keypair,

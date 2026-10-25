@@ -24,7 +24,7 @@ chaque composant sont dans le [guide de développement](docs/development/command
 | [apps/node](apps/node) | Application Tauri et supervision d'une machine |
 | [network](network) | Runtime P2P et workloads Rust |
 | [chain/solana](chain/solana) | Programme Anchor et qualification localnet |
-| [packages/solana-sdk](packages/solana-sdk) | SDK TypeScript |
+| [chain/sdk](chain/sdk) | SDK TypeScript |
 | [contracts](contracts) | Contrats et schémas partagés |
 | [infra](infra) | Livraison d'artefacts, services et exploitation |
 
