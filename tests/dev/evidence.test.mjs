@@ -19,3 +19,8 @@ test('arbitrary links, manual CI, missing or pending PRs are rejected',()=>{
  assert.throws(()=>inspectEvidence('https://example.com/green','CI',issue,{request}));
  for(const override of [p=>p.includes('/actions/runs/')?{...request(p),event:'workflow_dispatch'}:request(p),p=>p.startsWith('search/')?{total_count:0,items:[]}:request(p),p=>p.includes('/reviews')?[]:request(p),p=>p.includes('/pulls/')&&!p.includes('reviews')?{...pr,merged_at:null}:request(p)])assert.throws(()=>inspectEvidence('https://github.com/Silicium-Project/Fusion/actions/runs/1','CI',issue,{request:override}));
 });
+
+test('GitHub issue-form headings delimit the acceptance checklist',()=>{
+ assert.equal(acceptanceChecklistComplete("### Conditions d’acceptation\n\n- [x] verified\n\n### Other work\n- [ ] later"),true);
+ assert.equal(acceptanceChecklistComplete("### Conditions d’acceptation\n- [ ] missing"),false);
+});

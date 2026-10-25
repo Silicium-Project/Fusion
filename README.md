@@ -43,3 +43,5 @@ les capacités présentes ; la roadmap décrit les travaux à réaliser. Une rel
 n'est qualifiée qu'avec ses preuves, ses signatures et son manifeste.
 
 [Documentation](docs/README.md) · [Sécurité](Security.md) · [Licence MIT](LICENSE)
+
+[Roadmap](docs/roadmap/README.md) · [Workflow des issues](docs/development/issue-workflow.md)

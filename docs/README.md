@@ -9,3 +9,6 @@
 
 Les documents de `archive/` conservent l'historique de l'ancienne composition
 par sous-modules. Leurs commandes ne sont pas les procédures actuelles.
+
+- [Workflow des issues](development/issue-workflow.md)
+- [Roadmap publique](roadmap/README.md)

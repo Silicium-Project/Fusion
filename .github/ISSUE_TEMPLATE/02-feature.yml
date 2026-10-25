@@ -1,0 +1,49 @@
+name: Évolution et tranche de réalisation
+description: Définir un résultat vérifiable et son périmètre.
+title: '[Feature] '
+type: Feature
+projects:
+- Silicium-Project/12
+body:
+- type: markdown
+  attributes:
+    value: Consultez les issues existantes et le Project commun. Ne publiez aucune clé, jeton, donnée
+      personnelle ou contenu confidentiel. Une demande est à qualifier avant tout engagement.
+- type: textarea
+  id: outcome
+  attributes:
+    label: Besoin et résultat utilisateur
+    description: Qui bénéficie du changement, quel résultat et comment le constater.
+  validations:
+    required: true
+- type: textarea
+  id: scope
+  attributes:
+    label: Périmètre de cette tranche
+    description: Comportement à réaliser, contrats concernés et limites ; une PR cohérente pour une issue
+      d’exécution.
+  validations:
+    required: true
+- type: textarea
+  id: acceptance
+  attributes:
+    label: Conditions d’acceptation
+    description: Checklist vérifiable ; chaque critère doit disposer d’une preuve ou d’un oracle.
+  validations:
+    required: true
+- type: textarea
+  id: validation
+  attributes:
+    label: Validation attendue
+    description: Scénarios normaux, erreurs, adversaires ou migrations selon le risque. Méthode et fréquence
+      proportionnées.
+  validations:
+    required: true
+- type: textarea
+  id: dependencies
+  attributes:
+    label: Parent et prérequis
+    description: Phase/spécification, liens complets entre dépôts et décisions à résoudre. Ne pas présenter
+      une dépendance ouverte comme satisfaite.
+  validations:
+    required: true

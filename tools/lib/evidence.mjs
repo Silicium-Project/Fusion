@@ -2,8 +2,9 @@
 import { api, repository } from './github.mjs';
 import { Failure } from './process.mjs';
 export function acceptanceChecklistComplete(body) {
-  const section=body.match(/## Conditions d[’']acceptation([^]*?)(?=\n## |$)/i)?.[1]
-    ?? body.match(/## Critères d[’']acceptation([^]*?)(?=\n## |$)/i)?.[1];
+  const heading=/^#{2,3}\s+(?:Conditions|Critères) d[’']acceptation\s*$/im.exec(body??'');
+  if(!heading)return false;
+  const section=body.slice(heading.index+heading[0].length).split(/\n#{1,6}\s/)[0];
   return Boolean(section && /- \[[xX]\]/.test(section) && !/- \[ \]/.test(section));
 }
 export function independentApproval(pr,reviews) {

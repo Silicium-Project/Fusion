@@ -1,10 +1,13 @@
 # Revue préalable à l'ouverture publique — 25 octobre 2026
 
-## Décision attendue
+## Décision du propriétaire
 
-Fusion est encore privé. L'ouverture n'est pas appliquée par les scripts de
-protection. Le propriétaire doit valider ce rapport, notamment la publication
-des historiques, commentaires et visuels, avant le changement de visibilité.
+Le 25 octobre 2026, le propriétaire a demandé de **garder Fusion privé pour
+le moment**. Aucun changement de visibilité n'est autorisé par cette revue.
+Les travaux de préparation continuent ; Actions reste suspendu et les nouveaux
+workflows refusent l'exécution sur un dépôt privé. Une ouverture future exigera
+une nouvelle décision explicite sur le rapport actualisé, les historiques,
+commentaires et la provenance des visuels.
 
 L'ouverture rendra consultables le code et ses anciennes versions, les branches
 et tags Fusion, les auteurs et leurs métadonnées Git, les issues/commentaires/PR
