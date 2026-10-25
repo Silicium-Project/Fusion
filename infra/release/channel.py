@@ -29,8 +29,9 @@ def infer_from_ref(ref: str | None) -> str:
     if value.startswith("refs/heads/"):
         value = value.removeprefix("refs/heads/")
     if value.startswith("refs/tags/"):
-        value = value.removeprefix("refs/tags/")
-    return "prod" if value == "main" or value.startswith("v") else "dev"
+        raise ValueError("a tag cannot authorize production; select the channel explicitly")
+    # main is integration. Production always needs an explicit channel and approval.
+    return "dev"
 
 
 def metadata(channel: str | None) -> dict[str, Any]:

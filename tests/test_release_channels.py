@@ -30,11 +30,18 @@ def test_release_channels_are_explicit_and_isolated() -> None:
     assert "vpn_interface" not in prod
 
 
-def test_channel_inference_keeps_main_and_tags_production_only() -> None:
+def test_branch_inference_never_authorizes_production() -> None:
     assert infer_from_ref("dev") == "dev"
     assert infer_from_ref("refs/heads/dev") == "dev"
-    assert infer_from_ref("main") == "prod"
-    assert infer_from_ref("refs/tags/v1.2.3") == "prod"
+    assert infer_from_ref("main") == "dev"
+    assert infer_from_ref("refs/heads/main") == "dev"
+    assert normalize("prod") == "prod"
+    try:
+        infer_from_ref("refs/tags/v1.2.3")
+    except ValueError as error:
+        assert "explicitly" in str(error)
+    else:
+        raise AssertionError("a Git ref must not authorize production")
 
 
 def test_normalize_rejects_cross_channel_values() -> None:
