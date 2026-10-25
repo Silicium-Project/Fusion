@@ -30,6 +30,14 @@ présents dans ces contenus seront également visibles.
 | Releases Fusion | 47 releases, 218 fichiers, environ 7,2 Gio téléchargés et contrôlés | 638 détections génériques dans des annotations/types et identifiants de dépendances Python embarquées dans les anciennes distributions ; pas de secret de déploiement identifié |
 | Artefacts Actions encore présents | 8 enregistrements de build Docker, environ 0,38 Mio | Archives décompressées et analysées ; aucune détection |
 
+Après la préparation initiale, les cinq qualifications privées accessibles
+40175560939, 40176010077, 40176267805, 40179208684 et 40197099773 ont aussi été
+auditées : 278 fichiers de logs, environ 5,4 Mo, aucune détection Gitleaks.
+La tentative 40199389136 n'a produit aucun log de runner : ses annotations
+indiquent un refus d'allocation lié à la facturation ou à la limite de dépenses.
+Ces contrôles n'autorisent pas une ouverture ; tout nouveau contenu doit être
+repris dans la prochaine revue d'exposition.
+
 Les détections des distributions concernent les annotations `Ed25519PrivateKey`
 et `X25519PrivateKey`, les descripteurs Protobuf générés et `win32api.RegEnumKey`.
 Les archives RPM contiennent les mêmes sources dans leur CPIO. Les programmes

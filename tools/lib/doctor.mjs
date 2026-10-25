@@ -11,6 +11,7 @@ export function doctor({ profile = 'tooling' } = {}) {
     git: ['git', '--version'],
     gh: ['gh', '--version'],
     npm: ['npm', '--version'],
+    yarn: ['yarn', '--version'],
     cargo:
       profile === 'solana'
         ? ['rustup', 'run', versions.rust_solana, 'cargo', '--version']
@@ -19,6 +20,17 @@ export function doctor({ profile = 'tooling' } = {}) {
     docker: ['docker', 'version', '--format', '{{.Server.Version}}'],
     anchor: ['anchor', '--version'],
     solana: ['solana', '--version'],
+    netns: [
+      'unshare',
+      '--user',
+      '--map-root-user',
+      '--net',
+      '--pid',
+      '--fork',
+      '--mount-proc',
+      'true',
+    ],
+    iproute: ['ip', '-Version'],
     python: ['python3', '--version'],
   };
   const profiles = {
@@ -27,14 +39,17 @@ export function doctor({ profile = 'tooling' } = {}) {
     api: ['go', 'git'],
     node: ['node', 'npm', 'cargo', 'git'],
     network: ['cargo', 'python', 'git'],
-    solana: ['node', 'cargo', 'anchor', 'solana', 'git'],
+    solana: ['node', 'yarn', 'cargo', 'anchor', 'solana', 'netns', 'iproute', 'git'],
     delivery: ['node', 'gh', 'docker', 'git'],
   };
   const wanted = profile === 'all' ? Object.keys(definitions) : profiles[profile];
   if (!wanted) throw new Error(`Unknown profile ${profile}`);
   const checks = wanted.map((name) => {
     const r = run(definitions[name], { allowFailure: true, timeout: 15_000 });
-    const actual = (r.stdout || r.stderr).split('\n')[0].trim();
+    const actual =
+      name === 'netns' && r.status === 0
+        ? 'isolated network/PID namespaces available'
+        : (r.stdout || r.stderr).split('\n')[0].trim();
     const pinned =
       versions[name === 'cargo' ? (profile === 'solana' ? 'rust_solana' : 'rust') : name] ?? null;
     const found = toolVersion(actual);

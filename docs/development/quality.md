@@ -72,6 +72,18 @@ associé au commit du tag dans `anchor-tools.json` et `upstreams.json`. Son cach
 est revérifié avant exécution. Il n'est plus recompilé à chaque bootstrap.
 La construction du programme SBF et tous les tests localnet restent exécutés.
 
+Le validateur 2.3.0 n'accepte pas `--rpc-bind-address` et ses services RPC/faucet
+écoutent largement malgré `--bind-address`. La qualification le lance donc
+dans des namespaces réseau/PID jetables, avec uniquement le loopback. Les
+tests n'ont aucune sortie Devnet. `unshare`, `ip` et les namespaces utilisateur
+doivent être disponibles localement. Sur les runners GitHub éphémères qui les
+restreignent, seul le bootstrap du namespace utilise `sudo -n`, puis `setpriv`
+retire les groupes/privilèges avant les tests. Aucun repli sur le réseau hôte
+n'est prévu. La sortie du namespace détruit son arbre de processus.
+
+Le comportement du validateur est vérifié dans
+[la source Agave épinglée](https://github.com/anza-xyz/agave/blob/v2.3.0/test-validator/src/lib.rs#L977).
+
 ## Preuves et limites
 
 L'outillage JavaScript contrôle aussi les identifiants non déclarés avec
