@@ -33,16 +33,16 @@ type ControlTask struct {
 // request when the BackEnd runs in Compose; OutputPath remains a compatibility
 // projection consumed by the BackEnd after the Rust node finishes.
 type ControlTaskSubmission struct {
-	TaskID        string   `json:"task_id"`
-	RootJobID     string   `json:"root_job_id"`
-	Workload      string   `json:"workload"`
-	RequiredRoles []string `json:"required_roles"`
-	ScenePath     string   `json:"scene_path"`
-	OutputPath    string   `json:"output_path"`
-	Seed          string   `json:"seed"`
-	FragmentCount int      `json:"fragment_count,omitempty"`
-	SolanaJob     string   `json:"solana_job,omitempty"`
-	SolanaExpectedFragments int `json:"solana_expected_fragments,omitempty"`
+	TaskID                  string   `json:"task_id"`
+	RootJobID               string   `json:"root_job_id"`
+	Workload                string   `json:"workload"`
+	RequiredRoles           []string `json:"required_roles"`
+	ScenePath               string   `json:"scene_path"`
+	OutputPath              string   `json:"output_path"`
+	Seed                    string   `json:"seed"`
+	FragmentCount           int      `json:"fragment_count,omitempty"`
+	SolanaJob               string   `json:"solana_job,omitempty"`
+	SolanaExpectedFragments int      `json:"solana_expected_fragments,omitempty"`
 }
 
 type controlTasksResponse struct {

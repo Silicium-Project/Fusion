@@ -151,20 +151,20 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	}
 	deadline := time.Now().Add(time.Duration(options.maxRuntimeSeconds) * time.Second)
 	job := models.Job{
-		UserID:        userID,
-		Title:         title,
-		Description:   options.description,
-		Workload:      options.workload,
-		Priority:      options.priority,
-		FragmentCount: options.fragmentCount,
-		CollectionID:  collectionID,
-		Status:        "queued",
-		SiliciumJobID: jobID,
-		SolanaJob:    solanaJob,
+		UserID:         userID,
+		Title:          title,
+		Description:    options.description,
+		Workload:       options.workload,
+		Priority:       options.priority,
+		FragmentCount:  options.fragmentCount,
+		CollectionID:   collectionID,
+		Status:         "queued",
+		SiliciumJobID:  jobID,
+		SolanaJob:      solanaJob,
 		SolanaExpected: solanaExpected,
 		SolanaCreateTx: solanaCreateTx,
-		InputPath:     absoluteInput,
-		DeadlineAt:    &deadline,
+		InputPath:      absoluteInput,
+		DeadlineAt:     &deadline,
 	}
 	if result := h.DB.Create(&job); result.Error != nil {
 		log.Printf("create job %q: %v", jobID, result.Error)
@@ -262,7 +262,7 @@ func (h *Handler) ListJobs(w http.ResponseWriter, r *http.Request) {
 }
 
 type cancelJobRequest struct {
-	Reason               string `json:"reason"`
+	Reason                string `json:"reason"`
 	SolanaRefundSignature string `json:"solana_refund_signature"`
 }
 

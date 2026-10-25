@@ -146,13 +146,13 @@ func networkQueueDiagnostic(queuedByWorkload map[string]int, oldestByWorkload ma
 		queued += count
 	}
 	result := map[string]any{
-		"queued": queued,
-		"oldest_wait_seconds": oldestWait,
+		"queued":                 queued,
+		"oldest_wait_seconds":    oldestWait,
 		"online_compute_workers": 0,
-		"compatible_workers": 0,
-		"workloads": []string{},
-		"workload_diagnostics": []map[string]any{},
-		"reason": "",
+		"compatible_workers":     0,
+		"workloads":              []string{},
+		"workload_diagnostics":   []map[string]any{},
+		"reason":                 "",
 	}
 	if queued == 0 {
 		return result
@@ -168,12 +168,12 @@ func networkQueueDiagnostic(queuedByWorkload map[string]int, oldestByWorkload ma
 		diagnostics := make([]map[string]any, 0, len(workloadNames))
 		for _, workload := range workloadNames {
 			diagnostics = append(diagnostics, map[string]any{
-				"workload": workload,
-				"queued": queuedByWorkload[workload],
-				"oldest_wait_seconds": oldestByWorkload[workload],
+				"workload":               workload,
+				"queued":                 queuedByWorkload[workload],
+				"oldest_wait_seconds":    oldestByWorkload[workload],
 				"online_compute_workers": 0,
-				"compatible_workers": 0,
-				"reason": "network_state_unavailable",
+				"compatible_workers":     0,
+				"reason":                 "network_state_unavailable",
 			})
 		}
 		result["workload_diagnostics"] = diagnostics
@@ -214,12 +214,12 @@ func networkQueueDiagnostic(queuedByWorkload map[string]int, oldestByWorkload ma
 		}
 		workloadReasons[reason]++
 		diagnostics = append(diagnostics, map[string]any{
-			"workload": workload,
-			"queued": queuedByWorkload[workload],
-			"oldest_wait_seconds": oldestByWorkload[workload],
+			"workload":               workload,
+			"queued":                 queuedByWorkload[workload],
+			"oldest_wait_seconds":    oldestByWorkload[workload],
 			"online_compute_workers": len(onlineWorkers),
-			"compatible_workers": compatible,
-			"reason": reason,
+			"compatible_workers":     compatible,
+			"reason":                 reason,
 		})
 	}
 	result["online_compute_workers"] = len(onlineWorkers)

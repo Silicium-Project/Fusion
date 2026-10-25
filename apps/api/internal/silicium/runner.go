@@ -126,15 +126,15 @@ func runNodeJob(ctx context.Context, job models.Job, cfg RunnerConfig, spec work
 	}
 	scenePath := nodeVisiblePath(job.InputPath, cfg)
 	_, err = SubmitControlTask(ctx, cfg, ControlTaskSubmission{
-		TaskID:        job.SiliciumJobID,
-		RootJobID:     job.SiliciumJobID,
-		Workload:      spec.NodeID,
-		RequiredRoles: []string{"compute", "verify"},
-		ScenePath:     scenePath,
-		OutputPath:    outputPath,
-		Seed:          job.SiliciumJobID,
-		FragmentCount: job.FragmentCount,
-		SolanaJob:     job.SolanaJob,
+		TaskID:                  job.SiliciumJobID,
+		RootJobID:               job.SiliciumJobID,
+		Workload:                spec.NodeID,
+		RequiredRoles:           []string{"compute", "verify"},
+		ScenePath:               scenePath,
+		OutputPath:              outputPath,
+		Seed:                    job.SiliciumJobID,
+		FragmentCount:           job.FragmentCount,
+		SolanaJob:               job.SolanaJob,
 		SolanaExpectedFragments: job.SolanaExpected,
 	})
 	if err != nil {

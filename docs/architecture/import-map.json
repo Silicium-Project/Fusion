@@ -24,5 +24,39 @@
       "reason": "Committed work present in the original detached checkout; imported after the canonical dev/main merge",
       "path": "apps/api"
     }
+  ],
+  "local_work_disposition": [
+    {
+      "original": "apps/silicium-node/src-tauri/src/{runtime,tests}.rs",
+      "commit": "5d8f7a8b",
+      "destination": "apps/node/src-tauri/src",
+      "action": "ported separately; original dirty checkout preserved"
+    },
+    {
+      "original": "BackEnd detached HEAD 8e0b6df",
+      "commit": "60f9a47f",
+      "destination": "apps/api",
+      "action": "history-preserving merge and escrow fix imported"
+    },
+    {
+      "original": "deploy/env/*.example.env and DEV_MINIWORKERS.md",
+      "commit": "58becf44",
+      "destination": "infra",
+      "action": "ported separately"
+    },
+    {
+      "original": "deploy/compose/docker-compose.yml program ID correction",
+      "destination": "infra/compose/docker-compose.yml",
+      "action": "superseded by explicit mandatory configured program ID; no hardcoded old ID"
+    },
+    {
+      "original": "deploy/compose/deploy.sh gateway persistence",
+      "destination": "infra/delivery",
+      "action": "legacy build/deploy script retired; preserve resolved gateway in the protected Compose configuration during VPS adoption"
+    },
+    {
+      "original": "docs/operations remediation reports and Network/tools/dev/solana-sil-pool",
+      "action": "preserved in private backup and separate private planning PR; no generated node_modules imported"
+    }
   ]
 }

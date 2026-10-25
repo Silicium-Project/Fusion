@@ -421,9 +421,9 @@ func (h *Handler) PairDevice(w http.ResponseWriter, r *http.Request) {
 		linked = models.UserDevice{
 			UserID: pairing.UserID, NodeID: req.NodeID, PeerID: req.PeerID,
 			SolanaWallet: solanaWallet, PayoutWallet: pairing.PayoutWallet,
-			WorkerPayoutProofMessage: payoutProofMessage,
+			WorkerPayoutProofMessage:   payoutProofMessage,
 			WorkerPayoutProofSignature: payoutProofSignature,
-			LinkedAt: now,
+			LinkedAt:                   now,
 		}
 		return tx.Create(&linked).Error
 	})
