@@ -3,7 +3,7 @@
   "contracts": [
     {
       "id": "http-api",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "owner": "apps/api",
       "consumers": [
         "apps/web",
@@ -91,7 +91,10 @@
     {
       "id": "package-installation-snippets-v1",
       "version": 1,
-      "owner": "infra + web",
+      "owner": "infra",
+      "co_owners": [
+        "apps/web"
+      ],
       "definition": "contracts/install/repositories.json",
       "consumers": [
         "apps/web",

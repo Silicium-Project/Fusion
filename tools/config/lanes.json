@@ -226,6 +226,15 @@
           "env": {
             "CGO_ENABLED": "0"
           }
+        },
+        {
+          "command": [
+            "node",
+            "tools/tasks/api-smoke.mjs"
+          ],
+          "cwd": ".",
+          "kind": "test",
+          "format": "node"
         }
       ],
       "timeout_minutes": 30,

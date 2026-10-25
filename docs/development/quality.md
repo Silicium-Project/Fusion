@@ -63,12 +63,27 @@ installe avec `--require-hashes`. Une modification nécessite un téléchargemen
 depuis PyPI, la revue des métadonnées et hashes, et les suites Python réseau et
 infrastructure. Ne pas remplacer ce lock par `pytest>=...` dans le pipeline.
 
+## Outils Solana
+
+`chain/solana/Cargo.lock` est versionné et généré avec Rust 1.89.0. Les racines
+Anchor sont fixées à 0.32.1 ; les commandes de validation gardent `--locked`.
+Le CLI Anchor est le binaire de la release upstream, vérifié par SHA-256 et
+associé au commit du tag dans `anchor-tools.json` et `upstreams.json`. Son cache
+est revérifié avant exécution. Il n'est plus recompilé à chaque bootstrap.
+La construction du programme SBF et tous les tests localnet restent exécutés.
+
 ## Preuves et limites
 
 L'outillage JavaScript contrôle aussi les identifiants non déclarés avec
 ESLint. Un test exécute réellement `dev test --suite docs` dans un sous-processus
 et vérifie son rapport complet ; les seuls tests de fonctions internes ne
 suffisent pas à qualifier le lanceur commun.
+
+La suite API réutilise son binaire déjà construit pour démarrer un serveur
+loopback avec SQLite jetable, clé JWT aléatoire et paiements désactivés. Elle
+vérifie santé, identité, contrat OpenAPI effectivement servi et refus d'accès
+aux appareils sans session. Elle ne lance aucun runtime P2P et ne touche aucune
+base utilisateur. La réussite ne qualifie donc pas PostgreSQL ni le réseau.
 
 Un test obligatoire absent, ignoré ou nul échoue. Le contrôle final compare
 SHA, politique et rapports ; les releases embarquent leurs entrées dans

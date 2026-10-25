@@ -50,6 +50,9 @@ permet pas de contourner les protections ou l'approbation production.
 
 ## Utiliser les fonctions produit existantes
 
+Lire [les parcours détaillés et leurs diagnostics](product-usage.md) pour les
+commandes, droits, effets, erreurs et validations associés.
+
 - Site en développement : accès VPN et CA de l'équipe ; aucune désactivation
   permanente de TLS pour contourner un certificat non approuvé.
 - Machines : installer via les dépôts APT/DNF de `/download`, puis associer le
