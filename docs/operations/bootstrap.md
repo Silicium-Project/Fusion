@@ -140,6 +140,20 @@ CLI ne permet pas de la créer via REST. Placer `PROJECT_APP_CLIENT_ID` et
 `PROJECT_APP_PRIVATE_KEY` dans `project-automation`, puis vérifier une exécution
 sans `--apply` avant de définir `SILICIUM_PROJECT_AUTOMATION_ENABLED=1`.
 
+L'App `Silicium Project Automation` est créée et installée depuis le 25 octobre
+2026. Les deux secrets sont provisionnés dans cet environnement. La
+réconciliation locale a été qualifiée avec un jeton temporaire limité à
+Fusion/planning-private et à la lecture, puis révoqué : 134 issues observées,
+aucune écriture. L'observateur de stockage a aussi été vérifié avec un jeton
+Actions/metadata en lecture sur les huit dépôts. L'activation du workflow reste
+conditionnée à son intégration revue dans `main`.
+
+L'authentification de l'App pour vérifier son installation utilise un JWT
+envoyé avec `Authorization: Bearer`, directement en mémoire. Un HTTP 401 ou une
+réponse invalide bloque la mesure ; aucun corps de réponse ni jeton n'entre
+dans les diagnostics. Le jeton d'installation utilisé pour lire les artefacts
+est distinct du JWT et ne reçoit que les permissions Actions nécessaires.
+
 Retirer seulement ensuite les anciens workflows natifs qui clôturent ou
 déplacent une issue sur une fusion. Conserver l'ajout automatique et les
 relations parent/enfant. Tester une réconciliation et un événement dupliqué.

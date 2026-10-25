@@ -1,6 +1,6 @@
 /** Fail before an upload can consume the organization's temporary artifact budget. */
 import { api, pages, repository } from '../lib/github.mjs';
-import { Failure, run } from '../lib/process.mjs';
+import { Failure } from '../lib/process.mjs';
 import { createPrivateKey, sign } from 'node:crypto';
 export function requireCoverage(installation, org, repos) {
   if (
@@ -32,10 +32,14 @@ export function requireCoverage(installation, org, repos) {
     throw new Failure('Budget token cannot see every public repository', 3);
   }
 }
-function installationRecord() {
-  const id = process.env.SILICIUM_BUDGET_INSTALLATION_ID;
-  const client = process.env.SILICIUM_BUDGET_APP_CLIENT_ID,
-    key = process.env.SILICIUM_BUDGET_APP_PRIVATE_KEY;
+export async function installationRecord(
+  {
+    id = process.env.SILICIUM_BUDGET_INSTALLATION_ID,
+    client = process.env.SILICIUM_BUDGET_APP_CLIENT_ID,
+    key = process.env.SILICIUM_BUDGET_APP_PRIVATE_KEY,
+  } = {},
+  request = fetch,
+) {
   if (!/^[1-9][0-9]*$/.test(id ?? '') || !client || !key)
     throw new Failure(
       'Protected App identity is required to verify organization-wide budget coverage',
@@ -45,10 +49,28 @@ function installationRecord() {
     encode = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
   const payload = `${encode({ alg: 'RS256', typ: 'JWT' })}.${encode({ iat: now - 60, exp: now + 240, iss: client })}`;
   const jwt = `${payload}.${sign('RSA-SHA256', Buffer.from(payload), createPrivateKey(key)).toString('base64url')}`;
-  // Authenticate as the App only for this metadata request. Never print or persist the JWT.
-  return JSON.parse(
-    run(['gh', 'api', `app/installations/${id}`], { env: { GH_TOKEN: jwt } }).stdout,
-  );
+  // App JWTs require Bearer authentication; gh's GH_TOKEN uses token authentication.
+  // Keep credentials in memory, with no subprocess argument, redirect, retry or response-body log.
+  let response;
+  try {
+    response = await request(`https://api.github.com/app/installations/${id}`, {
+      headers: {
+        authorization: `Bearer ${jwt}`,
+        accept: 'application/vnd.github+json',
+      },
+      signal: AbortSignal.timeout(15_000),
+      redirect: 'error',
+    });
+  } catch {
+    throw new Failure('App installation metadata request failed; budget coverage is unknown', 3);
+  }
+  if (!response.ok)
+    throw new Failure(`App installation metadata refused: HTTP ${response.status}`, 3);
+  try {
+    return await response.json();
+  } catch {
+    throw new Failure('Invalid App installation metadata; budget coverage is unknown', 3);
+  }
 }
 export function remainingBudget(usage, incoming, limit = 400 * 1024 ** 2) {
   if (
@@ -68,7 +90,7 @@ if (process.argv[1]?.endsWith('/storage-budget.mjs')) {
   const repos = pages('orgs/Silicium-Project/repos?type=all');
   const organization = api('orgs/Silicium-Project');
   if (process.env.GITHUB_ACTIONS === 'true')
-    requireCoverage(installationRecord(), organization, repos);
+    requireCoverage(await installationRecord(), organization, repos);
   else
     requireCoverage(
       { repository_selection: 'all', account: { login: 'Silicium-Project' } },

@@ -27,7 +27,7 @@ n'autorisent une fusion, une acceptation ou une livraison.
 | L3 | Fusion public, `main` protégé, environnements restreints, approbation des workflows externes et retrait des anciens runners | Vérifier la qualification publique complète et les accès avant toute livraison |
 | L4 | `dev`/`dev.ps1`, registre, routage, contrôle final, normes, diagnostics et métriques | Résultat GitHub complet du commit évalué et parcours Windows/Anchor ; voir les checks de la PR |
 | L5 | Construction sur GitHub, manifeste, signatures et snapshots, tests d'installation, application et rollback API/web | Provisionner les signatures/SSH, qualifier installations et mises à niveau, adopter le VPS et démontrer le rollback ; drainage/canari runtime toujours bloquants |
-| L6 | Champs du Project, moteur de réconciliation, acceptation avec preuves et procédures IA | Créer/installer l'App, qualifier ses droits et son exécution avant activation et retrait des automatismes natifs |
+| L6 | Champs du Project, App installée et accès protégés provisionnés, réconciliation qualifiée en lecture, acceptation avec preuves et procédures IA | Intégrer le workflow revu, qualifier son exécution GitHub puis activer la synchronisation et retirer les automatismes natifs remplacés |
 
 Les imports mécaniques, la mise à niveau Go et l'alignement SDK disposent de
 PR de revue séparées (#314, #315, #316). La normalisation initiale est isolée
@@ -60,6 +60,14 @@ Le moteur Project a été exécuté **sans écriture** sur les 134 issues active
 32 éléments du dépôt privé d'arbitrage sont restés exclus. Les transitions
 proposées et blocages restent un diagnostic, sans acceptation ni clôture.
 
+L'App dédiée a ensuite été créée et installée sur les huit dépôts de
+l'organisation ; ses secrets sont dans `project-automation`. Le jeton limité
+à Fusion/planning-private, avec uniquement des droits en lecture pour cette
+qualification, observe les mêmes 134 issues sans écriture. Un second jeton,
+limité à Actions/metadata en lecture, vérifie le stockage des huit dépôts et
+la réserve d'artefacts. Le JWT de vérification de l'installation utilise le
+schéma HTTP Bearer attendu par GitHub ; aucune clé ni aucun jeton n'est publié.
+
 Les résultats d'installation APT/DNF/NSIS, de canari et de rollback ne sont
 pas encore fournis par une livraison réelle. Un rendu Compose ou des tests
 unitaires de scripts ne remplacent pas ces preuves.
@@ -71,8 +79,9 @@ unitaires de scripts ne remplacent pas ces preuves.
 2. Conserver les livraisons désactivées pendant la qualification publique et
    la préparation des signatures et accès. L'ouverture du code n'est pas une
    qualification du candidat ni une acceptation de livraison.
-3. Créer l'App de suivi avec le manifeste fourni, sans recopier le jeton CLI
-   dans Actions. Vérifier le mode lecture avant toute synchronisation active.
+3. Après intégration et revue du workflow, qualifier la réconciliation GitHub
+   avec l'App déjà installée avant toute synchronisation active. Conserver les
+   anciens automatismes jusqu'à validation de leur remplacement.
 4. Rétablir la clé d'auto-update correspondant à celle des clients, ou qualifier
    une migration de confiance revue. La dérive constatée reste bloquante.
 5. Provisionner les environnements de signature et déploiement par un canal
