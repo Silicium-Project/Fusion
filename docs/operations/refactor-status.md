@@ -7,7 +7,9 @@ n'autorisent une fusion, une acceptation ou une livraison.
 
 ## Décisions conservées
 
-- Fusion reste **privé**, sur décision du propriétaire le 25 octobre 2026.
+- Fusion est **public** depuis le 25 octobre 2026 à 18:30 UTC, après validation
+  du rapport, des historiques, des échanges et des ressources fournies par le propriétaire.
+- Le Project 12, `planning-private` et les trois anciens dépôts restent privés.
 - Aucune dépense Actions supplémentaire ; arrêt des dépassements à zéro.
 - Les six anciennes inscriptions de runners VPS sont retirées. Aucun build,
   test ou packaging ne revient sur le VPS.
@@ -20,9 +22,9 @@ n'autorisent une fusion, une acceptation ou une livraison.
 | Lot | Livrable préparé | Condition restant à démontrer ou décider |
 |---|---|---|
 | L0 | Références Git et GitHub, sauvegardes des historiques, patchs et fichiers locaux, inventaire des CI et runners | Conserver l'inventaire privé comme référence de restauration ; actualiser les nouvelles preuves |
-| L1 | Audit d'exposition, formulaires communs, HOLD isolés, contribution et consignes IA | Nouvelle approbation explicite avant toute ouverture ; confirmer la provenance des visuels |
+| L1 | Audit d'exposition actualisé, ouverture et publication des visuels validées, HOLD isolés, contribution et consignes IA | Conserver les rapports privés et contrôler les nouveaux contenus |
 | L2 | Historiques importés sans squash, gitlinks retirés, chemins corrigés, issues et relations transférées | Revue indépendante des PR ; qualification complète du dernier commit avant intégration |
-| L3 | Procédure d'ouverture, outils de protection et retrait des anciens runners | **Reporté par le propriétaire** ; aucun changement de visibilité |
+| L3 | Fusion public, `main` protégé, environnements restreints, approbation des workflows externes et retrait des anciens runners | Vérifier la qualification publique complète et les accès avant toute livraison |
 | L4 | `dev`/`dev.ps1`, registre, routage, contrôle final, normes, diagnostics et métriques | Résultat GitHub complet du commit évalué et parcours Windows/Anchor ; voir les checks de la PR |
 | L5 | Construction sur GitHub, manifeste, signatures et snapshots, tests d'installation, application et rollback API/web | Provisionner les signatures/SSH, qualifier installations et mises à niveau, adopter le VPS et démontrer le rollback ; drainage/canari runtime toujours bloquants |
 | L6 | Champs du Project, moteur de réconciliation, acceptation avec preuves et procédures IA | Créer/installer l'App, qualifier ses droits et son exécution avant activation et retrait des automatismes natifs |
@@ -44,8 +46,10 @@ La tentative suivante,
 [40199389136](https://github.com/Silicium-Project/Fusion/actions/runs/40199389136),
 a été refusée par GitHub avant l'allocation de runners, pour un motif de
 facturation ou de limite de dépenses. Aucun test de cette tentative n'a
-démarré. Le plafond reste à zéro et le dépôt reste privé ; le dernier commit
-ne dispose donc pas encore d'une qualification GitHub complète.
+démarré. L'écran de facturation fourni ensuite par le propriétaire confirme
+**2 000 minutes utilisées sur 2 000 incluses** pour l'organisation. Cette
+tentative privée précède l'ouverture ; le plafond reste à zéro. Le dernier
+commit attend sa qualification GitHub publique complète.
 
 Le run a exécuté notamment 151 tests Go, 112 unités web et 56 scénarios
 navigateur, 34 unités natives Linux, 323 tests runtime et 69 tests WASM. Les
@@ -64,9 +68,9 @@ unitaires de scripts ne remplacent pas ces preuves.
 
 1. Achever la qualification du commit, demander la revue indépendante et
    traiter les commentaires avant une intégration humaine.
-2. Conserver les livraisons désactivées tant que la préparation et la décision
-   d'ouverture restent en attente. Une fenêtre privée ponctuelle n'autorise que
-   les validations de sa PR et de son SHA.
+2. Conserver les livraisons désactivées pendant la qualification publique et
+   la préparation des signatures et accès. L'ouverture du code n'est pas une
+   qualification du candidat ni une acceptation de livraison.
 3. Créer l'App de suivi avec le manifeste fourni, sans recopier le jeton CLI
    dans Actions. Vérifier le mode lecture avant toute synchronisation active.
 4. Rétablir la clé d'auto-update correspondant à celle des clients, ou qualifier

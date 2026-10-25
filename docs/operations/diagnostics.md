@@ -9,7 +9,7 @@
 
 La première commande prépare une demande sans l'exécuter. Avec `--apply`,
 elle lance `diagnostics.yml` sur GitHub, après contrôle des droits. Elle refuse
-l'exécution tant que Fusion reste privé et que les workflows sont suspendus.
+l'exécution si le workflow n'est pas activé ou ses accès protégés sont absents.
 L'environnement production garde son approbation humaine.
 
 Le rapport `host-diagnostics-dev` expire après un jour. Il contient la charge

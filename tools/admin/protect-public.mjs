@@ -51,6 +51,7 @@ if (apply) {
       method: 'PUT',
       body: {
         wait_timer: 0,
+        can_admins_bypass: false,
         prevent_self_review: name.includes('production'),
         reviewers: name.includes('production') ? reviewers : [],
         deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
@@ -68,6 +69,17 @@ if (apply) {
       api(`repos/${repository}/environments/${name}/deployment-branch-policies/${rule.id}`, {
         method: 'DELETE',
       });
+    const verified = api(`repos/${repository}/environments/${name}`);
+    const review = verified.protection_rules.find((rule) => rule.type === 'required_reviewers');
+    if (
+      verified.can_admins_bypass !== false ||
+      (name.includes('production') &&
+        (!review?.prevent_self_review ||
+          !review.reviewers.some((entry) => entry.reviewer.login === 'Mogza')))
+    )
+      throw new Failure(
+        `Environment protection verification failed: ${name}; keep Actions suspended`,
+      );
   }
 }
 const current = apply ? api(`repos/${repository}/branches/main/protection`) : null;

@@ -2,19 +2,22 @@
 
 ## État actuel
 
-Les workflows de publication, déploiement et suivi restent désactivés tant que Fusion reste privé. La
+Fusion est public depuis le 25 octobre 2026, après validation du rapport
+d'exposition par le propriétaire. La qualification CI est réactivée avec les
+protections publiques. Les workflows de publication, déploiement et suivi
+restent désactivés pendant leur préparation. La
 publication/diffusion exige en plus `SILICIUM_DELIVERY_ENABLED=1`. Leur présence
 ne constitue pas une preuve de livraison. Le protocole de drainage des workers
 reste à qualifier ; le programme d'application bloque un changement d'image
 réseau plutôt que de tuer une tâche active.
 
-Le propriétaire a confirmé le maintien privé le 25 octobre 2026. Ce choix
-reporte la bascule publique et l'activation des runners hébergés ; il n'autorise
-ni dépense supplémentaire ni réactivation des runners du VPS. Une qualification
-PR ponctuelle peut utiliser le quota gratuit privé, avec la procédure bornée
-ci-dessous. Les suites restent aussi exécutables localement.
+Le premier report d'ouverture a été levé par le propriétaire après validation
+des historiques, échanges et droits de publication des visuels. Les plafonds
+restent à zéro et les runners du VPS restent retirés. Les suites restent aussi
+exécutables localement. La procédure privée ci-dessous est conservée pour un
+dépôt privé ; elle ne s'applique plus à la qualification publique de Fusion.
 
-## Qualification ponctuelle tout en restant privé
+## Qualification ponctuelle d'un dépôt privé
 
 ```sh
 ./dev ci authorize-private --head SHA --minutes 180 --json

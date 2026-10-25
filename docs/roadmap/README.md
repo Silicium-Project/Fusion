@@ -2,8 +2,8 @@
 
 Les [milestones de Fusion](https://github.com/Silicium-Project/Fusion/milestones)
 et les [issues ouvertes](https://github.com/Silicium-Project/Fusion/issues)
-portent la roadmap active. Fusion reste privé sur décision du propriétaire ;
-ces informations deviendront publiques seulement après une ouverture autorisée. Elles décrivent objectifs, dépendances natives,
+portent la roadmap active publique, depuis l'ouverture de Fusion validée par
+le propriétaire. Elles décrivent objectifs, dépendances natives,
 critères d'acceptation et preuves attendues.
 
 Les lots L0 à L6 de la refonte sont des tranches d'exécution des références

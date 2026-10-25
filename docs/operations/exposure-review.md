@@ -2,19 +2,22 @@
 
 ## Décision du propriétaire
 
-Le 25 octobre 2026, le propriétaire a demandé de **garder Fusion privé pour
-le moment**. Aucun changement de visibilité n'est autorisé par cette revue.
-Les travaux de préparation continuent ; les livraisons restent suspendues.
-Une qualification PR privée peut utiliser une fenêtre bornée à un commit,
-après vérification API du budget Actions à zéro avec arrêt automatique. Une ouverture future exigera
-une nouvelle décision explicite sur le rapport actualisé, les historiques,
-commentaires et la provenance des visuels.
+Le 25 octobre 2026, après un premier report, le propriétaire a validé
+l'ouverture de **Fusion uniquement**, avec ses historiques et échanges, ainsi
+que le droit de publication des logos et visuels fournis. Fusion est public
+depuis 18:30 UTC. Le Project 12, `planning-private` et les anciens dépôts
+Network/BackEnd/FrontEnd conservent leur visibilité privée.
 
-L'ouverture rendra consultables le code et ses anciennes versions, les branches
+Les protections de `main` et des environnements précèdent la réactivation de
+la qualification CI. Les workflows de livraison et de suivi restent suspendus
+jusqu'à leur qualification et leur activation distinctes. Les plafonds de
+dépenses restent à zéro ; aucun runner VPS n'est réinscrit.
+
+L'ouverture rend consultables le code et ses anciennes versions, les branches
 et tags Fusion, les auteurs et leurs métadonnées Git, les issues/commentaires/PR
 Fusion conservés, les releases et les journaux Actions encore disponibles.
 Les adresses des services, identifiants publics de programmes et clés publiques
-présents dans ces contenus seront également visibles.
+présents dans ces contenus sont également visibles.
 
 ## Couverture et constats
 
@@ -37,6 +40,14 @@ La tentative 40199389136 n'a produit aucun log de runner : ses annotations
 indiquent un refus d'allocation lié à la facturation ou à la limite de dépenses.
 Ces contrôles n'autorisent pas une ouverture ; tout nouveau contenu doit être
 repris dans la prochaine revue d'exposition.
+
+Avant la bascule, une nouvelle lecture de toutes les références distantes et
+un contrôle au commit `65d6c27b` ont couvert **1 867 commits**, sans détection
+Gitleaks ni keypair Solana valide. Le réexport courant couvre 308 entrées
+d'issues (PR incluses), 106 commentaires, 140 PR et leurs revues récentes ;
+aucune détection Gitleaks. Les 47 releases et leurs fichiers sont inchangés
+depuis l'audit. Les références et rapports expurgés de cette vérification sont
+conservés dans l'espace privé de restauration.
 
 Les détections des distributions concernent les annotations `Ed25519PrivateKey`
 et `X25519PrivateKey`, les descripteurs Protobuf générés et `win32api.RegEnumKey`.
@@ -64,20 +75,21 @@ les licences propres aux dépendances sont conservées. Une licence de racine
 ne remplace pas les obligations des dépendances redistribuées.
 
 Les maquettes et ressources graphiques sont présentes avec leurs manifestes et
-prompts de génération. Le logo de référence et les ressources fournies au
-projet demandent confirmation de provenance par le propriétaire avant leur
-publication. L'audit n'attribue pas de droits nouveaux sur ces ressources.
+prompts de génération. Le propriétaire a confirmé le droit de publication du
+logo de référence et des ressources fournies lors de la validation de
+l'ouverture. Les licences des dépendances et les attributions propres aux
+ressources restent applicables.
 
 ## Mesures de bascule
 
-Les anciennes Actions des quatre dépôts sont suspendues et six runners VPS
-inactifs ont été désenregistrés. Les services dev répondent toujours aux
-contrôles de santé. La livraison exige une ouverture approuvée et une activation explicite. Les
-qualifications privées ponctuelles restent limitées au commit autorisé.
+Les anciennes Actions des quatre dépôts restent suspendues et six runners VPS
+inactifs ont été désenregistrés. La CI de Fusion est réactivée séparément après
+vérification des protections. L'ouverture n'autorise aucun déploiement sans
+qualification, signatures et activation explicite.
 
-Après validation : appliquer les protections publiques, restreindre les
-environnements et traiter les secrets historiques avant de réactiver les
-workflows qualifiés. Les anciens dépôts restent privés ; leur archivage
+Les protections publiques et les restrictions d'environnements sont appliquées
+avant la CI. La migration des secrets historiques vers les environnements
+protégés reste nécessaire avant la livraison. Les anciens dépôts restent privés ; leur archivage
 attend la reprise des PR et des travaux actifs.
 
 La dérive constatée entre la clé du manifeste d'auto-update du VPS et celle

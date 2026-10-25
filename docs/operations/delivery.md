@@ -74,5 +74,6 @@ Le VPS exécute les services et sert les paquets ; les builds/tests de CI
 s'exécutent sur GitHub.
 
 Voir [les diagnostics](diagnostics.md), [l'activation contrôlée](bootstrap.md)
-et [le miroir Epitech indépendant](epitech-mirror.md). Le maintien privé décidé
-par le propriétaire conserve ces workflows désactivés.
+et [le miroir Epitech indépendant](epitech-mirror.md). Après l'ouverture publique,
+ces workflows restent désactivés jusqu'à leur qualification et leur activation
+explicite, avec les clés et accès protégés.
