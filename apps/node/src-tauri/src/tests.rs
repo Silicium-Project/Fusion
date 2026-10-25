@@ -542,6 +542,23 @@ fn update_release_requires_the_pinned_ed25519_signature() {
 }
 
 #[test]
+fn updater_accepts_the_explicit_dev_origin_without_expanding_production_trust() {
+    let url =
+        "https://10.77.0.1:8443/downloads/snapshots/dev-0.3.0-dev.1-0123456789ab/node.AppImage";
+    assert!(trusted_update_download_url(url, "dev"));
+    assert!(!trusted_update_download_url(url, "prod"));
+    for invalid in [
+        "http://10.77.0.1:8443/downloads/node.AppImage",
+        "https://10.77.0.1:8443.evil/downloads/node.AppImage",
+        "https://vps-910c1dbc.vps.ovh.net.evil/downloads/node.exe",
+        "https://10.77.0.1:8443/downloads/../node.AppImage",
+        "https://10.77.0.1:8443/downloads/%2e%2e/node.AppImage",
+    ] {
+        assert!(!trusted_update_download_url(invalid, "dev"));
+    }
+}
+
+#[test]
 fn update_release_platform_prevents_cross_os_installers() {
     assert!(update_platform_matches(&update_platform()));
     assert!(!update_platform_matches("unsupported-test-platform"));
@@ -704,34 +721,59 @@ fn runtime_telemetry_parser_preserves_resource_metrics() {
 
 #[test]
 fn ollama_is_pinned_for_every_desktop_platform() {
-    for (os, arch) in [("windows", "x86_64"), ("linux", "x86_64"), ("linux", "aarch64"), ("macos", "aarch64")] {
+    for (os, arch) in [
+        ("windows", "x86_64"),
+        ("linux", "x86_64"),
+        ("linux", "aarch64"),
+        ("macos", "aarch64"),
+    ] {
         let asset = asset_for(os, arch).unwrap_or_else(|| panic!("no Ollama for {os} {arch}"));
         assert_eq!(asset.sha256.len(), 64);
         assert!(asset.sha256.bytes().all(|byte| byte.is_ascii_hexdigit()));
         assert!(asset.name.starts_with("ollama-"));
     }
     assert!(asset_for("freebsd", "x86_64").is_none());
-    assert_eq!(ollama_url(), "http://127.0.0.1:11435", "never the user's own Ollama (11434)");
+    assert_eq!(
+        ollama_url(),
+        "http://127.0.0.1:11435",
+        "never the user's own Ollama (11434)"
+    );
 }
 
 #[test]
 fn the_node_is_always_told_where_the_apps_ollama_is() {
     let source = crate_source();
     assert!(source.contains(".env(\"SILICIUM_OLLAMA_URL\", ollama_url())"));
-    assert!(source.contains("ensure_ollama(&repo_root);"), "the supervisor starts Ollama");
-    assert!(source.contains("stop_ollama();"), "stopping the node stops Ollama");
+    assert!(
+        source.contains("ensure_ollama(&repo_root);"),
+        "the supervisor starts Ollama"
+    );
+    assert!(
+        source.contains("stop_ollama();"),
+        "stopping the node stops Ollama"
+    );
 }
 
 #[test]
 fn the_ai_runtime_is_pinned_and_locked_for_every_supported_platform() {
-    for (os, arch) in [("windows", "x86_64"), ("linux", "x86_64"), ("macos", "aarch64")] {
+    for (os, arch) in [
+        ("windows", "x86_64"),
+        ("linux", "x86_64"),
+        ("macos", "aarch64"),
+    ] {
         let wheel = uv_wheel_for(os, arch).unwrap_or_else(|| panic!("no uv for {os} {arch}"));
         assert_eq!(wheel.sha256.len(), 64);
         assert!(wheel.sha256.bytes().all(|byte| byte.is_ascii_hexdigit()));
-        assert!(wheel.url.starts_with("https://files.pythonhosted.org/") && wheel.url.ends_with(".whl"));
+        assert!(
+            wheel.url.starts_with("https://files.pythonhosted.org/") && wheel.url.ends_with(".whl")
+        );
     }
     assert!(uv_wheel_for("freebsd", "x86_64").is_none());
-    assert_eq!(ai_runtime_url(), "http://127.0.0.1:11436", "next to the app's Ollama (11435)");
+    assert_eq!(
+        ai_runtime_url(),
+        "http://127.0.0.1:11436",
+        "next to the app's Ollama (11435)"
+    );
 }
 
 #[test]
@@ -739,7 +781,16 @@ fn the_node_is_always_told_where_the_ai_runtime_is() {
     let source = crate_source();
     assert!(source.contains(".env(\"SILICIUM_AI_RUNTIME_URL\", ai_runtime_url())"));
     assert!(source.contains(".env(\"SILICIUM_AI_RUNTIME_TOKEN\", ai_runtime_token())"));
-    assert!(source.contains("ensure_ai_runtime(&repo_root);"), "the supervisor starts the runtime");
-    assert!(source.contains("stop_ai_runtime();"), "stopping the node stops the runtime");
-    assert!(source.contains("\"--require-hashes\""), "every package is checked by hash");
+    assert!(
+        source.contains("ensure_ai_runtime(&repo_root);"),
+        "the supervisor starts the runtime"
+    );
+    assert!(
+        source.contains("stop_ai_runtime();"),
+        "stopping the node stops the runtime"
+    );
+    assert!(
+        source.contains("\"--require-hashes\""),
+        "every package is checked by hash"
+    );
 }

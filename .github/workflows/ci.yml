@@ -10,15 +10,16 @@ name: CI
 permissions:
   contents: read
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'silicium-main-delivery' || format('ci-{0}', github.event.pull_request.number
+    || github.ref) }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 jobs:
   changes:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    if: ${{ !github.event.repository.private && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name
-      == github.repository && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)))
-      }}
+    if: ${{ always() && !github.event.repository.private && (github.event_name != 'push' || needs.budget.result == 'success') && (github.event_name
+      != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
+      github.event.pull_request.author_association))) }}
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       node: ${{ steps.versions.outputs.node }}
@@ -61,6 +62,8 @@ jobs:
         include-hidden-files: 'true'
         if-no-files-found: error
         retention-days: 1
+    needs:
+    - budget
   validate:
     needs:
     - changes
@@ -117,6 +120,10 @@ jobs:
     - name: Execute shared suite
       shell: bash
       run: node tools/dev.mjs test --suite "${{ matrix.suite }}" --plan .artifacts/plan.json
+    - name: Check artifact size reservation
+      if: ${{ always() }}
+      shell: bash
+      run: node tools/ci/artifact-size.mjs ".artifacts/reports/${{ matrix.suite }}.json" 1048576
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       if: ${{ always() }}
       with:
@@ -125,6 +132,10 @@ jobs:
         include-hidden-files: 'true'
         if-no-files-found: error
         retention-days: 1
+    - name: Check artifact size reservation
+      if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.suite == 'web' }}
+      shell: bash
+      run: node tools/ci/artifact-size.mjs "apps/web/.output" 41943040
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.suite == 'web' }}
       with:
@@ -133,6 +144,10 @@ jobs:
         include-hidden-files: 'true'
         if-no-files-found: error
         retention-days: 1
+    - name: Check artifact size reservation
+      if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.suite == 'node-ui' }}
+      shell: bash
+      run: node tools/ci/artifact-size.mjs "apps/node/dist" 2097152
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.suite == 'node-ui' }}
       with:
@@ -140,6 +155,10 @@ jobs:
         path: apps/node/dist
         if-no-files-found: error
         retention-days: 1
+    - name: Check artifact size reservation
+      if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.suite == 'api' }}
+      shell: bash
+      run: node tools/ci/artifact-size.mjs ".artifacts/build/api" 50331648
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.suite == 'api' }}
       with:
@@ -148,6 +167,10 @@ jobs:
         include-hidden-files: true
         if-no-files-found: error
         retention-days: 1
+    - name: Check artifact size reservation
+      if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.suite == 'network-integration' }}
+      shell: bash
+      run: node tools/ci/artifact-size.mjs ".artifacts/build/network" 117440512
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.suite == 'network-integration' }}
       with:
@@ -189,3 +212,31 @@ jobs:
         test "$EXECUTION_RESULT" = success
 
         node tools/dev.mjs ci gate --plan .artifacts/plan.json --reports .artifacts/reports --sha "$GITHUB_SHA"'
+  budget:
+    if: ${{ !github.event.repository.private && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: project-automation
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      with:
+        ref: main
+        persist-credentials: false
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      with:
+        node-version: 22.23.4
+    - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
+      id: budget-token
+      with:
+        client-id: ${{ secrets.PROJECT_APP_CLIENT_ID }}
+        private-key: ${{ secrets.PROJECT_APP_PRIVATE_KEY }}
+        owner: Silicium-Project
+        permission-actions: read
+    - name: Check organization artifact headroom
+      env:
+        GH_TOKEN: ${{ steps.budget-token.outputs.token }}
+        SILICIUM_BUDGET_INSTALLATION_ID: ${{ steps.budget-token.outputs.installation-id }}
+        SILICIUM_BUDGET_APP_CLIENT_ID: ${{ secrets.PROJECT_APP_CLIENT_ID }}
+        SILICIUM_BUDGET_APP_PRIVATE_KEY: ${{ secrets.PROJECT_APP_PRIVATE_KEY }}
+        SILICIUM_INCOMING_BYTES: '220200960'
+      run: node tools/ci/storage-budget.mjs

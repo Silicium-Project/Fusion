@@ -8,6 +8,11 @@ ne constitue pas une preuve de livraison. Le protocole de drainage des workers
 reste à qualifier ; le programme d'application bloque un changement d'image
 réseau plutôt que de tuer une tâche active.
 
+Le propriétaire a confirmé le maintien privé le 25 octobre 2026. Ce choix
+reporte la bascule publique et l'activation des runners hébergés ; il n'autorise
+ni dépense supplémentaire ni réactivation des runners du VPS. Les suites
+communes restent exécutables localement avec les prérequis documentés.
+
 ## GitHub et droits
 
 1. Valider le rapport d'exposition avant l'ouverture publique.
@@ -30,7 +35,7 @@ modification de ce défaut, qui affecterait aussi les autres dépôts.
 ## Signatures et registre
 
 - `signing-development` / `signing-production` : secrets `APT_SIGNING_KEY`,
-  `RPM_SIGNING_KEY`, `RELEASE_SIGNING_KEY` ; variables correspondantes
+  `RPM_SIGNING_KEY`, `RELEASE_SIGNING_KEY`, `UPDATE_SIGNING_KEY` ; variables correspondantes
   `*_FINGERPRINT` et `DOWNLOAD_BASE_URL`.
 - Exporter les clés existantes par un canal sécurisé. Les scripts refusent une
   empreinte différente et ne génèrent jamais de nouvelle autorité de confiance.
@@ -44,6 +49,14 @@ modification de ce défaut, qui affecterait aussi les autres dépôts.
 Le bootstrap des clés et la signature Windows doivent être qualifiés avant une
 diffusion aux utilisateurs. Une clé privée ne doit jamais être placée dans une
 issue, une sortie de commande ou un commentaire de PR.
+
+Les clés publiques APT/RPM et leurs empreintes sont conservées dans
+`contracts/trust/packages.json`. L'auto-update conserve la clé publique du
+client dans `contracts/trust/update.json` ; la clé actuellement utilisée par
+le serveur diffère et ne doit pas la remplacer sans migration de confiance.
+La clé de signature Windows est limitée aux environnements
+`windows-signing-development` / `windows-signing-production`, avec une empreinte
+de certificat `WINDOWS_SIGNING_THUMBPRINT` vérifiée avant et après signature.
 
 ## VPS
 
@@ -77,7 +90,11 @@ inventaire des services réellement en place :
 Le manifeste est `tools/config/project-app-manifest.json`. L'App doit avoir
 uniquement les permissions de lecture nécessaires aux preuves, la gestion des
 issues et des Projects. Aucun secret de livraison et aucun droit d'écriture du
-code ne lui sont attribués. L'installation vise Fusion et planning-private.
+code ne lui sont attribués. Pour mesurer le budget global, l'installation doit
+viser **tous les dépôts** de l'organisation. Les jetons de synchronisation du
+Project sont ensuite limités à Fusion et planning-private. Le jeton budget
+demande seulement `actions: read` ; un JWT de courte durée vérifie que
+l'installation couvre bien toute l'organisation, sans être enregistré.
 
 La création d'une App requiert la session GitHub d'un propriétaire : le jeton
 CLI ne permet pas de la créer via REST. Placer `PROJECT_APP_CLIENT_ID` et
@@ -95,6 +112,15 @@ avoir une vue Actions en lecture sur tous les dépôts de l'organisation ; un
 jeton limité à Fusion ne prouve pas l'usage global. Le plafond cible des
 artefacts temporaires est de 400 Mio. Un défaut de mesure ou de quota reste
 bloquant. Aucun runner VPS ne sert de solution de secours.
+
+Les validations de `main` et la publication partagent un groupe de concurrence.
+Une exécution en cours va à son terme ; GitHub peut remplacer une exécution
+encore en attente par la suivante. Chaque contrôle mesure de nouveau le quota :
+une mesure précédente n'est pas une réservation de stockage auprès de GitHub.
+Les entrées d'upload sont bornées et une insuffisance de place bloque le run.
+Les plans et rapports du contrôle final sont regroupés dans `qualification.json`,
+inclus au manifeste signé et à la release. Les artefacts temporaires ne sont
+supprimés qu'après confirmation des digests des fichiers publiés.
 
 Les validations Linux/Windows, installations APT/DNF/NSIS, canari et rollback
 doivent être joints à la PR avant activation finale. Les tests avec API simulée

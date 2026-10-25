@@ -65,10 +65,7 @@ pub(crate) fn validate_update_release(release: &UpdateRelease) -> Result<(), Str
     if release.version.trim().is_empty() {
         return Err("update_version_missing".to_string());
     }
-    if !release
-        .url
-        .starts_with("https://vps-910c1dbc.vps.ovh.net/downloads/")
-    {
+    if !trusted_update_download_url(&release.url, &release.channel) {
         return Err("update_url_untrusted".to_string());
     }
     let hash = release.sha256.trim();
@@ -83,6 +80,18 @@ pub(crate) fn validate_update_release(release: &UpdateRelease) -> Result<(), Str
     }
     verify_update_signature(release)?;
     Ok(())
+}
+
+/// The development VPN is an explicit origin; the signature and channel are
+/// still checked independently. Keep the old public dev URL compatible.
+pub(crate) fn trusted_update_download_url(url: &str, channel: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    if lower.contains("/../") || lower.contains("%2e") || lower.contains('#') || lower.contains('?')
+    {
+        return false;
+    }
+    url.starts_with("https://vps-910c1dbc.vps.ovh.net/downloads/")
+        || (channel == "dev" && url.starts_with("https://10.77.0.1:8443/downloads/"))
 }
 
 pub(crate) fn update_signature_payload(release: &UpdateRelease) -> Vec<u8> {

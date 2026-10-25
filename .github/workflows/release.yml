@@ -25,7 +25,7 @@ name: Release
 permissions:
   contents: read
 concurrency:
-  group: release-${{ inputs.channel || 'dev' }}
+  group: silicium-main-delivery
   cancel-in-progress: false
 jobs:
   prepare:
@@ -50,6 +50,21 @@ jobs:
       uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
       with:
         node-version: 22.23.4
+    - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
+      id: budget-token
+      with:
+        client-id: ${{ secrets.PROJECT_APP_CLIENT_ID }}
+        private-key: ${{ secrets.PROJECT_APP_PRIVATE_KEY }}
+        owner: Silicium-Project
+        permission-actions: read
+    - name: Reserve signing/package artifact headroom
+      env:
+        GH_TOKEN: ${{ steps.budget-token.outputs.token }}
+        SILICIUM_BUDGET_INSTALLATION_ID: ${{ steps.budget-token.outputs.installation-id }}
+        SILICIUM_BUDGET_APP_CLIENT_ID: ${{ secrets.PROJECT_APP_CLIENT_ID }}
+        SILICIUM_BUDGET_APP_PRIVATE_KEY: ${{ secrets.PROJECT_APP_PRIVATE_KEY }}
+        SILICIUM_INCOMING_BYTES: '201326592'
+      run: node tools/ci/storage-budget.mjs
     - id: qualification
       env:
         GH_TOKEN: ${{ github.token }}
@@ -67,6 +82,13 @@ jobs:
         RELEASE_CHANNEL: ${{ inputs.channel || 'dev' }}
         RELEASE_VERSION: ${{ inputs.version }}
       run: node tools/ci/candidate.mjs prepare
+    - name: Retain permanent qualification evidence
+      env:
+        GH_TOKEN: ${{ github.token }}
+        QUALIFICATION_RUN: ${{ inputs.qualification_run || github.event.workflow_run.id }}
+      run: |
+        node tools/ci/qualification-evidence.mjs
+        node tools/ci/artifact-size.mjs .artifacts/publish/qualification.json 1048576
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       with:
         name: candidate-input
@@ -79,6 +101,7 @@ jobs:
     permissions:
       contents: read
       actions: read
+    environment: project-automation
   images:
     needs:
     - prepare
@@ -151,12 +174,12 @@ jobs:
         run-id: ${{ inputs.qualification_run || github.event.workflow_run.id }}
         github-token: ${{ github.token }}
     - run: node tools/ci/desktop-package.mjs
-    - if: ${{ runner.os == 'Windows' }}
-      shell: pwsh
-      run: ./tools/ci/windows-install.ps1
+    - name: Check installer size reservation
+      shell: bash
+      run: node tools/ci/artifact-size.mjs .artifacts/installers 167772160
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       with:
-        name: installers-${{ runner.os }}
+        name: ${{ runner.os == 'Windows' && 'unsigned-Windows' || 'installers-Linux' }}
         path: .artifacts/installers
         include-hidden-files: true
         if-no-files-found: error
@@ -169,8 +192,10 @@ jobs:
     - prepare
     - images
     - desktop
-    if: ${{ always() && needs.prepare.result == 'success' && needs.images.result == 'success' && (needs.desktop.result == 'success'
-      || (needs.prepare.outputs.node_changed == 'false' && needs.desktop.result == 'skipped')) }}
+    - windows-sign
+    if: ${{ always() && needs.prepare.result == 'success' && needs.images.result == 'success' && ((needs.prepare.outputs.node_changed
+      == 'true' && needs.desktop.result == 'success' && needs.windows-sign.result == 'success') || (needs.prepare.outputs.node_changed
+      == 'false' && needs.desktop.result == 'skipped' && needs.windows-sign.result == 'skipped')) }}
     environment: ${{ needs.prepare.outputs.channel == 'dev' && 'signing-development' || 'signing-production' }}
     permissions:
       contents: write
@@ -215,6 +240,7 @@ jobs:
         APT_SIGNING_FINGERPRINT: ${{ vars.APT_SIGNING_FINGERPRINT }}
         RPM_SIGNING_FINGERPRINT: ${{ vars.RPM_SIGNING_FINGERPRINT }}
         DOWNLOAD_BASE_URL: ${{ vars.DOWNLOAD_BASE_URL }}
+        UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
       run: python3 tools/ci/package-repositories.py
     - name: Qualify package installations
       if: ${{ needs.prepare.outputs.node_changed == 'true' }}
@@ -238,3 +264,47 @@ jobs:
       run: node tools/ci/candidate.mjs publish
     - name: Delete temporary artifacts after durable publication
       run: node tools/ci/cleanup-transferred.mjs
+  windows-sign:
+    needs:
+    - prepare
+    - desktop
+    if: ${{ needs.prepare.outputs.node_changed == 'true' }}
+    runs-on: windows-2022
+    timeout-minutes: 10
+    environment: ${{ needs.prepare.outputs.channel == 'dev' && 'windows-signing-development' || 'windows-signing-production' }}
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      with:
+        ref: main
+        persist-credentials: false
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      with:
+        node-version: 22.23.4
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: unsigned-Windows
+        path: .artifacts/installers
+    - name: Sign verified Windows installer
+      shell: pwsh
+      env:
+        WINDOWS_CERTIFICATE_BASE64: ${{ secrets.SILICIUM_WINDOWS_CERTIFICATE_BASE64 }}
+        WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.SILICIUM_WINDOWS_CERTIFICATE_PASSWORD }}
+        WINDOWS_SIGNING_THUMBPRINT: ${{ vars.WINDOWS_SIGNING_THUMBPRINT }}
+      run: ./tools/ci/sign-windows.ps1
+    - name: Verify signed installation
+      shell: pwsh
+      env:
+        RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
+      run: ./tools/ci/windows-install.ps1
+    - name: Check installer size reservation
+      shell: bash
+      run: node tools/ci/artifact-size.mjs .artifacts/installers 16777216
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: installers-Windows
+        path: .artifacts/installers
+        include-hidden-files: true
+        retention-days: 1
+        if-no-files-found: error

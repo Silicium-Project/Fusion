@@ -33,7 +33,7 @@ def verify_manifest(folder,channel,keyring):
         if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*',a['name']) or a['name'] in names:raise ValueError('Invalid/duplicate asset name')
         names.add(a['name']);p=folder/a['name']
         if p.is_symlink() or p.stat().st_size!=a['size'] or digest(p)!=a['sha256']:raise ValueError('Artifact integrity failure')
-    if not {'packages.tar.gz','deployment.tar.gz'}<=names:raise ValueError('Incomplete delivery')
+    if not {'packages.tar.gz','deployment.tar.gz','qualification.json'}<=names:raise ValueError('Incomplete delivery')
     return m,hashlib.sha256(raw).hexdigest()
 
 def extract(archive,target):
@@ -102,12 +102,22 @@ def apply_verified(folder,channel):
             if previous['manifest_digest']!=md:raise RuntimeError('Published identity was reused with different content')
             health(m,md,(api_port,web_port));return previous
         if not previous:raise RuntimeError('No rollback baseline. Adopt the existing deployment before the first automatic delivery')
+        # A host publisher would mutate the signed snapshot after activation.
+        timer='silicium-update-manifest'+('-dev' if channel=='dev' else '')+'.timer'
+        active=subprocess.run(['systemctl','is-active','--quiet',timer],capture_output=True).returncode==0
+        if active:raise RuntimeError('Retire the legacy host manifest-publisher timer during adoption before deploying GitHub-signed snapshots')
         if shutil.disk_usage(data).free < sum(a['size']for a in m['assets'])*3+1024**3:raise RuntimeError('Insufficient staging space')
         target=state/'candidates'/m['release_id']
         if target.exists():raise RuntimeError('Staged candidate already exists; inspect the previous attempt before retrying')
         target.mkdir(parents=True)
         extract(folder/'deployment.tar.gz',target)
         extract(folder/'packages.tar.gz',target)
+        snapshots=data/'package-snapshots';snapshots.mkdir(mode=0o755,exist_ok=True)
+        public_snapshot=snapshots/m['release_id']
+        if public_snapshot.exists():raise RuntimeError('Immutable package snapshot already exists')
+        shutil.copytree(target/'downloads',public_snapshot)
+        for path in public_snapshot.rglob('*'):os.chmod(path,0o755 if path.is_dir() else 0o644)
+        os.chmod(public_snapshot,0o755)
         for name in ['manifest.json','manifest.json.asc']:shutil.copy2(folder/name,target/name)
         env=target/'candidate.env'
         env.write_text('\n'.join([f'SILICIUM_{c.upper()}_IMAGE={m["components"][c]["image"]}'for c in ['api','web','network']]+[
@@ -127,13 +137,13 @@ def apply_verified(folder,channel):
                 except Exception:
                     if attempt==11:raise
                     time.sleep(5)
-            switch_link(data/'downloads',target/'downloads');activated=True
-            value={'release_id':m['release_id'],'manifest_digest':md,'directory':str(target),'network_image':m['components']['network']['image'],'previous':previous}
+            switch_link(data/'downloads',public_snapshot);activated=True
+            value={'release_id':m['release_id'],'manifest_digest':md,'directory':str(target),'downloads':str(public_snapshot),'network_image':m['components']['network']['image'],'previous':previous}
             atomic_json(state/'current.json',value)
             return {k:v for k,v in value.items() if k!='previous'}
         except Exception:
             compose(old,'up','-d','--no-build','--no-deps','backend','frontend')
-            if activated:switch_link(data/'downloads',old/'downloads')
+            if activated:switch_link(data/'downloads',Path(previous['downloads']))
             raise
 
 def apply(folder,channel):

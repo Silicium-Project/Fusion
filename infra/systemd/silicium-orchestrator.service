@@ -5,12 +5,12 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=__SILICIUM_ROOT__/Network
+WorkingDirectory=__SILICIUM_ROOT__/network
 EnvironmentFile=__SILICIUM_CONFIG_DIR__/orchestrator.env
 Environment=SILICIUM_CONFIG_DIR=__SILICIUM_CONFIG_DIR__
 Environment=SILICIUM_DATA_ROOT=__SILICIUM_DATA_ROOT__
 Environment=SILICIUM_RELEASE_CHANNEL=__SILICIUM_RELEASE_CHANNEL__
-ExecStart=__SILICIUM_ROOT__/deploy/linux/start-orchestrator.sh __SILICIUM_ROOT__
+ExecStart=__SILICIUM_ROOT__/infra/linux/start-orchestrator.sh __SILICIUM_ROOT__
 Restart=always
 RestartSec=5
 

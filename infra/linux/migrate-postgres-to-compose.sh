@@ -171,7 +171,7 @@ SQL
     -c "SELECT setval(pg_get_serial_sequence('users', 'id'), COALESCE(MAX(id), 1), MAX(id) IS NOT NULL) FROM users; SELECT setval(pg_get_serial_sequence('jobs', 'id'), COALESCE(MAX(id), 1), MAX(id) IS NOT NULL) FROM jobs;"
 fi
 
-"${COMPOSE[@]}" up -d --build
+"${COMPOSE[@]}" up -d --no-build
 
 if systemctl list-unit-files postgresql.service >/dev/null 2>&1; then
   systemctl disable postgresql 2>/dev/null || true

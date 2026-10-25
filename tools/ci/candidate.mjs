@@ -53,6 +53,8 @@ if(operation==='prepare') {
     const pkg=api(`orgs/Silicium-Project/packages/container/${component}`);
     if(pkg.visibility!=='public')throw new Failure('GHCR package must be public before publication; private storage is forbidden by the budget policy');
     const tag=`ghcr.io/silicium-project/${component}:${identity.release_id}`;
+    const existing=run(['docker','buildx','imagetools','inspect',tag],{allowFailure:true});
+    if(!existing.status)throw new Failure('Image identity already exists; start a fresh release run instead of overwriting it');
     const digestFile=resolve(dir,`${component}.digest`);
     const dockerfile=`infra/images/${component}-runtime.Dockerfile`;
     run(['docker','buildx','build','--platform','linux/amd64','--provenance=mode=max','--sbom=true','--push','--metadata-file',digestFile,'--label',`org.opencontainers.image.revision=${identity.source_sha}`,'--label',`org.opencontainers.image.version=${identity.version}`,'-f',dockerfile,'-t',tag,'.'],{timeout:3_600_000});

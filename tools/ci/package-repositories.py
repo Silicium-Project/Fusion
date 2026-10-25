@@ -12,11 +12,12 @@ def fingerprint(home):
     rows=command(['gpg','--batch','--homedir',str(home),'--with-colons','--list-secret-keys']).decode().splitlines()
     return [r.split(':')[9] for r in rows if r.startswith('fpr:')]
 
-def import_key(home, name):
+def import_key(home, name, pinned=None):
     value=os.environ.get(name+'_KEY','')
     expected=os.environ.get(name+'_FINGERPRINT','').upper()
     if not value or not re.fullmatch(r'[A-F0-9]{40,64}',expected):
         raise RuntimeError(f'Missing protected {name}_KEY or pinned {name}_FINGERPRINT')
+    if pinned is not None and expected!=pinned:raise RuntimeError(f'{name}: configured trust differs from the reviewed client key')
     home.mkdir(mode=0o700)
     # Key contents are passed via stdin and never appear in process arguments or logs.
     subprocess.run(['gpg','--batch','--homedir',str(home),'--import'],input=value.encode(),check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
@@ -41,11 +42,13 @@ def main():
     base=f'{downloads}/snapshots/{rid}'
     with tempfile.TemporaryDirectory(prefix='silicium-sign-') as temp:
         temp=Path(temp);apt_home=temp/'apt';rpm_home=temp/'rpm'
-        apt_key=import_key(apt_home,'APT_SIGNING');rpm_key=import_key(rpm_home,'RPM_SIGNING')
+        trust=json.loads((ROOT/'contracts/trust/packages.json').read_text())['channels'][channel]
+        if not all(trust.get(k,{}).get('fingerprint')for k in ['apt','rpm']):raise RuntimeError('Missing reviewed package trust anchors')
+        apt_key=import_key(apt_home,'APT_SIGNING',trust['apt']['fingerprint']);rpm_key=import_key(rpm_home,'RPM_SIGNING',trust['rpm']['fingerprint'])
         apt=snapshot/'apt';pool=apt/'pool/main';binary=apt/f'dists/{suite}/main/binary-amd64';rpm=snapshot/'rpm'
         for p in [pool,binary,rpm]:p.mkdir(parents=True)
-        debs=list(source.glob('*.deb'));rpms=list(source.glob('*.rpm'));exes=list(source.glob('*.exe'))
-        if len(debs)!=1 or len(rpms)!=1 or len(exes)!=1:raise RuntimeError('Candidate requires exactly one qualified DEB, RPM and Windows installer')
+        debs=list(source.glob('*.deb'));rpms=list(source.glob('*.rpm'));exes=list(source.glob('*.exe'));appimages=list(source.glob('*.AppImage'))
+        if any(len(x)!=1 for x in [debs,rpms,exes,appimages]):raise RuntimeError('Candidate requires exactly one qualified DEB, RPM, AppImage and Windows installer')
         deb=debs[0];deb_version=command(['dpkg-deb','-f',str(deb),'Version']).decode().strip()
         expected=identity['version'].replace('-dev.','~dev.')
         if deb_version!=expected:raise RuntimeError('DEB version does not match candidate')
@@ -69,7 +72,10 @@ def main():
         command(['gpg','--homedir',str(rpm_home),'--verify',str(rpm/'repodata/repomd.xml.asc'),str(rpm/'repodata/repomd.xml')])
         (rpm/'silicium-node.repo').write_text(f'[silicium-{channel}]\nname=Silicium Node ({channel})\nbaseurl={base}/rpm\nenabled=1\ngpgcheck=1\nrepo_gpgcheck=1\ngpgkey={base}/rpm/silicium-rpm-signing.asc\nmetadata_expire=300\n')
         suffix='-dev' if channel=='dev' else ''
-        for file,ext in [(debs[0],'deb'),(package,'rpm'),(exes[0],'exe')]:shutil.copy2(file,snapshot/f'silicium-node-{ "windows" if ext=="exe" else "linux"}{suffix}.{ext}')
+        for file,ext in [(debs[0],'deb'),(package,'rpm'),(exes[0],'exe'),(appimages[0],'AppImage')]:shutil.copy2(file,snapshot/f'silicium-node-{ "windows" if ext=="exe" else "linux"}{suffix}.{ext}')
+        from importlib.util import spec_from_file_location,module_from_spec
+        spec=spec_from_file_location('updates',Path(__file__).with_name('update-manifest.py'));updates=module_from_spec(spec);spec.loader.exec_module(updates)
+        updates.build(snapshot,identity,base,json.loads((ROOT/'contracts/trust/update.json').read_text()))
         files={str(p.relative_to(snapshot)):hashlib.sha256(p.read_bytes()).hexdigest() for p in snapshot.rglob('*') if p.is_file()}
         (snapshot/'snapshot.json').write_text(json.dumps({'schema_version':1,'release_id':rid,'files':files},indent=2))
         with tarfile.open(publish/'packages.tar.gz','w:gz') as tar:tar.add(snapshot,arcname='downloads')

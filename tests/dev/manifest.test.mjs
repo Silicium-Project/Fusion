@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { validateManifest, packageVersions } from '../../tools/lib/manifest.mjs';
 const sha='a'.repeat(40);
-const candidate=()=>({schema_version:1,source_sha:sha,channel:'dev',version:'0.3.0-dev.1',release_id:`dev-0.3.0-dev.1-${sha.slice(0,12)}`,qualification:{source_sha:sha,status:'success',run_id:123},components:{...Object.fromEntries(['api','web','network'].map(name=>[name,{source_sha:sha,image:`ghcr.io/silicium-project/${name}@sha256:${'b'.repeat(64)}`}])),node:{source_sha:sha,version:'0.3.0-dev.1',channel:'dev'}},assets:['packages.tar.gz','deployment.tar.gz'].map(name=>({name,sha256:'c'.repeat(64),size:12}))});
+const candidate=()=>({schema_version:1,source_sha:sha,channel:'dev',version:'0.3.0-dev.1',release_id:`dev-0.3.0-dev.1-${sha.slice(0,12)}`,qualification:{source_sha:sha,status:'success',run_id:123},components:{...Object.fromEntries(['api','web','network'].map(name=>[name,{source_sha:sha,image:`ghcr.io/silicium-project/${name}@sha256:${'b'.repeat(64)}`}])),node:{source_sha:sha,version:'0.3.0-dev.1',channel:'dev'}},assets:['packages.tar.gz','deployment.tar.gz','qualification.json'].map(name=>({name,sha256:'c'.repeat(64),size:12}))});
 test('complete immutable identity validates',()=>assert.deepEqual(validateManifest(candidate()),[]));
 test('mutable images, stale qualification and prod prereleases fail',()=>{
  for(const edit of [m=>m.components.api.image='api:latest',m=>m.qualification.source_sha='b'.repeat(40),m=>m.channel='prod']){const m=candidate();edit(m);assert.ok(validateManifest(m).length);}

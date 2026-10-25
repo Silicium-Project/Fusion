@@ -13,7 +13,7 @@ if (rust) {
 if (process.platform === 'linux' && ['node-native','solana'].includes(suite)) {
   output(['sudo','apt-get','update']);
   const packages = suite === 'node-native'
-    ? ['libgtk-3-dev','libwebkit2gtk-4.1-dev','libayatana-appindicator3-dev','librsvg2-dev','patchelf','pkg-config']
+    ? ['libgtk-3-dev','libwebkit2gtk-4.1-dev','libayatana-appindicator3-dev','librsvg2-dev','patchelf','pkg-config','file','rpm','libfuse2']
     : ['pkg-config','libssl-dev','libudev-dev','clang','cmake'];
   output(['sudo','apt-get','install','-y','--no-install-recommends',...packages]);
 }

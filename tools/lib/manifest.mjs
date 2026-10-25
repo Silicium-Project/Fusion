@@ -25,7 +25,7 @@ export function validateManifest(m) {
     names.add(asset.name);
     if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(asset.name ?? '') || !/^[a-f0-9]{64}$/.test(asset.sha256 ?? '') || !Number.isSafeInteger(asset.size) || asset.size < 1) errors.push('invalid asset identity');
   }
-  if(!names.has('packages.tar.gz')||!names.has('deployment.tar.gz'))errors.push('incomplete candidate assets');
+  if(!['packages.tar.gz','deployment.tar.gz','qualification.json'].every(name=>names.has(name)))errors.push('incomplete candidate assets');
   return errors;
 }
 export function requireManifest(m) {
