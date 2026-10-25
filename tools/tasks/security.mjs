@@ -11,3 +11,5 @@ for(const cmd of [[scanner,'git',root,'--log-opts=--all','--redact=100','--no-ba
  const p=run(cmd,{allowFailure:true,timeout:600_000});process.stdout.write(p.stdout);process.stderr.write(p.stderr);if(p.status)throw new Failure('Required security/workflow check failed');
 }
 console.log('Secret-history scan and active workflow validation passed.');
+
+run(['node','tools/tasks/solana-key-audit.mjs']);
