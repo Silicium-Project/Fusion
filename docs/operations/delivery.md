@@ -11,6 +11,10 @@ Les formats APT/RPM utilisent `~dev.N` pour conserver l'ordre des versions ;
 les versions stables suivent les préversions. Le compteur Windows est borné
 et vérifié. Les identifiants Tauri et les chemins de données restent stables.
 
+Les compteurs Windows 1 à 65534 servent aux versions dev ; 65535 est réservé
+à la stable. Une publication doit être strictement plus récente que le candidat
+signé précédent du canal, et son source doit en descendre.
+
 ## Chaîne
 
 1. CI sur les PR de l'équipe et `main` ; `ci/required` valide les rapports.
@@ -23,6 +27,19 @@ et vérifié. Les identifiants Tauri et les chemins de données restent stables.
 Les contrôles applicables et exécutés restent consultables dans le run GitHub.
 Les artefacts temporaires sont bornés ; les clés, ledgers et configurations
 réelles ne vont pas dans les caches. Les quotas épuisés bloquent la livraison.
+
+Les snippets de la page de téléchargement et les tests d'installation ont une
+source unique dans `contracts/install`. La suite `package-installation` utilise
+Debian 12, Ubuntu 24.04 et Fedora 44. Elle contrôle versions, bibliothèques et
+ressources embarquées, puis la conservation d'un fichier de données utilisateur.
+Lorsqu'un candidat signé précédent existe, elle l'installe puis exécute le
+snippet de mise à niveau vers le nouveau. Au premier candidat, seule
+l'installation initiale est qualifiée : cette limite est écrite dans la preuve
+`installations.json` publiée avec le manifeste signé.
+
+Les conteneurs utilisent une copie avec deux pointeurs de transport APT/DNF
+rebasés en HTTP interne ; les métadonnées signées, clés et paquets sont identiques
+à la livraison. Ce parcours ne qualifie pas la CA VPN ni un déploiement du VPS.
 
 ## Préparation et application
 

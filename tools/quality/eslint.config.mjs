@@ -6,7 +6,7 @@ import vueParser from 'vue-eslint-parser';
 export default [
   { ignores: ['**/node_modules/**', '**/dist/**', '**/.nuxt/**', '**/.output/**', '**/target/**'] },
   {
-    files: ['**/*.ts', '**/*.mjs'],
+    files: ['**/*.ts', '**/*.mts', '**/*.mjs'],
     languageOptions: { parser: ts.parser, ecmaVersion: 2023, sourceType: 'module' },
     rules: {
       'constructor-super': 'error',

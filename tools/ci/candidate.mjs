@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, appendFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { root, run, readJson, writeJson, Failure } from '../lib/process.mjs';
 import { verifiedRun, api, repository } from '../lib/github.mjs';
-import { sha256, requireManifest } from '../lib/manifest.mjs';
+import { sha256, requireManifest, compareVersions } from '../lib/manifest.mjs';
 const operation = process.argv[2];
 const dir = resolve(root, '.artifacts/candidate');
 mkdirSync(dir, { recursive: true });
@@ -26,13 +26,15 @@ if (operation === 'prepare') {
   const changed = Object.keys(required).filter((c) => artifacts.has(required[c]));
   if (!changed.length) throw new Failure('No deliverable changed; this CI requires no release', 4);
   let previous = null;
-  if (changed.length < 4) {
-    const releases = api(`repos/${repository}/releases?per_page=100`);
-    const prior = releases.find((r) => !r.draft && r.tag_name.startsWith(channel + '-'));
-    if (!prior)
-      throw new Failure(
-        'First monorepo release requires full CI artifacts; run CI for the migration commit',
-      );
+  const releases = api(`repos/${repository}/releases?per_page=100`);
+  const prior = releases.find(
+    (r) =>
+      !r.draft &&
+      new RegExp(`^${channel}-[0-9]+\\.[0-9]+\\.[0-9]+(?:-dev\\.[0-9]+)?-[a-f0-9]{12}$`).test(
+        r.tag_name,
+      ),
+  );
+  if (prior) {
     const previousDir = resolve(dir, 'previous');
     mkdirSync(previousDir, { recursive: true });
     run([
@@ -56,6 +58,14 @@ if (operation === 'prepare') {
       resolve(previousDir, 'manifest.json'),
     ]);
     previous = requireManifest(readJson(resolve(previousDir, 'manifest.json')));
+    if (previous.channel !== channel || previous.release_id !== prior.tag_name)
+      throw new Failure('Previous signed candidate identity mismatch');
+    if (
+      run(['git', 'merge-base', '--is-ancestor', previous.source_sha, source], {
+        allowFailure: true,
+      }).status
+    )
+      throw new Failure('Publication would cross unrelated or older source history');
     writeJson(resolve(dir, 'previous.json'), previous);
     if (!changed.includes('node')) {
       run([
@@ -78,6 +88,8 @@ if (operation === 'prepare') {
         throw new Failure('Previous package snapshot digest mismatch');
     }
   }
+  if (!previous && changed.length < 4)
+    throw new Failure('First monorepo candidate requires every component output');
   writeJson(resolve(dir, 'inputs.json'), {
     changed,
     artifacts: Object.fromEntries(changed.map((c) => [c, required[c]])),
@@ -91,6 +103,8 @@ if (operation === 'prepare') {
       : process.env.RELEASE_VERSION;
   if (channel === 'prod' && !/^\d+\.\d+\.\d+$/.test(version ?? ''))
     throw new Failure('Production version must be explicit');
+  if (previous && compareVersions(version, previous.version) <= 0)
+    throw new Failure('Candidate version must be newer than the preceding signed release');
   const release_id = `${channel}-${version}-${source.slice(0, 12)}`;
   const existing = run(
     ['gh', 'release', 'view', release_id, '--repo', repository, '--json', 'tagName'],

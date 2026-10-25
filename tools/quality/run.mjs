@@ -10,7 +10,7 @@ const paths = [
   ...new Set(git('ls-files', '-c', '-o', '--exclude-standard', '-z').split('\0').filter(Boolean)),
 ].filter(
   (file) =>
-    /\.(ts|vue|mjs)$/.test(file) &&
+    /\.(ts|mts|vue|mjs)$/.test(file) &&
     !file.startsWith('docs/archive/') &&
     !/(^|\/)(dist|target|gen)\//.test(file) &&
     existsSync(resolve(root, file)),

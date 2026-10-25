@@ -621,6 +621,26 @@
       "runner": "windows-2022",
       "tier": "pr",
       "phase": "quick"
+    },
+    "package-installation": {
+      "components": [
+        "infra",
+        "node"
+      ],
+      "tier": "release",
+      "runner": "ubuntu-24.04",
+      "timeout_minutes": 30,
+      "steps": [
+        {
+          "command": [
+            "node",
+            "tools/ci/installation-checks.mjs"
+          ],
+          "cwd": ".",
+          "kind": "test",
+          "format": "node"
+        }
+      ]
     }
   }
 }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateManifest, packageVersions } from '../../tools/lib/manifest.mjs';
+import { validateManifest, packageVersions, compareVersions } from '../../tools/lib/manifest.mjs';
 const sha = 'a'.repeat(40);
 const candidate = () => ({
   schema_version: 1,
@@ -23,6 +23,13 @@ const candidate = () => ({
     sha256: 'c'.repeat(64),
     size: 12,
   })),
+});
+test('release ordering reserves the final Windows field for stable and compares counters numerically', () => {
+  assert.equal(compareVersions('0.3.0-dev.10', '0.3.0-dev.2'), 1);
+  assert.equal(compareVersions('0.3.0', '0.3.0-dev.65534'), 1);
+  assert.equal(compareVersions('0.4.0-dev.1', '0.3.0'), 1);
+  assert.equal(compareVersions('0.3.0', '0.3.0'), 0);
+  assert.throws(() => packageVersions('0.3.0-dev.65535'));
 });
 test('complete immutable identity validates', () =>
   assert.deepEqual(validateManifest(candidate()), []));
@@ -51,6 +58,6 @@ test('versions retain prerelease ordering and unique Windows sequence', () => {
     windows: '0.3.0.12',
   });
   assert.equal(packageVersions('0.3.0').windows, '0.3.0.65535');
-  for (const v of ['0.3.0+hidden', '0.3.0-dev.0', '0.3.0-dev.65536', '$(id)'])
+  for (const v of ['0.3.0+hidden', '0.3.0-dev.0', '0.3.0-dev.65535', '0.3.0-dev.65536', '$(id)'])
     assert.throws(() => packageVersions(v));
 });

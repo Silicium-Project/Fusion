@@ -62,8 +62,8 @@ export function packageVersions(version) {
   const sequence = pre ? Number(pre.split('.')[1]) : 65535;
   if (base.split('.').some((n) => Number(n) > 65535))
     throw new Failure('Windows version fields must fit 0..65535', 2);
-  if (!Number.isInteger(sequence) || sequence < 1 || sequence > 65535)
-    throw new Failure('Windows version sequence must fit 1..65535', 2);
+  if (!Number.isInteger(sequence) || sequence < 1 || sequence > (pre ? 65534 : 65535))
+    throw new Failure('Windows dev sequence must fit 1..65534; 65535 is reserved for stable', 2);
   return {
     semver: version,
     deb: pre ? `${base}~${pre}` : base,
@@ -71,4 +71,17 @@ export function packageVersions(version) {
     rpm_release: '1',
     windows: `${base}.${sequence}`,
   };
+}
+export function compareVersions(a, b) {
+  packageVersions(a);
+  packageVersions(b);
+  const parts = (value) => {
+    const [base, pre] = value.split('-');
+    return [...base.split('.').map(Number), pre ? Number(pre.split('.')[1]) : 65535];
+  };
+  const left = parts(a),
+    right = parts(b);
+  for (let index = 0; index < left.length; index++)
+    if (left[index] !== right[index]) return Math.sign(left[index] - right[index]);
+  return 0;
 }

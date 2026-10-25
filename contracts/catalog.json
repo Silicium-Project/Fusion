@@ -87,6 +87,21 @@
       "validation_suites": [
         "solana"
       ]
+    },
+    {
+      "id": "package-installation-snippets-v1",
+      "version": 1,
+      "owner": "infra + web",
+      "definition": "contracts/install/repositories.json",
+      "consumers": [
+        "apps/web",
+        "tools/ci/installation-checks.mjs"
+      ],
+      "validation_suites": [
+        "tooling",
+        "web",
+        "package-installation"
+      ]
     }
   ]
 }
