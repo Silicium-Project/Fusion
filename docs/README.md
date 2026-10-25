@@ -6,6 +6,7 @@
 - [Utilisation des parcours produit](ai/product-usage.md)
 - [Architecture du monorepo](architecture/monorepo.md)
 - [CI, publication et déploiement](operations/delivery.md)
+- [État de la refonte et conditions d'activation](operations/refactor-status.md)
 - [Instructions communes](../AGENTS.md)
 - [Contrats](../contracts/README.md)
 
