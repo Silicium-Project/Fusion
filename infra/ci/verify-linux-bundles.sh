@@ -22,7 +22,7 @@ if [[ ! -s "$RPM_PATH" ]]; then
   exit 1
 fi
 
-# The build script discovers bundles from apps/silicium-node and passes paths
+# The build script discovers bundles from apps/node and passes paths
 # relative to that directory. The AppImage validation below changes into a
 # temporary extraction directory, so retain canonical paths before doing so.
 APPIMAGE_PATH="$(realpath "$APPIMAGE_PATH")"

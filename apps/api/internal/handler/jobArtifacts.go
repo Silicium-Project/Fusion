@@ -175,7 +175,7 @@ func progressPathForJob(job models.Job) string {
 			return filepath.Join(directories[0], "raytracer-progress.json")
 		}
 	}
-	networkRoot := envDefault("SILICIUM_NETWORK_ROOT", filepath.Clean(filepath.Join("..", "Network")))
+	networkRoot := envDefault("SILICIUM_NETWORK_ROOT", filepath.Clean(filepath.Join("..", "..", "network")))
 	if strings.TrimSpace(job.SummaryPath) != "" {
 		return filepath.Join(filepath.Dir(job.SummaryPath), "auto-split-demo-progress.json")
 	}

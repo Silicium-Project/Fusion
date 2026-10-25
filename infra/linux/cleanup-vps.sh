@@ -6,7 +6,7 @@ MIN_FREE_KB="${SILICIUM_MIN_FREE_KB:-16777216}"
 PRUNE_DOCKER="${SILICIUM_PRUNE_DOCKER:-auto}"
 
 if [[ "$(id -u)" -ne 0 ]]; then
-  echo "Run as root: sudo bash deploy/linux/cleanup-vps.sh" >&2
+  echo "Run as root: sudo bash infra/linux/cleanup-vps.sh" >&2
   exit 1
 fi
 [[ "$STALE_JOB_DAYS" =~ ^[0-9]+$ ]] || { echo "Invalid SILICIUM_STALE_JOB_DAYS: $STALE_JOB_DAYS" >&2; exit 1; }

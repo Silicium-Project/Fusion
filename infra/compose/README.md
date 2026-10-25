@@ -1,19 +1,11 @@
-# Containerized production stack
+# Services déployés
 
-This stack runs PostgreSQL, the Go backend, the Nuxt frontend,
-the reputation bridge, TURN, and the reverse proxy in containers. The network
-orchestrator (`p2p_node`) remains a host-side systemd service.
+Le fichier Compose accepte uniquement les images immuables du manifeste.
+Le déploiement passe par `./dev deploy request` puis GitHub Actions.
+Aucun build n'est lancé sur le VPS. Les volumes et secrets existants sont conservés.
 
-The PostgreSQL data directory is a host bind mount at
-`/var/lib/silicium/postgres`. The migration script never removes an existing
-database directory and writes a timestamped logical backup before the cutover.
-
-Start the stack with:
-
-```bash
-sudo docker compose --env-file /etc/silicium/compose.env \
-  -f /opt/silicium/deploy/compose/docker-compose.yml up -d --build
-```
-
-For the complete deployment, run `deploy.sh`; it also refreshes the signed
-desktop update manifest and recreates the proxy after the application services.
+Voir la [livraison](../../docs/operations/delivery.md) et
+[l'adoption du VPS](../../docs/operations/bootstrap.md). Le runtime P2P encore
+hébergé par systemd nécessite une migration et un drainage qualifiés avant
+l'activation des mises à jour progressives. Un endpoint de santé ne prouve pas
+qu'un worker est inactif.

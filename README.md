@@ -1,48 +1,45 @@
-# Silicium
+# Silicium Fusion
 
-Silicium est un réseau de calcul distribué : des ordinateurs de particuliers
-calculent des sous-tâches, d'autres nœuds les vérifient, les résultats sont
-rassemblés, et la blockchain Solana rend les transactions transparentes
-(jobs, réputation, staking, récompenses).
+Silicium développe un réseau de calcul distribué et vérifié. Fusion rassemble
+les applications, le réseau Rust, le programme Solana et leur qualification.
 
-Ce dépôt, **Fusion**, assemble tous les composants et contient le déploiement.
+## Développer
 
-## Carte du dépôt
-
-| Chemin | Type | Contenu |
-| --- | --- | --- |
-| [`Network/`](Network/) | sous-module | Runtime réseau en Rust (nœud, calcul, workloads), programme Solana. Voir `Network/README.md` |
-| [`BackEnd/`](BackEnd/) | sous-module | API Go : comptes, sessions JWT, jobs, pilotage du réseau |
-| [`FrontEnd/`](FrontEnd/) | sous-module | Site Nuxt 3 : création et suivi des calculs |
-| [`apps/silicium-node/`](apps/silicium-node/) | dossier | Application desktop Tauri qui installe et supervise un nœud chez l'utilisateur |
-| [`deploy/`](deploy/) | dossier | Serveur (VPS) : Docker Compose, Nginx, systemd, VPN, canaux de release, scripts de CI |
-| [`.github/workflows/`](.github/workflows/) | dossier | CI/CD : Build, Test, Deploy, synchronisation des sous-modules |
-| [`docs/`](docs/) | dossier | Documentation transverse (architecture, exploitation, développement) |
-| [`tests/`](tests/) | dossier | Tests Python des canaux de release et du VPN |
-| `install-silicium-windows.*`, `start-silicium-local.*` | scripts | Installation et lancement de l'environnement local (Windows) |
-
-## Règle de langage
-
-- **Rust** pour tout ce qui s'exécute chez un utilisateur ou sur le serveur
-  (nœud réseau, calcul, app desktop).
-- **Go** pour le BackEnd, **TypeScript** pour le FrontEnd et le SDK Solana.
-- **Python** uniquement pour l'outillage des développeurs.
-
-Le runtime réseau est entièrement en Rust : l'orchestrateur du serveur et les
-nœuds des utilisateurs exécutent le même binaire `p2p_node`. L'ancien runtime
-Python a été supprimé ; l'historique de la bascule est dans
-[`Network/docs/architecture/rust-migration.md`](Network/docs/architecture/rust-migration.md).
-
-## Démarrage rapide (Windows)
-
-```powershell
-git clone --recurse-submodules https://github.com/Silicium-Project/Fusion.git
-.\install-silicium-windows.cmd -InstallSystemDeps
-.\start-silicium-local.cmd
+```sh
+./dev doctor --profile tooling
+./dev capabilities --json
+./dev ci plan --base origin/main --head HEAD --json
+./dev test --suite tooling
 ```
 
-Détails, options et variables : [`docs/development/local-setup.md`](docs/development/local-setup.md).
+Sous Windows, remplacer `./dev` par `.\dev.ps1`. Les prérequis et commandes de
+chaque composant sont dans le [guide de développement](docs/development/commands.md).
 
-## Documentation
+## Composants
 
-Index : [`docs/README.md`](docs/README.md).
+| Emplacement | Responsabilité |
+| --- | --- |
+| [apps/web](apps/web) | Site Nuxt et parcours des comptes |
+| [apps/api](apps/api) | API Go, comptes et accès au réseau |
+| [apps/node](apps/node) | Application Tauri et supervision d'une machine |
+| [network](network) | Runtime P2P et workloads Rust |
+| [chain/solana](chain/solana) | Programme Anchor et qualification localnet |
+| [packages/solana-sdk](packages/solana-sdk) | SDK TypeScript |
+| [contracts](contracts) | Contrats et schémas partagés |
+| [infra](infra) | Livraison d'artefacts, services et exploitation |
+
+Les historiques des composants sont conservés sans squash. La
+[carte de migration](docs/architecture/monorepo.md) documente leurs références.
+
+## Contribuer et livrer
+
+Lire [CONTRIBUTING](CONTRIBUTING.md), les [instructions agents](AGENTS.md) et les
+[procédures de livraison](docs/operations/delivery.md). Pendant la stabilisation,
+les contributions exécutées sont celles de l'équipe. Le Project de référence
+reste privé ; les arbitrages internes ne sont pas publiés avec le code.
+
+Les applications restent en développement. Le registre des commandes décrit
+les capacités présentes ; la roadmap décrit les travaux à réaliser. Une release
+n'est qualifiée qu'avec ses preuves, ses signatures et son manifeste.
+
+[Documentation](docs/README.md) · [Sécurité](Security.md) · [Licence MIT](LICENSE)

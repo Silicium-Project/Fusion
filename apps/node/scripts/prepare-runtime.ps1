@@ -36,7 +36,7 @@ function Invoke-CargoBuild {
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $appRoot = Resolve-Path (Join-Path $scriptRoot "..")
 $repoRoot = Resolve-Path (Join-Path $appRoot "..\..")
-$networkRoot = Join-Path $repoRoot "Network"
+$networkRoot = Join-Path $repoRoot "network"
 $runtimeRoot = Join-Path $appRoot "src-tauri\resources\runtime"
 $runtimeNetwork = Join-Path $runtimeRoot "Network"
 $nativeRaytracerManifest = Join-Path $networkRoot "crates\raytracer\Cargo.toml"

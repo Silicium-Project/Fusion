@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="${1:-/opt/silicium}"
 RELEASE_CHANNEL="${SILICIUM_RELEASE_CHANNEL:-prod}"
-CHANNEL_TOOL="$ROOT/deploy/release/channel.py"
+CHANNEL_TOOL="$ROOT/infra/release/channel.py"
 python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" >/dev/null
 channel_field() { python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field "$1"; }
 channel_config_dir="$(channel_field config_dir)"
@@ -27,7 +27,7 @@ if [[ "$RELEASE_CHANNEL" == "dev" ]]; then
 fi
 CONFIG_DIR="${SILICIUM_CONFIG_DIR:-$channel_config_dir}"
 DATA_ROOT="${SILICIUM_DATA_ROOT:-$channel_data_root}"
-COMPOSE_FILE="$ROOT/deploy/compose/docker-compose.yml"
+COMPOSE_FILE="$ROOT/infra/compose/docker-compose.yml"
 COMPOSE_ENV="${SILICIUM_COMPOSE_ENV:-$CONFIG_DIR/compose.env}"
 UPDATE_CHANNELS_ENV="$CONFIG_DIR/update-channels.env"
 ORCHESTRATOR_ENV="$CONFIG_DIR/orchestrator.env"
@@ -35,7 +35,7 @@ RELEASE_MARKER="${SILICIUM_RELEASE_MARKER:-$DATA_ROOT/releases/current.env}"
 ORCHESTRATOR_UNIT="silicium-orchestrator${channel_service_suffix}.service"
 
 if [[ "$(id -u)" -ne 0 ]]; then
-  echo "Run as root: sudo bash deploy/linux/post-deploy-check.sh $ROOT" >&2
+  echo "Run as root: sudo bash infra/linux/post-deploy-check.sh $ROOT" >&2
   exit 1
 fi
 
@@ -216,13 +216,13 @@ if [[ "$RELEASE_CHANNEL" == "dev" ]]; then
   mapfile -t expected_workers < <(for index in $(seq -w 1 "$miniworker_count"); do printf 'miniworker-%s\n' "$index"; done)
   mapfile -t running_workers < <(
     docker compose --env-file "$miniworkers_env" \
-      -f "$ROOT/deploy/compose/dev-miniworkers.yml" ps --services --filter status=running
+      -f "$ROOT/infra/compose/dev-miniworkers.yml" ps --services --filter status=running
   )
   for service in "${expected_workers[@]}"; do
     if ! printf '%s\n' "${running_workers[@]}" | grep -Fxq "$service"; then
       echo "Dev miniworker container is not running: $service" >&2
       docker compose --env-file "$miniworkers_env" \
-        -f "$ROOT/deploy/compose/dev-miniworkers.yml" ps >&2 || true
+        -f "$ROOT/infra/compose/dev-miniworkers.yml" ps >&2 || true
       exit 1
     fi
   done

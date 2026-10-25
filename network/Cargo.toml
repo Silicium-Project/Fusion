@@ -1,6 +1,6 @@
 # Workspace Cargo unique pour tout le runtime Rust de Network.
 # Un seul Cargo.lock, un seul dossier target/, des profils communs.
-# `solana-layer/` reste un workspace Anchor séparé (toolchain Solana dédiée).
+# `../chain/solana` est un workspace Anchor séparé (toolchain dédiée).
 [workspace]
 resolver = "3"
 members = [
@@ -12,7 +12,6 @@ members = [
     "crates/raytracer",
     "crates/reputation-bridge",
 ]
-exclude = ["solana-layer"]
 
 # Versions partagées : une crate les référence avec `dep = { workspace = true }`.
 [workspace.dependencies]

@@ -32,5 +32,7 @@ func version(w http.ResponseWriter, r *http.Request) {
 		"version":         metadata.Version,
 		"release_channel": metadata.Channel,
 		"release_build":   metadata.Build,
+		"release_id":      metadata.ID,
+		"manifest_digest": metadata.ManifestDigest,
 	})
 }

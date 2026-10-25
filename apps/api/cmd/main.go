@@ -46,7 +46,16 @@ func main() {
 
 	router := mux.NewRouter()
 	router.UseEncodedPath()
-	router.PathPrefix("/docs/").Handler(http.StripPrefix("/docs/", http.FileServer(http.Dir("./docs/"))))
+	router.HandleFunc("/docs/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
+		spec := os.Getenv("SILICIUM_OPENAPI_PATH")
+		if spec == "" {
+			spec = "./docs/openapi.yaml"
+			if _, err := os.Stat(spec); err != nil {
+				spec = "../../contracts/http/api.openapi.yaml"
+			}
+		}
+		http.ServeFile(w, r, spec)
+	}).Methods(http.MethodGet)
 	routes.RegisterHealthRoutes(router, h)
 	routes.RegisterUserRoutes(router, h)
 	routes.RegisterJobRoutes(router, h)

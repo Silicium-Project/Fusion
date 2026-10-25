@@ -1,6 +1,7 @@
 import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
+  workers: process.env.CI ? 4 : undefined,
   testDir: './tests/e2e',
   outputDir: './artifacts/test-results/e2e',
   use: {

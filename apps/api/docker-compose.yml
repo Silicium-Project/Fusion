@@ -1,8 +1,6 @@
 services:
   db:
-    build:
-      context: ./Database
-      dockerfile: Dockerfile
+    image: postgres:18@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6
     container_name: silicium_database
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
@@ -22,8 +20,8 @@ services:
 
   backend:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: apps/api/Dockerfile
     container_name: silicium_backend
     environment:
       DATABASE_URL: host=db user=${POSTGRES_USER} password=${POSTGRES_PASSWORD} dbname=${POSTGRES_DB} port=5432 sslmode=disable

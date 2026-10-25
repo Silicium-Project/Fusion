@@ -31,13 +31,13 @@ website flow.
 
 The dev bootstrap keeps the worker settings in `/etc/silicium-dev/miniworkers.env`,
 outside the Git checkout so a deployment cannot delete them. It creates that
-file from `deploy/env/dev-miniworkers.env.example` on first setup. Run:
+file from `infra/env/dev-miniworkers.env.example` on first setup. Run:
 
 ```sh
-sudo ./deploy/linux/manage-dev-miniworkers.sh up
-sudo ./deploy/linux/manage-dev-miniworkers.sh status
-sudo ./deploy/linux/manage-dev-miniworkers.sh logs
-sudo ./deploy/linux/manage-dev-miniworkers.sh down
+sudo ./infra/linux/manage-dev-miniworkers.sh up
+sudo ./infra/linux/manage-dev-miniworkers.sh status
+sudo ./infra/linux/manage-dev-miniworkers.sh logs
+sudo ./infra/linux/manage-dev-miniworkers.sh down
 ```
 
 Set `SILICIUM_DEV_MINIWORKERS=24` in the env file, then run the `scale`

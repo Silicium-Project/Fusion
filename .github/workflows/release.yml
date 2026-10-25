@@ -1,0 +1,240 @@
+name: Release
+'on':
+  workflow_run:
+    workflows:
+    - CI
+    types:
+    - completed
+    branches:
+    - main
+  workflow_dispatch:
+    inputs:
+      qualification_run:
+        required: true
+        type: string
+      channel:
+        type: choice
+        options:
+        - dev
+        - prod
+        default: dev
+        required: true
+      version:
+        type: string
+        required: false
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ inputs.channel || 'dev' }}
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: ${{ !github.event.repository.private && vars.SILICIUM_DELIVERY_ENABLED == '1' && (github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch
+      == 'main')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      source_sha: ${{ steps.candidate.outputs.source_sha }}
+      release_id: ${{ steps.candidate.outputs.release_id }}
+      version: ${{ steps.candidate.outputs.version }}
+      channel: ${{ steps.candidate.outputs.channel }}
+      node_changed: ${{ steps.candidate.outputs.node_changed }}
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      with:
+        ref: main
+        fetch-depth: 1
+        persist-credentials: false
+    - &id001
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      with:
+        node-version: 22.23.4
+    - id: qualification
+      env:
+        GH_TOKEN: ${{ github.token }}
+        QUALIFICATION_RUN: ${{ inputs.qualification_run || github.event.workflow_run.id }}
+      run: node tools/ci/check-github-run.mjs
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      with:
+        ref: ${{ steps.qualification.outputs.source_sha }}
+        fetch-depth: 0
+        persist-credentials: false
+    - id: candidate
+      env:
+        GH_TOKEN: ${{ github.token }}
+        QUALIFICATION_RUN: ${{ inputs.qualification_run || github.event.workflow_run.id }}
+        RELEASE_CHANNEL: ${{ inputs.channel || 'dev' }}
+        RELEASE_VERSION: ${{ inputs.version }}
+      run: node tools/ci/candidate.mjs prepare
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: candidate-input
+        path: '.artifacts/candidate
+
+          .artifacts/publish'
+        include-hidden-files: true
+        if-no-files-found: error
+        retention-days: 1
+    permissions:
+      contents: read
+      actions: read
+  images:
+    needs:
+    - prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      with:
+        ref: ${{ needs.prepare.outputs.source_sha }}
+        fetch-depth: 1
+        persist-credentials: false
+    - *id001
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: candidate-input
+        path: .artifacts
+    - name: Download qualifying outputs only
+      env:
+        GH_TOKEN: ${{ github.token }}
+        CI_RUN: ${{ inputs.qualification_run || github.event.workflow_run.id }}
+      run: node tools/ci/download-qualified.mjs
+    - name: Login to public GHCR
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+    - run: node tools/ci/candidate.mjs images
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: candidate-images
+        path: .artifacts/candidate/components.json
+        include-hidden-files: true
+        retention-days: 1
+        if-no-files-found: error
+  desktop:
+    needs:
+    - prepare
+    if: ${{ needs.prepare.outputs.node_changed == 'true' }}
+    strategy:
+      max-parallel: 2
+      fail-fast: false
+      matrix:
+        include:
+        - os: ubuntu-22.04
+          suite: node-native
+        - os: windows-2022
+          suite: node-windows
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+      CARGO_BUILD_JOBS: '4'
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      with:
+        ref: ${{ needs.prepare.outputs.source_sha }}
+        fetch-depth: 0
+        persist-credentials: false
+    - *id001
+    - run: node tools/ci/bootstrap.mjs "${{ matrix.suite }}"
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: node-ui-output
+        path: apps/node/dist
+        run-id: ${{ inputs.qualification_run || github.event.workflow_run.id }}
+        github-token: ${{ github.token }}
+    - run: node tools/ci/desktop-package.mjs
+    - if: ${{ runner.os == 'Windows' }}
+      shell: pwsh
+      run: ./tools/ci/windows-install.ps1
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: installers-${{ runner.os }}
+        path: .artifacts/installers
+        include-hidden-files: true
+        if-no-files-found: error
+        retention-days: 1
+    permissions:
+      contents: read
+      actions: read
+  publish:
+    needs:
+    - prepare
+    - images
+    - desktop
+    if: ${{ always() && needs.prepare.result == 'success' && needs.images.result == 'success' && (needs.desktop.result == 'success'
+      || (needs.prepare.outputs.node_changed == 'false' && needs.desktop.result == 'skipped')) }}
+    environment: ${{ needs.prepare.outputs.channel == 'dev' && 'signing-development' || 'signing-production' }}
+    permissions:
+      contents: write
+      actions: write
+      id-token: write
+      attestations: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      with:
+        ref: main
+        fetch-depth: 1
+        persist-credentials: false
+    - *id001
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: candidate-input
+        path: .artifacts
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: candidate-images
+        path: .artifacts/candidate
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      if: ${{ needs.prepare.outputs.node_changed == 'true' }}
+      with:
+        pattern: installers-*
+        path: .artifacts/installers
+        merge-multiple: true
+    - name: Prepare signing tools
+      run: 'sudo apt-get update
+
+        sudo apt-get install -y --no-install-recommends dpkg-dev apt-utils rpm createrepo-c gnupg'
+    - name: Build signed APT/DNF snapshots
+      if: ${{ needs.prepare.outputs.node_changed == 'true' }}
+      env:
+        APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+        RPM_SIGNING_KEY: ${{ secrets.RPM_SIGNING_KEY }}
+        APT_SIGNING_FINGERPRINT: ${{ vars.APT_SIGNING_FINGERPRINT }}
+        RPM_SIGNING_FINGERPRINT: ${{ vars.RPM_SIGNING_FINGERPRINT }}
+        DOWNLOAD_BASE_URL: ${{ vars.DOWNLOAD_BASE_URL }}
+      run: python3 tools/ci/package-repositories.py
+    - name: Qualify package installations
+      if: ${{ needs.prepare.outputs.node_changed == 'true' }}
+      run: bash tools/ci/installation-checks.sh
+    - name: Assemble deployment payload and manifest
+      id: manifest
+      run: 'mkdir -p .artifacts/publish
+
+        tar -czf .artifacts/publish/deployment.tar.gz infra/compose infra/release
+
+        node tools/ci/candidate.mjs manifest'
+    - name: Sign final manifest
+      env:
+        RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        RELEASE_SIGNING_FINGERPRINT: ${{ vars.RELEASE_SIGNING_FINGERPRINT }}
+      run: python3 tools/ci/sign-release.py
+    - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
+      with:
+        subject-path: .artifacts/publish/*
+    - name: Publish immutable release and request delivery
+      run: node tools/ci/candidate.mjs publish
+    - name: Delete temporary artifacts after durable publication
+      run: node tools/ci/cleanup-transferred.mjs

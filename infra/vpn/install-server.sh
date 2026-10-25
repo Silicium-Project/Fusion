@@ -3,10 +3,10 @@ set -euo pipefail
 
 ROOT="${1:-/opt/silicium-dev}"
 RELEASE_CHANNEL="${SILICIUM_RELEASE_CHANNEL:-dev}"
-CHANNEL_TOOL="$ROOT/deploy/release/channel.py"
+CHANNEL_TOOL="$ROOT/infra/release/channel.py"
 
 if [[ "$(id -u)" -ne 0 ]]; then
-  echo "Run as root: sudo bash deploy/vpn/install-server.sh $ROOT" >&2
+  echo "Run as root: sudo bash infra/vpn/install-server.sh $ROOT" >&2
   exit 1
 fi
 [[ "$RELEASE_CHANNEL" == "dev" ]] || { echo "The Silicium VPN bootstrap is restricted to the dev channel." >&2; exit 1; }
@@ -126,4 +126,4 @@ echo "  server address: $VPN_SERVER_ADDRESS"
 echo "  network: $VPN_NETWORK"
 echo "  endpoint: $VPN_ENDPOINT"
 echo "  server public key: $server_public_key"
-echo "  peer manager: $ROOT/deploy/vpn/manage-peer.sh"
+echo "  peer manager: $ROOT/infra/vpn/manage-peer.sh"

@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="${1:-/opt/silicium}"
 RELEASE_CHANNEL="${SILICIUM_RELEASE_CHANNEL:-prod}"
-CHANNEL_TOOL="$ROOT/deploy/release/channel.py"
+CHANNEL_TOOL="$ROOT/infra/release/channel.py"
 python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" >/dev/null
 channel_config_dir="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field config_dir)"
 channel_data_root="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field data_dir)"
@@ -24,18 +24,18 @@ update_manifest_timer="silicium-update-manifest${service_suffix}.timer"
 legacy_experiment_api_unit="silicium-experiment-api${service_suffix}.service"
 
 if [[ "$(id -u)" -ne 0 ]]; then
-  echo "Run as root: sudo bash deploy/linux/install-services.sh $ROOT" >&2
+  echo "Run as root: sudo bash infra/linux/install-services.sh $ROOT" >&2
   exit 1
 fi
 
-[[ -d "$ROOT/deploy/systemd" ]] || { echo "Missing deployment files under: $ROOT" >&2; exit 1; }
+[[ -d "$ROOT/infra/systemd" ]] || { echo "Missing deployment files under: $ROOT" >&2; exit 1; }
 cd "$ROOT"
 
 mkdir -p "$CONFIG_DIR" "$DATA_ROOT/site" "$DATA_ROOT/network" "$DATA_ROOT/solana" "$DATA_ROOT/downloads"
 
 ORCHESTRATOR_ENV="$CONFIG_DIR/orchestrator.env"
 if [[ ! -f "$ORCHESTRATOR_ENV" ]]; then
-  echo "Missing $ORCHESTRATOR_ENV; copy deploy/env/orchestrator.example.env and configure it before installing services." >&2
+  echo "Missing $ORCHESTRATOR_ENV; copy infra/env/orchestrator.example.env and configure it before installing services." >&2
   exit 1
 fi
 
@@ -168,9 +168,9 @@ ensure_env_text_channel_default "$ORCHESTRATOR_ENV" SILICIUM_NODE_ADVERTISE_URL 
 # exact deployed application version and source revision.
 release_version="${SILICIUM_RELEASE_VERSION:-}"
 if [[ -z "$release_version" ]]; then
-  release_metadata="$ROOT/apps/silicium-node/package.json"
-  if [[ "$RELEASE_CHANNEL" == "prod" && -f "$ROOT/apps/silicium-node/src-tauri/tauri.prod.conf.json" ]]; then
-    release_metadata="$ROOT/apps/silicium-node/src-tauri/tauri.prod.conf.json"
+  release_metadata="$ROOT/apps/node/package.json"
+  if [[ "$RELEASE_CHANNEL" == "prod" && -f "$ROOT/apps/node/src-tauri/tauri.prod.conf.json" ]]; then
+    release_metadata="$ROOT/apps/node/src-tauri/tauri.prod.conf.json"
   fi
   release_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$release_metadata")"
 fi
@@ -190,9 +190,9 @@ sed \
   -e "s#__SILICIUM_DATA_ROOT__#$DATA_ROOT#g" \
   -e "s#__SILICIUM_RELEASE_CHANNEL__#$RELEASE_CHANNEL#g" \
   -e "s#__SILICIUM_UPDATE_MANIFEST_UNIT__#$update_manifest_unit#g" \
-  deploy/systemd/silicium-update-manifest.service > /etc/systemd/system/"$update_manifest_unit"
+  infra/systemd/silicium-update-manifest.service > /etc/systemd/system/"$update_manifest_unit"
 sed -e "s#__SILICIUM_UPDATE_MANIFEST_UNIT__#$update_manifest_unit#g" \
-  deploy/systemd/silicium-update-manifest.timer > /etc/systemd/system/"$update_manifest_timer"
+  infra/systemd/silicium-update-manifest.timer > /etc/systemd/system/"$update_manifest_timer"
 
 # The orchestrator template has no channel-dependent unit references, but its
 # output name must still be channel-specific so a dev install cannot restart
@@ -201,10 +201,10 @@ sed -e "s#__SILICIUM_ROOT__#$ROOT#g" \
   -e "s#__SILICIUM_CONFIG_DIR__#$CONFIG_DIR#g" \
   -e "s#__SILICIUM_DATA_ROOT__#$DATA_ROOT#g" \
   -e "s#__SILICIUM_RELEASE_CHANNEL__#$RELEASE_CHANNEL#g" \
-  deploy/systemd/silicium-orchestrator.service > /etc/systemd/system/"$orchestrator_unit"
+  infra/systemd/silicium-orchestrator.service > /etc/systemd/system/"$orchestrator_unit"
 
 if [[ ! -f "$CONFIG_DIR/update-channels.env" ]]; then
-  cp deploy/env/update-channels.example.env "$CONFIG_DIR/update-channels.env"
+  cp infra/env/update-channels.example.env "$CONFIG_DIR/update-channels.env"
 fi
 migrate_default_paths "$CONFIG_DIR/update-channels.env"
 ensure_env_text_channel_default "$CONFIG_DIR/update-channels.env" SILICIUM_DOWNLOAD_BASE_URL "$public_base_url/downloads" "https://vps-910c1dbc.vps.ovh.net/downloads"
@@ -213,8 +213,8 @@ sed -i -E '/^SILICIUM_(UPDATE_GOSSIP_URL|UPDATE_GOSSIP_REQUIRED|UPDATE_P2P_DIR|U
 # Release identifiers are source-controlled and must follow the artifacts built
 # by CI. Preserve operator-specific URLs, keys and cache paths in the existing
 # file while refreshing only the channel cadence/version fields.
-dev_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$ROOT/apps/silicium-node/package.json")"
-prod_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$ROOT/apps/silicium-node/src-tauri/tauri.prod.conf.json")"
+dev_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$ROOT/apps/node/package.json")"
+prod_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$ROOT/apps/node/src-tauri/tauri.prod.conf.json")"
 for release_key in \
   SILICIUM_DEV_VERSION \
   SILICIUM_PROD_VERSION \
@@ -223,7 +223,7 @@ for release_key in \
   case "$release_key" in
     SILICIUM_DEV_VERSION) release_line="SILICIUM_DEV_VERSION=${dev_version}" ;;
     SILICIUM_PROD_VERSION) release_line="SILICIUM_PROD_VERSION=${prod_version}" ;;
-    *) release_line="$(grep -E "^${release_key}=" deploy/env/update-channels.example.env | tail -n 1)" ;;
+    *) release_line="$(grep -E "^${release_key}=" infra/env/update-channels.example.env | tail -n 1)" ;;
   esac
   [[ -n "$release_line" ]] || continue
   if grep -q -E "^${release_key}=" "$CONFIG_DIR/update-channels.env"; then
@@ -233,14 +233,14 @@ for release_key in \
   fi
 done
 unset -f ensure_env_default set_env_value set_env_value_file ensure_env_channel_default ensure_env_text_channel_default
-chmod 0755 "$ROOT/deploy/linux/publish-update-manifest.sh"
-if [[ -f "$ROOT/deploy/linux/publish-package-repositories.sh" ]]; then
-  chmod 0755 "$ROOT/deploy/linux/publish-package-repositories.sh"
+chmod 0755 "$ROOT/infra/linux/publish-update-manifest.sh"
+if [[ -f "$ROOT/infra/linux/publish-package-repositories.sh" ]]; then
+  chmod 0755 "$ROOT/infra/linux/publish-package-repositories.sh"
 fi
-if [[ -f "$ROOT/deploy/linux/cleanup-vps.sh" ]]; then
-  chmod 0755 "$ROOT/deploy/linux/cleanup-vps.sh"
+if [[ -f "$ROOT/infra/linux/cleanup-vps.sh" ]]; then
+  chmod 0755 "$ROOT/infra/linux/cleanup-vps.sh"
 fi
-chmod 0755 "$ROOT/deploy/linux/start-orchestrator.sh"
+chmod 0755 "$ROOT/infra/linux/start-orchestrator.sh"
 
 # The experiment/MCP API ran the former Python runtime (tools/mcp_server.py).
 # Stop it and drop its unit; its env file is left in place for the operator.
@@ -260,4 +260,4 @@ systemctl restart "$orchestrator_unit"
 echo "Systemd services installed:"
 echo "  $orchestrator_unit"
 echo "  $update_manifest_timer"
-echo "Web/API services are owned by deploy/compose/deploy.sh."
+echo "Web/API services are owned by infra/compose/deploy.sh."

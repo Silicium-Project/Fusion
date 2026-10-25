@@ -49,7 +49,7 @@ func ConfigFromEnv() RunnerConfig {
 	if networkRoot == "" {
 		// BackEnd and Network are sibling repositories in the local Fusion
 		// checkout. Production sets an absolute path explicitly.
-		networkRoot = filepath.Clean(filepath.Join("..", "Network"))
+		networkRoot = filepath.Clean(filepath.Join("..", "..", "network"))
 	}
 	return RunnerConfig{
 		NetworkRoot:           networkRoot,

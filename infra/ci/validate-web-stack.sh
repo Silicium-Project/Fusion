@@ -5,8 +5,8 @@ ROOT="${1:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 
 cd "$ROOT"
 
-if [[ ! -d "FrontEnd" || ! -d "BackEnd" || ! -d "apps/silicium-node" ]]; then
-  echo "Expected FrontEnd, BackEnd and apps/silicium-node at $ROOT." >&2
+if [[ ! -d "FrontEnd" || ! -d "BackEnd" || ! -d "apps/node" ]]; then
+  echo "Expected FrontEnd, BackEnd and apps/node at $ROOT." >&2
   exit 1
 fi
 
@@ -16,7 +16,7 @@ npm test
 npm run build
 popd >/dev/null
 
-pushd apps/silicium-node >/dev/null
+pushd apps/node >/dev/null
 npm ci
 npm test
 npm run build

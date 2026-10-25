@@ -8,7 +8,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_ROOT="$(cd "$APP_ROOT/../.." && pwd)"
-NETWORK_ROOT="$REPO_ROOT/Network"
+NETWORK_ROOT="$REPO_ROOT/network"
 RUNTIME_ROOT="$APP_ROOT/src-tauri/resources/runtime"
 RUNTIME_NETWORK="$RUNTIME_ROOT/Network"
 NATIVE_RAYTRACER_MANIFEST="$NETWORK_ROOT/crates/raytracer/Cargo.toml"

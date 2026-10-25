@@ -3,27 +3,27 @@ set -euo pipefail
 
 ROOT="${1:-/opt/silicium}"
 RELEASE_CHANNEL="${SILICIUM_RELEASE_CHANNEL:-prod}"
-CHANNEL_TOOL="$ROOT/deploy/release/channel.py"
+CHANNEL_TOOL="$ROOT/infra/release/channel.py"
 python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" >/dev/null
 channel_config_dir="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field config_dir)"
 channel_data_root="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field data_dir)"
 CONFIG_DIR="${SILICIUM_CONFIG_DIR:-$channel_config_dir}"
 ENV_FILE="${SILICIUM_ORCHESTRATOR_ENV:-$CONFIG_DIR/orchestrator.env}"
 
-[[ -d "$ROOT/Network" ]] || { echo "Missing Network runtime under: $ROOT" >&2; exit 1; }
+[[ -d "$ROOT/network" ]] || { echo "Missing Network runtime under: $ROOT" >&2; exit 1; }
 [[ -f "$ENV_FILE" ]] || { echo "Missing orchestrator environment: $ENV_FILE" >&2; exit 1; }
 
 node_binary=""
 for candidate in \
-  "$ROOT/Network/target/node-alpine/release/p2p_node" \
-  "$ROOT/Network/target/release/p2p_node" \
-  "$ROOT/Network/bin/p2p_node"; do
+  "$ROOT/network/target/node-alpine/release/p2p_node" \
+  "$ROOT/network/target/release/p2p_node" \
+  "$ROOT/network/bin/p2p_node"; do
   if [[ -x "$candidate" ]]; then
     node_binary="$candidate"
     break
   fi
 done
-[[ -n "$node_binary" ]] || { echo "Missing Rust p2p_node binary under $ROOT/Network" >&2; exit 1; }
+[[ -n "$node_binary" ]] || { echo "Missing Rust p2p_node binary under $ROOT/network" >&2; exit 1; }
 
 set -a
 . "$ENV_FILE"
@@ -36,7 +36,7 @@ data_root="${SILICIUM_DATA_ROOT:-$channel_data_root}"
 export_dir="${SILICIUM_EXPORT_DIR:-$data_root/network/orchestrator/export}"
 state_dir="${SILICIUM_STATE_DIR:-$data_root/network/orchestrator/state}"
 mkdir -p "$export_dir" "$state_dir"
-cd "$ROOT/Network"
+cd "$ROOT/network"
 
 control_token="${SILICIUM_NODE_CONTROL_TOKEN:-}"
 [[ -n "$control_token" ]] || { echo "SILICIUM_NODE_CONTROL_TOKEN is required for the Rust API" >&2; exit 1; }

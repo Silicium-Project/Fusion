@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="${1:-/opt/silicium}"
 
 if [[ "$(id -u)" -ne 0 ]]; then
-  echo "Run as root: sudo bash deploy/linux/install-vps.sh $ROOT" >&2
+  echo "Run as root: sudo bash infra/linux/install-vps.sh $ROOT" >&2
   exit 1
 fi
 
@@ -132,5 +132,5 @@ fi
 
 echo "Base VPS dependencies installed."
 echo "Next:"
-echo "  sudo cp deploy/env/*.example.env /etc/silicium/"
-echo "  sudo bash deploy/linux/migrate-postgres-to-compose.sh $ROOT"
+echo "  sudo cp infra/env/*.example.env /etc/silicium/"
+echo "  sudo bash infra/linux/migrate-postgres-to-compose.sh $ROOT"

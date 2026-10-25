@@ -59,11 +59,11 @@ else
 fi
 
 echo "Installing SDK dependencies if needed..."
-if [ -f "silicium-sdk/package.json" ]; then
-  (cd silicium-sdk && npm install)
+if [ -f "../../packages/solana-sdk/package.json" ]; then
+  (cd ../../packages/solana-sdk && npm ci)
 fi
 
 echo "Running full SDK flow..."
-npx ts-node silicium-sdk/examples/full-flow.ts
+(cd ../../packages/solana-sdk && npx ts-node examples/full-flow.ts)
 
 echo "Done. Validator log: $VALIDATOR_LOG"

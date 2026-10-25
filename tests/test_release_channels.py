@@ -5,14 +5,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from deploy.release.channel import infer_from_ref, metadata, normalize
+from infra.release.channel import infer_from_ref, metadata, normalize
 
 
 def test_release_channels_are_explicit_and_isolated() -> None:
     dev = metadata("dev")
     prod = metadata("prod")
 
-    assert dev["branch"] == "dev"
+    assert dev["branch"] == "main"
     assert dev["node_update_channel"] == "dev"
     assert dev["deployment_root"] != prod["deployment_root"]
     assert dev["data_dir"] != prod["data_dir"]

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-COMPOSE_FILE="$ROOT_DIR/deploy/compose/dev-miniworkers.yml"
+COMPOSE_FILE="$ROOT_DIR/infra/compose/dev-miniworkers.yml"
 ENV_FILE="${SILICIUM_DEV_MINIWORKERS_ENV:-${SILICIUM_CONFIG_DIR:-/etc/silicium-dev}/miniworkers.env}"
 
 if [[ ! -f "$ENV_FILE" ]]; then

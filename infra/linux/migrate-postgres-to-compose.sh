@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="${1:-/opt/silicium}"
-COMPOSE_FILE="$ROOT/deploy/compose/docker-compose.yml"
+COMPOSE_FILE="$ROOT/infra/compose/docker-compose.yml"
 COMPOSE_ENV="/etc/silicium/compose.env"
 BACKEND_ENV="/etc/silicium/backend.env"
 BACKUP_DIR="/var/lib/silicium/backups/postgres"
@@ -10,7 +10,7 @@ DATA_DIR="/var/lib/silicium/postgres"
 SQLITE_PATH="${SQLITE_PATH:-/var/lib/silicium/site/silicium.db}"
 
 if [[ "$(id -u)" -ne 0 ]]; then
-  echo "Run as root: sudo bash deploy/linux/migrate-postgres-to-compose.sh $ROOT" >&2
+  echo "Run as root: sudo bash infra/linux/migrate-postgres-to-compose.sh $ROOT" >&2
   exit 1
 fi
 
@@ -123,7 +123,7 @@ if [[ -f "$BACKUP_FILE" ]]; then
 fi
 
 if [[ -f "$SQLITE_PATH" ]]; then
-  SCHEMA_FILE="$ROOT/BackEnd/Database/schema.sql"
+  SCHEMA_FILE="$ROOT/apps/api/Database/schema.sql"
   if [[ ! -f "$SCHEMA_FILE" ]]; then
     echo "PostgreSQL schema file not found: $SCHEMA_FILE" >&2
     exit 1

@@ -3,10 +3,10 @@ set -euo pipefail
 
 ROOT="${1:-/opt/silicium-dev}"
 RELEASE_CHANNEL="${SILICIUM_RELEASE_CHANNEL:-dev}"
-CHANNEL_TOOL="$ROOT/deploy/release/channel.py"
+CHANNEL_TOOL="$ROOT/infra/release/channel.py"
 
 if [[ "$(id -u)" -ne 0 ]]; then
-  echo "Run as root: sudo bash deploy/linux/prepare-dev-config.sh $ROOT" >&2
+  echo "Run as root: sudo bash infra/linux/prepare-dev-config.sh $ROOT" >&2
   exit 1
 fi
 [[ "$RELEASE_CHANNEL" == "dev" ]] || {
@@ -39,10 +39,10 @@ VPN_PROXY_BIND_ADDRESS="$(channel_field vpn_proxy_bind_address)"
 # VPN address. The script is idempotent and refuses to claim an unmanaged
 # WireGuard interface or overwrite an unrelated configuration.
 if [[ "${SILICIUM_SKIP_VPN_BOOTSTRAP:-0}" != "1" ]]; then
-  bash "$ROOT/deploy/vpn/install-server.sh" "$ROOT"
+  bash "$ROOT/infra/vpn/install-server.sh" "$ROOT"
 fi
 
-release_version="${SILICIUM_RELEASE_VERSION:-$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$ROOT/apps/silicium-node/package.json")}"
+release_version="${SILICIUM_RELEASE_VERSION:-$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$ROOT/apps/node/package.json")}"
 release_build="${SILICIUM_RELEASE_BUILD:-$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || printf local)}"
 
 mkdir -p "$CONFIG_DIR" "$DATA_ROOT"/site/jobs "$DATA_ROOT"/site/runtime \
@@ -68,12 +68,12 @@ set_env_value() {
   fi
 }
 
-copy_if_missing "$CONFIG_DIR/backend.env" deploy/env/backend.example.env
-copy_if_missing "$CONFIG_DIR/frontend.env" deploy/env/frontend.example.env
-copy_if_missing "$CONFIG_DIR/orchestrator.env" deploy/env/orchestrator.example.env
-copy_if_missing "$CONFIG_DIR/compose.env" deploy/env/compose.example.env
-copy_if_missing "$CONFIG_DIR/update-channels.env" deploy/env/update-channels.example.env
-copy_if_missing "$CONFIG_DIR/miniworkers.env" deploy/env/dev-miniworkers.env.example
+copy_if_missing "$CONFIG_DIR/backend.env" infra/env/backend.example.env
+copy_if_missing "$CONFIG_DIR/frontend.env" infra/env/frontend.example.env
+copy_if_missing "$CONFIG_DIR/orchestrator.env" infra/env/orchestrator.example.env
+copy_if_missing "$CONFIG_DIR/compose.env" infra/env/compose.example.env
+copy_if_missing "$CONFIG_DIR/update-channels.env" infra/env/update-channels.example.env
+copy_if_missing "$CONFIG_DIR/miniworkers.env" infra/env/dev-miniworkers.env.example
 
 compose_env="$CONFIG_DIR/compose.env"
 backend_env="$CONFIG_DIR/backend.env"

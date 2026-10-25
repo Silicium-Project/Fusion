@@ -12,9 +12,11 @@ const (
 )
 
 type Metadata struct {
-	Channel string `json:"release_channel"`
-	Version string `json:"release_version"`
-	Build   string `json:"release_build"`
+	Channel        string `json:"release_channel"`
+	Version        string `json:"release_version"`
+	Build          string `json:"release_build"`
+	ID             string `json:"release_id,omitempty"`
+	ManifestDigest string `json:"manifest_digest,omitempty"`
 }
 
 func Validate(channel string) error {
@@ -42,5 +44,5 @@ func Current() Metadata {
 	if build == "" {
 		build = "local"
 	}
-	return Metadata{Channel: channel, Version: version, Build: build}
+	return Metadata{Channel: channel, Version: version, Build: build, ID: strings.TrimSpace(os.Getenv("SILICIUM_RELEASE_ID")), ManifestDigest: strings.TrimSpace(os.Getenv("SILICIUM_MANIFEST_DIGEST"))}
 }

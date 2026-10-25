@@ -34,8 +34,8 @@ def test_preflight_accepts_an_executable_program(monkeypatch) -> None:
 
 
 def test_solana_write_flow_reconciles_artifact_and_finalizes_job() -> None:
-    trace = (REPO_ROOT / "solana-layer" / "scripts" / "devnet_trace_fragments.ts").read_text(encoding="utf-8")
-    minimal = (REPO_ROOT / "solana-layer" / "scripts" / "devnet_minimal_job_flow.ts").read_text(encoding="utf-8")
+    trace = (REPO_ROOT.parent / "chain" / "solana" / "scripts" / "devnet_trace_fragments.ts").read_text(encoding="utf-8")
+    minimal = (REPO_ROOT.parent / "chain" / "solana" / "scripts" / "devnet_minimal_job_flow.ts").read_text(encoding="utf-8")
     assert "SILICIUM_CHAIN_RESULT_HASH" in trace
     assert "hash_match" in trace
     assert ".finalizeJob(" in minimal
@@ -44,7 +44,7 @@ def test_solana_write_flow_reconciles_artifact_and_finalizes_job() -> None:
 
 def test_all_runtime_program_defaults_use_the_canonical_id() -> None:
     paths = [
-        REPO_ROOT / "solana-layer" / "silicium-sdk" / "src" / "index.ts",
+        REPO_ROOT.parent / "packages" / "solana-sdk" / "src" / "index.ts",
     ]
     for path in paths:
         content = path.read_text(encoding="utf-8")

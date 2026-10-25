@@ -31,10 +31,7 @@ x-miniworker-environment: &miniworker-environment
   SILICIUM_COMPUTE_BIND: 127.0.0.1:9090
 
 x-miniworker-defaults: &miniworker-defaults
-  image: silicium-dev-miniworker:local
-  build:
-    context: ../../Network
-    dockerfile: infra/miniworker.Dockerfile
+  image: ${SILICIUM_NETWORK_IMAGE:?immutable network image required}
   restart: unless-stopped
   logging:
     driver: json-file
@@ -70,7 +67,7 @@ x-miniworker-defaults: &miniworker-defaults
 
 services:
   pairing-relay:
-    image: nginxinc/nginx-unprivileged:1.27-alpine
+    image: nginxinc/nginx-unprivileged:1.27-alpine@sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0
     restart: unless-stopped
     read_only: true
     cap_drop: [ALL]

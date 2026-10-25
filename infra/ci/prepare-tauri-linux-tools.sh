@@ -61,7 +61,7 @@ download_tool \
   "https://github.com/tauri-apps/binary-releases/releases/download/apprun-old/AppRun-x86_64"
 download_tool \
   "$tauri_tools_dir/linuxdeploy-x86_64.AppImage" \
-  "https://github.com/tauri-apps/binary-releases/releases/download/linuxdeploy/linuxdeploy-x86_64.AppImage"
+  "https://github.com/tauri-apps/binary-releases/releases/download/linuxinfra/linuxdeploy-x86_64.AppImage"
 download_tool \
   "$tauri_tools_dir/linuxdeploy-plugin-gtk.sh" \
   "https://raw.githubusercontent.com/tauri-apps/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh"
@@ -70,6 +70,6 @@ download_tool \
   "https://raw.githubusercontent.com/tauri-apps/linuxdeploy-plugin-gstreamer/master/linuxdeploy-plugin-gstreamer.sh"
 download_tool \
   "$tauri_tools_dir/linuxdeploy-plugin-appimage.AppImage" \
-  "https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage"
+  "https://github.com/linuxinfra/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage"
 
 echo "Tauri Linux bundler tools are ready in $tauri_tools_dir"
