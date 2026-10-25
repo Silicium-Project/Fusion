@@ -7,11 +7,11 @@ import { makePlan, policyFromBase, combinePlans, registry } from './lib/planner.
 import { executeSuite } from './lib/runner.mjs';
 import { validateGate } from './lib/gate.mjs';
 import { doctor } from './lib/doctor.mjs';
-import { api, repository, publicMetadata } from './lib/github.mjs';
 import { startIssue, acceptIssue } from './lib/project.mjs';
 import { releasePlan, requestDeploy } from './lib/release.mjs';
 import { diagnosticRequest } from './lib/operations.mjs';
 import { inspectMetrics } from './lib/metrics.mjs';
+import { inspectRun } from './lib/ci-inspect.mjs';
 
 const commands = [
   {
@@ -131,12 +131,7 @@ async function main() {
     return;
   }
   if (command === 'ci' && subcommand === 'inspect') {
-    if (!/^[1-9][0-9]*$/.test(String(o.run))) throw new Failure('Provide --run ID', 2);
-    return output({
-      schema_version: 1,
-      run: publicMetadata(api(`repos/${repository}/actions/runs/${o.run}`)),
-      jobs: api(`repos/${repository}/actions/runs/${o.run}/jobs?per_page=100`),
-    });
+    return output(inspectRun(o.run));
   }
   if (command === 'ci' && subcommand === 'metrics')
     return output(inspectMetrics(Number(o.limit ?? 20)));

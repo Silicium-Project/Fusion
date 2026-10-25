@@ -40,6 +40,13 @@ Elle a révélé un lint Windows et l'absence du verrou Rust Solana. Ces défaut
 ont été corrigés ensuite ; leur correction exige une nouvelle qualification,
 elle ne transforme pas l'ancien run en succès.
 
+La tentative suivante,
+[40199389136](https://github.com/Silicium-Project/Fusion/actions/runs/40199389136),
+a été refusée par GitHub avant l'allocation de runners, pour un motif de
+facturation ou de limite de dépenses. Aucun test de cette tentative n'a
+démarré. Le plafond reste à zéro et le dépôt reste privé ; le dernier commit
+ne dispose donc pas encore d'une qualification GitHub complète.
+
 Le run a exécuté notamment 151 tests Go, 112 unités web et 56 scénarios
 navigateur, 34 unités natives Linux, 323 tests runtime et 69 tests WASM. Les
 trois scénarios P2P existants et 22 tests Python réseau ont passé. Ces scénarios

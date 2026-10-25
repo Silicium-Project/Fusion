@@ -35,6 +35,15 @@ un échec du contrôle final. Les caches et uploads de binaires sont désactivé
 pendant cette qualification privée ; seuls le plan et les petits rapports
 expirant après un jour sont transférés. Un quota GitHub épuisé bloque le run.
 
+La présence du budget à zéro protège les dépenses ; elle ne garantit pas que
+GitHub acceptera d'allouer un runner. Le run
+[40199389136](https://github.com/Silicium-Project/Fusion/actions/runs/40199389136)
+a été refusé avant toute étape, avec un message relatif à la facturation ou
+à la limite de dépenses. `dev ci inspect --run ID --json` lit ces annotations
+et les distingue d'un test exécuté en échec. Ne pas augmenter le plafond,
+ouvrir le dépôt ou relancer en boucle pour contourner ce refus. La cause
+précise exige la lecture de l'état de facturation et du quota du compte.
+
 Une qualification PR n'est pas un push `main` qualifié et n'autorise aucune
 publication. Après collecte des résultats, supprimer `SILICIUM_PRIVATE_CI_WINDOW`
 et suspendre de nouveau Actions jusqu'à la prochaine fenêtre revue. Ne jamais

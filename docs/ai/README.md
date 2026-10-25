@@ -25,6 +25,11 @@ rapport et environnement. Corriger l'erreur d'infrastructure ou l'oracle
 fonctionnel identifié. Une relance d'erreur fonctionnelle ne remplace pas une
 correction. Une nouvelle révision invalide les anciens résultats applicables.
 
+Si aucun runner n'a démarré, lire `diagnostics` : un refus de facturation ou
+de limite de dépenses ne dit rien du résultat des tests. Conserver le plafond
+à zéro, la visibilité décidée et les échecs visibles ; aucune relance répétée
+ni repli sur un runner VPS n'est autorisé.
+
 `dev ci metrics --limit 20 --json` donne les distributions et le nombre
 d'observations. Vérifier le SHA des runs avant de comparer ; ne pas présenter
 une absence de rapport ou un cache désactivé comme un gain de performance.
