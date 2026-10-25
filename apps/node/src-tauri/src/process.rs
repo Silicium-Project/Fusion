@@ -255,10 +255,10 @@ pub(crate) fn kill_process_tree(pid: u32) -> Result<(), String> {
             .stdout(Stdio::null())
             .stderr(Stdio::null());
         configure_detached_process(&mut command);
-        return command
+        command
             .status()
             .map_err(|error| error.to_string())
-            .map(|_| ());
+            .map(|_| ())
     }
 
     #[cfg(not(target_os = "windows"))]
