@@ -2,7 +2,7 @@
 
 ## État actuel
 
-Les workflows sont fournis et désactivés tant que Fusion reste privé. La
+Les workflows de publication, déploiement et suivi restent désactivés tant que Fusion reste privé. La
 publication/diffusion exige en plus `SILICIUM_DELIVERY_ENABLED=1`. Leur présence
 ne constitue pas une preuve de livraison. Le protocole de drainage des workers
 reste à qualifier ; le programme d'application bloque un changement d'image
@@ -10,8 +10,35 @@ réseau plutôt que de tuer une tâche active.
 
 Le propriétaire a confirmé le maintien privé le 25 octobre 2026. Ce choix
 reporte la bascule publique et l'activation des runners hébergés ; il n'autorise
-ni dépense supplémentaire ni réactivation des runners du VPS. Les suites
-communes restent exécutables localement avec les prérequis documentés.
+ni dépense supplémentaire ni réactivation des runners du VPS. Une qualification
+PR ponctuelle peut utiliser le quota gratuit privé, avec la procédure bornée
+ci-dessous. Les suites restent aussi exécutables localement.
+
+## Qualification ponctuelle tout en restant privé
+
+```sh
+./dev ci authorize-private --head SHA --minutes 180 --json
+./dev ci authorize-private --head SHA --minutes 180 --apply
+```
+
+Le SHA doit être celui du checkout propre qui va être poussé dans la PR.
+La commande vérifie par l'API de facturation un budget Actions **0, avec arrêt
+automatique** et contrôle l'usage réel des artefacts sur toute l'organisation.
+Elle conserve la configuration précédente dans `.artifacts/admin`, désactive
+les anciens workflows, limite les actions autorisées et ouvre une fenêtre
+administrateur réservée à ce SHA (quatre heures au maximum). Aucune clé de
+déploiement ni d'App ne passe dans la qualification.
+
+Le workflow n'accepte que les PR internes de l'équipe. Il sépare les contrôles
+rapides des quatre validations lourdes simultanées ; une suite manquante reste
+un échec du contrôle final. Les caches et uploads de binaires sont désactivés
+pendant cette qualification privée ; seuls le plan et les petits rapports
+expirant après un jour sont transférés. Un quota GitHub épuisé bloque le run.
+
+Une qualification PR n'est pas un push `main` qualifié et n'autorise aucune
+publication. Après collecte des résultats, supprimer `SILICIUM_PRIVATE_CI_WINDOW`
+et suspendre de nouveau Actions jusqu'à la prochaine fenêtre revue. Ne jamais
+réactiver les workflows des trois dépôts sources ou les runners VPS.
 
 ## GitHub et droits
 

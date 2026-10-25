@@ -61,6 +61,12 @@ prépare une transition du Project ; `--apply` la réalise après contrôle du W
 `dev release plan` prépare un candidat ; `dev deploy request` prépare ou lance
 un workflow GitHub. Les étapes de production et d'acceptation sont humaines.
 
+`dev ci authorize-private --head SHA --minutes 180` prépare une fenêtre de
+qualification privée du commit exact. `--apply` exige les droits administratifs,
+un budget Actions à zéro avec arrêt des dépassements, et suspend les anciens
+workflows avant d'autoriser cette seule qualification. Voir
+[la procédure](../operations/bootstrap.md#qualification-ponctuelle-tout-en-restant-privé).
+
 `dev ops diagnose --environment dev --json` prépare les observations CPU,
 disque, conteneurs et RPC. `--apply` demande le workflow protégé : voir
 [les diagnostics](../operations/diagnostics.md). Le [miroir Epitech](../operations/epitech-mirror.md)

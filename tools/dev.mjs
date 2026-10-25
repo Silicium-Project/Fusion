@@ -30,6 +30,11 @@ const commands = [
     usage: 'ci gate --plan .artifacts/plan.json --reports .artifacts/reports',
   },
   { command: 'ci inspect', effect: 'read', usage: 'ci inspect --run ID' },
+  {
+    command: 'ci authorize-private',
+    effect: 'bounded Actions authorization with --apply; no delivery',
+    usage: 'ci authorize-private [--head SHA] [--minutes 180] [--apply]',
+  },
   { command: 'check', effect: 'local validation', usage: 'check --changed --base origin/main' },
   {
     command: 'test',
@@ -130,6 +135,13 @@ async function main() {
       run: publicMetadata(api(`repos/${repository}/actions/runs/${o.run}`)),
       jobs: api(`repos/${repository}/actions/runs/${o.run}/jobs?per_page=100`),
     });
+  }
+  if (command === 'ci' && subcommand === 'authorize-private') {
+    const result = run(['node', 'tools/admin/qualify-private.mjs', ...process.argv.slice(4)], {
+      timeout: 120_000,
+    });
+    process.stdout.write(result.stdout);
+    return;
   }
   if (command === 'test') {
     if (!o.suite) throw new Failure('Provide --suite; see capabilities', 2);

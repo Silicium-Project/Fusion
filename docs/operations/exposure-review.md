@@ -4,8 +4,9 @@
 
 Le 25 octobre 2026, le propriétaire a demandé de **garder Fusion privé pour
 le moment**. Aucun changement de visibilité n'est autorisé par cette revue.
-Les travaux de préparation continuent ; Actions reste suspendu et les nouveaux
-workflows refusent l'exécution sur un dépôt privé. Une ouverture future exigera
+Les travaux de préparation continuent ; les livraisons restent suspendues.
+Une qualification PR privée peut utiliser une fenêtre bornée à un commit,
+après vérification API du budget Actions à zéro avec arrêt automatique. Une ouverture future exigera
 une nouvelle décision explicite sur le rapport actualisé, les historiques,
 commentaires et la provenance des visuels.
 

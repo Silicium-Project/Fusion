@@ -17,13 +17,16 @@ jobs:
   changes:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    if: ${{ always() && !github.event.repository.private && (github.event_name != 'push' || needs.budget.result == 'success') && (github.event_name
-      != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
-      github.event.pull_request.author_association))) }}
+    if: ${{ always() && (!github.event.repository.private || (github.event_name == 'pull_request' && vars.SILICIUM_PRIVATE_CI_WINDOW != '')) &&
+      (github.event_name != 'push' || needs.budget.result == 'success') && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name
+      == github.repository && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association))) }}
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       node: ${{ steps.versions.outputs.node }}
       go: ${{ steps.versions.outputs.go }}
+      quick_matrix: ${{ steps.plan.outputs.quick_matrix }}
+      integration_matrix: ${{ steps.plan.outputs.integration_matrix }}
+      integration_count: ${{ steps.plan.outputs.integration_count }}
     steps:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       with:
@@ -32,6 +35,20 @@ jobs:
     - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
       with:
         node-version: 22.23.4
+    - name: Verify bounded private qualification authorization
+      if: ${{ github.event.repository.private }}
+      env:
+        QUALIFICATION_WINDOW: ${{ vars.SILICIUM_PRIVATE_CI_WINDOW }}
+        EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+      run: 'node --input-type=module <<''JS''
+
+        import { validatePrivateWindow } from ''./tools/lib/billing.mjs'';
+
+        validatePrivateWindow(JSON.parse(process.env.QUALIFICATION_WINDOW), process.env.EXPECTED_HEAD);
+
+        JS
+
+        '
     - id: versions
       run: node --input-type=module -e 'import fs from "node:fs";let v=JSON.parse(fs.readFileSync("tools/config/toolchains.json"));fs.appendFileSync(process.env.GITHUB_OUTPUT,`node=${v.node}\ngo=${v.go}\n`)'
     - id: plan
@@ -44,7 +61,14 @@ jobs:
 
         import fs from ''node:fs'';
 
+        import { splitMatrix } from ''./tools/lib/planner.mjs'';
+
         let p=JSON.parse(fs.readFileSync(''.artifacts/plan.json''));
+
+        const phases=splitMatrix(p);
+
+        for(const [key,value] of Object.entries({quick_matrix:phases.quick,integration_matrix:phases.integration,integration_count:phases.integration_count}))
+        fs.appendFileSync(process.env.GITHUB_OUTPUT,`${key}=${JSON.stringify(value)}\n`);
 
         fs.writeFileSync(''.artifacts/plan.json'',JSON.stringify(p,null,2));
 
@@ -65,18 +89,18 @@ jobs:
     needs:
     - budget
   validate:
-    needs:
+    needs: &id001
     - changes
     strategy:
       fail-fast: false
       max-parallel: 4
-      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.changes.outputs.integration_matrix) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: ${{ matrix.timeout }}
     env:
       RUSTUP_TOOLCHAIN: ${{ matrix.suite == 'solana' && '1.89.0' || '1.98.0' }}
       CARGO_BUILD_JOBS: '4'
-    steps:
+    steps: &id002
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       with:
         fetch-depth: 0
@@ -92,15 +116,15 @@ jobs:
     - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
       if: ${{ contains(fromJSON('["network-integration","infrastructure"]'), matrix.suite) }}
       with:
-        python-version: '3.11.17'
+        python-version: 3.11.17
     - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
-      if: ${{ contains(fromJSON('["web","node-ui","solana","tooling"]'), matrix.suite) }}
+      if: ${{ !github.event.repository.private && contains(fromJSON('["web","node-ui","solana","tooling"]'), matrix.suite) }}
       with:
         path: ~/.npm
         key: npm-${{ runner.os }}-${{ github.event_name == 'push' && 'trusted' || 'pr' }}-${{ hashFiles('**/package-lock.json') }}
     - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
-      if: ${{ contains(fromJSON('["network","network-wasm","network-integration","node-native","node-windows","solana"]'), matrix.suite)
-        }}
+      if: ${{ !github.event.repository.private && contains(fromJSON('["network","network-wasm","network-integration","node-native","node-windows","solana"]'),
+        matrix.suite) }}
       with:
         workspaces: 'network
 
@@ -179,12 +203,14 @@ jobs:
         include-hidden-files: true
         if-no-files-found: error
         retention-days: 1
+    if: ${{ needs.changes.outputs.integration_count != '0' }}
   required:
     name: ci/required
-    if: ${{ always() && !github.event.repository.private }}
+    if: ${{ always() && (!github.event.repository.private || (github.event_name == 'pull_request' && vars.SILICIUM_PRIVATE_CI_WINDOW != '')) }}
     needs:
     - changes
     - validate
+    - quick
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -207,9 +233,13 @@ jobs:
       env:
         PLANNER_RESULT: ${{ needs.changes.result }}
         EXECUTION_RESULT: ${{ needs.validate.result }}
+        QUICK_RESULT: ${{ needs.quick.result }}
+        INTEGRATION_COUNT: ${{ needs.changes.outputs.integration_count }}
       run: 'test "$PLANNER_RESULT" = success
 
-        test "$EXECUTION_RESULT" = success
+        test "$QUICK_RESULT" = success
+
+        if [ "$INTEGRATION_COUNT" = 0 ]; then test "$EXECUTION_RESULT" = skipped; else test "$EXECUTION_RESULT" = success; fi
 
         node tools/dev.mjs ci gate --plan .artifacts/plan.json --reports .artifacts/reports --sha "$GITHUB_SHA"'
   budget:
@@ -240,3 +270,12 @@ jobs:
         SILICIUM_BUDGET_APP_PRIVATE_KEY: ${{ secrets.PROJECT_APP_PRIVATE_KEY }}
         SILICIUM_INCOMING_BYTES: '220200960'
       run: node tools/ci/storage-budget.mjs
+  quick:
+    needs: *id001
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.timeout }}
+    steps: *id002
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.changes.outputs.quick_matrix) }}

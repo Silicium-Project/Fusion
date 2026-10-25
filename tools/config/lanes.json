@@ -150,7 +150,8 @@
       ],
       "timeout_minutes": 10,
       "runner": "ubuntu-24.04",
-      "tier": "pr"
+      "tier": "pr",
+      "phase": "quick"
     },
     "docs": {
       "components": [
@@ -169,7 +170,8 @@
       ],
       "timeout_minutes": 10,
       "runner": "ubuntu-24.04",
-      "tier": "pr"
+      "tier": "pr",
+      "phase": "quick"
     },
     "api": {
       "components": [
@@ -225,7 +227,8 @@
       ],
       "timeout_minutes": 30,
       "runner": "ubuntu-24.04",
-      "tier": "pr"
+      "tier": "pr",
+      "phase": "quick"
     },
     "web": {
       "components": [
@@ -326,7 +329,8 @@
       ],
       "timeout_minutes": 30,
       "runner": "ubuntu-24.04",
-      "tier": "pr"
+      "tier": "pr",
+      "phase": "quick"
     },
     "node-native": {
       "components": [
@@ -568,7 +572,8 @@
           "cwd": ".",
           "kind": "check"
         }
-      ]
+      ],
+      "phase": "quick"
     },
     "network-wasm": {
       "components": [
@@ -614,7 +619,8 @@
       ],
       "timeout_minutes": 10,
       "runner": "windows-2022",
-      "tier": "pr"
+      "tier": "pr",
+      "phase": "quick"
     }
   }
 }

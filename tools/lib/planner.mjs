@@ -6,6 +6,18 @@ import { git, readJson, root } from './process.mjs';
 
 export const configPath = resolve(root, 'tools/config/lanes.json');
 export const registry = () => readJson(configPath);
+export function splitMatrix(plan, config = registry()) {
+  const quick = [],
+    integration = [];
+  for (const row of plan.matrix.include) {
+    (config.suites[row.suite]?.phase === 'quick' ? quick : integration).push(row);
+  }
+  return {
+    quick: { include: quick },
+    integration: { include: integration },
+    integration_count: integration.length,
+  };
+}
 export function parseChanges(raw) {
   const entries = raw.split('\0');
   const paths = [];

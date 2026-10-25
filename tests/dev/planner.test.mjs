@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseChanges, route, registry, combinePlans } from '../../tools/lib/planner.mjs';
+import {
+  parseChanges,
+  route,
+  registry,
+  combinePlans,
+  splitMatrix,
+} from '../../tools/lib/planner.mjs';
 
 test('rename and copy include old and new paths, with spaces preserved', () => {
   assert.deepEqual(
@@ -39,3 +45,13 @@ test('deleted and renamed shared contracts trigger all suites', () =>
     route(parseChanges('R100\0contracts/schema.json\0docs/archive/schema.json\0')).full,
     true,
   ));
+
+test('quick feedback uses separate lanes and docs needs no integration build', () => {
+  const config = registry(),
+    suites = route(['docs/ai/README.md']).suites;
+  const phases = splitMatrix({
+    matrix: { include: suites.map((suite) => ({ suite, runner: config.suites[suite].runner })) },
+  });
+  assert.equal(phases.integration_count, 0);
+  assert.equal(phases.quick.include.length, suites.length);
+});
