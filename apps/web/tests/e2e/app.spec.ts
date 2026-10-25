@@ -628,6 +628,20 @@ test('a document search lists the documents searched and scrolls past the first 
   const list = page.getByRole('list', { name: 'Passages trouvés' });
   await expect(list.getByRole('listitem')).toHaveCount(12);
   expect(asked).toBe(20);
+  // Results and their clamp buttons render in successive Vue updates. Wait
+  // for the same strict geometry oracle, with both sizes from one DOM state.
+  await expect
+    .poll(() =>
+      list.evaluate((element) => {
+        const fifth = element.querySelectorAll(':scope > li')[4]!;
+        return Math.abs(
+          fifth.getBoundingClientRect().bottom -
+            element.getBoundingClientRect().top -
+            element.clientHeight,
+        );
+      }),
+    )
+    .toBeLessThan(4);
   const box = await list.evaluate((element) => ({
     client: element.clientHeight,
     scroll: element.scrollHeight,

@@ -274,7 +274,11 @@ const sourceKey = (document: CollectionDocument) => `source-${document.jobId}-${
  * Finds the passages cut by the clamp, then sets the height of the list to
  * that of the first VISIBLE_HITS passages, so that exactly five show.
  */
+let measurementVersion = 0;
 async function measureList() {
+  const version = ++measurementVersion;
+  await nextTick();
+  if (version !== measurementVersion) return;
   const list = hitList.value;
   if (!list) {
     listHeight.value = 0;
@@ -297,8 +301,11 @@ async function measureList() {
     [...next].some((key) => !overflowing.value.has(key))
   ) {
     overflowing.value = next;
-    await nextTick(); // The "Read all" buttons change the height of the passages.
   }
+  // Another measurement may already have changed the Set while its buttons
+  // are still waiting for Vue's DOM flush. Always await that flush.
+  await nextTick();
+  if (version !== measurementVersion || hitList.value !== list) return;
   if (hits.value.length <= VISIBLE_HITS) {
     listHeight.value = 0;
     return;
