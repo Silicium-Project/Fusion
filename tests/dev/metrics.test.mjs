@@ -30,6 +30,7 @@ test('cancellations, failures, quick feedback and queue time are measured indepe
   };
   const job = {
     name: 'quick (docs, ubuntu-24.04, 10)',
+    created_at: '2026-10-25T00:00:03Z',
     status: 'completed',
     conclusion: 'success',
     started_at: '2026-10-25T00:00:05Z',
@@ -44,7 +45,7 @@ test('cancellations, failures, quick feedback and queue time are measured indepe
   assert.equal(result.cancellations, 1);
   assert.equal(result.failure_ratio, 1);
   assert.equal(result.quick_feedback.median_seconds, 60);
-  assert.equal(result.job_queue_and_matrix_wait.median_seconds, 5);
+  assert.equal(result.job_queue_and_matrix_wait.median_seconds, 7);
   assert.equal(result.job_execution.median_seconds, 50);
 });
 test('completed jobs without timestamps do not invent quick feedback', () => {
@@ -61,4 +62,25 @@ test('completed jobs without timestamps do not invent quick feedback', () => {
     completed_at: null,
   };
   assert.equal(summarizeRuns([{ run, jobs: [job] }]).quick_feedback.samples, 0);
+});
+test('queue metrics require job creation timestamps rather than treating runner setup as all waiting', () => {
+  const run = {
+    status: 'completed',
+    conclusion: 'success',
+    created_at: '2026-10-25T00:00:00Z',
+    updated_at: '2026-10-25T00:03:00Z',
+  };
+  const job = {
+    conclusion: 'success',
+    name: 'validation',
+    started_at: '2026-10-25T00:02:00Z',
+    completed_at: '2026-10-25T00:03:00Z',
+    steps: [{ started_at: '2026-10-25T00:02:01Z' }],
+  };
+  assert.equal(summarizeRuns([{ run, jobs: [job] }]).job_queue_and_matrix_wait.samples, 0);
+  assert.equal(
+    summarizeRuns([{ run, jobs: [{ ...job, created_at: run.created_at }] }])
+      .job_queue_and_matrix_wait.median_seconds,
+    121,
+  );
 });

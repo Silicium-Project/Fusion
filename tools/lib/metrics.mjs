@@ -77,7 +77,7 @@ export function summarizeRuns(rows) {
     }
     for (const job of jobs.filter((job) => job.conclusion !== 'skipped')) {
       const first = job.steps?.[0]?.started_at;
-      const wait = seconds(job.started_at, first),
+      const wait = seconds(job.created_at, first),
         work = seconds(first, job.completed_at);
       if (wait !== null) queue.push(wait);
       if (work !== null) execution.push(work);
@@ -98,7 +98,7 @@ export function summarizeRuns(rows) {
     definitions: {
       quick_feedback: 'run creation to last completed quick lane',
       job_queue_and_matrix_wait:
-        'job started_at to first executed step; includes matrix throttling',
+        'job created_at to first executed step; includes queue, matrix throttling and runner provisioning',
       p95: 'nearest rank; always report sample count',
     },
     runs: rows.map(({ run }) => ({

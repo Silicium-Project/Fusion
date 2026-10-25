@@ -151,7 +151,7 @@ jobs:
       if: ${{ !github.event.repository.private && contains(fromJSON('["web","node-ui","solana","tooling"]'), matrix.suite) }}
       with:
         path: ~/.npm
-        key: npm-${{ runner.os }}-${{ github.event_name == 'push' && 'trusted' || 'pr' }}-${{ hashFiles('**/package-lock.json') }}
+        key: npm-${{ runner.os }}-${{ runner.arch }}-${{ github.event_name == 'push' && 'trusted' || 'pr' }}-${{ hashFiles('tools/config/toolchains.json', '**/package-lock.json') }}
       id: npm-cache
     - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
       if: ${{ !github.event.repository.private && contains(fromJSON('["network","network-wasm","network-integration","node-native","node-windows","solana"]'),

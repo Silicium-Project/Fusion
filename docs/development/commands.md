@@ -69,6 +69,11 @@ relance aucun job. Les échantillons manquants et les caches désactivés resten
 distincts des valeurs nulles ou des échecs de cache ; le volume d'artefacts
 affiché porte sur Fusion, avec une indication de pagination incomplète.
 
+L'attente part de `job.created_at` jusqu'à la première étape exécutée : elle
+inclut la file, la limitation de matrice et le provisionnement. `started_at`
+seul arrive trop tard pour mesurer cette attente. Une date de création absente
+est une observation indisponible.
+
 `dev ci authorize-private --head SHA --minutes 180` prépare une fenêtre de
 qualification privée du commit exact. `--apply` exige les droits administratifs,
 un budget Actions à zéro avec arrêt des dépassements, et suspend les anciens
