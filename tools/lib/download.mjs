@@ -15,7 +15,7 @@ import { run, root, readJson, Failure } from './process.mjs';
 export function verifyCachedTool(path, expected) {
   if (createHash('sha256').update(readFileSync(path)).digest('hex') !== expected) {
     throw new Failure(
-      'Tool cache checksum mismatch; remove only the affected .artifacts/tools entry and retry',
+      'Tool cache checksum mismatch; remove only the affected tool cache entry and retry',
       3,
     );
   }

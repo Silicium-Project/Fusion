@@ -108,6 +108,13 @@ try {
   if (digest() !== before) throw new Failure('Program changed between build and qualification');
   if (result.status) throw new Failure('Anchor localnet qualification failed');
   console.log(`Qualified SBF sha256: ${before}`);
+} catch (error) {
+  const path = resolve(home, 'validator.log');
+  if (existsSync(path))
+    process.stderr.write(
+      `Disposable validator diagnostic (bounded):\n${readFileSync(path, 'utf8').slice(-16_384).replaceAll(home, '<localnet>')}\n`,
+    );
+  throw error;
 } finally {
   if (validator && validator.exitCode === null) {
     validator.kill('SIGTERM');

@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { existsSync, mkdirSync, appendFileSync } from 'node:fs';
 import { run, root, readJson, Failure, writeJson, git } from '../lib/process.mjs';
 import { installSolana } from './solana-tools.mjs';
+import { installAnchor } from './anchor-tools.mjs';
 const suite = process.argv[2];
 if (process.env.GITHUB_ACTIONS !== 'true')
   throw new Failure('Runner bootstrap is CI-only; use dev doctor locally', 2);
@@ -68,25 +69,8 @@ try {
     mkdirSync(home, { recursive: true });
     const bin = await installSolana(home, tools.solana);
     const anchorRoot = resolve(process.env.RUNNER_TOOL_CACHE, 'silicium-anchor', tools.anchor);
-    const env = { RUSTUP_TOOLCHAIN: tools.rust_solana };
-    const pins = readJson(resolve(root, 'tools/config/upstreams.json'));
-    if (!existsSync(resolve(anchorRoot, 'bin/anchor')))
-      output(
-        [
-          'cargo',
-          'install',
-          '--locked',
-          '--git',
-          'https://github.com/coral-xyz/anchor',
-          '--rev',
-          pins.anchor,
-          'anchor-cli',
-          '--root',
-          anchorRoot,
-        ],
-        { env },
-      );
-    appendFileSync(process.env.GITHUB_PATH, `${bin}\n${resolve(anchorRoot, 'bin')}\n`);
+    const anchorBin = await installAnchor(anchorRoot, tools.anchor);
+    appendFileSync(process.env.GITHUB_PATH, `${bin}\n${anchorBin}\n`);
   }
   console.log(`Runner prepared for ${suite}`);
 } catch (error) {
