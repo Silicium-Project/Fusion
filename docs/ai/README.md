@@ -25,6 +25,10 @@ rapport et environnement. Corriger l'erreur d'infrastructure ou l'oracle
 fonctionnel identifié. Une relance d'erreur fonctionnelle ne remplace pas une
 correction. Une nouvelle révision invalide les anciens résultats applicables.
 
+`dev ci metrics --limit 20 --json` donne les distributions et le nombre
+d'observations. Vérifier le SHA des runs avant de comparer ; ne pas présenter
+une absence de rapport ou un cache désactivé comme un gain de performance.
+
 Pour un service : préparer `dev ops diagnose --environment dev --json`, puis
 utiliser `--apply` si l'automatisation est configurée et autorisée. Lire
 [les observations et leurs limites](../operations/diagnostics.md). Une absence

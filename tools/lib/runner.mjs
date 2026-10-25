@@ -3,7 +3,7 @@ import { performance } from 'node:perf_hooks';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { registry, makePlan } from './planner.mjs';
-import { run, git, inside, root, Failure, writeJson } from './process.mjs';
+import { run, git, inside, root, Failure, readJson, writeJson } from './process.mjs';
 
 export function countTests(text, format) {
   if (format === 'node') return Number([...text.matchAll(/# tests (\d+)/g)].at(-1)?.[1] ?? 0);
@@ -53,6 +53,30 @@ export function executeSuite(id, { plan, output } = {}) {
     started_at: new Date().toISOString(),
     status: 'running',
     steps: [],
+  };
+  const cacheSources = {
+    npm: ['tooling', 'web', 'node-ui', 'solana'].includes(id),
+    rust: [
+      'network',
+      'network-wasm',
+      'network-integration',
+      'node-native',
+      'node-windows',
+      'solana',
+    ].includes(id),
+    go: id === 'api',
+  };
+  const cacheEnabled = process.env.SILICIUM_CACHE_ENABLED;
+  report.cache_observations = {
+    enabled: cacheEnabled === 'true' ? true : cacheEnabled === 'false' ? false : null,
+    sources: Object.fromEntries(
+      Object.entries(cacheSources).map(([name, applicable]) => [
+        name,
+        cacheEnabled === 'true' && applicable
+          ? process.env[`SILICIUM_CACHE_${name.toUpperCase()}`] === 'true'
+          : null,
+      ]),
+    ),
   };
   const start = performance.now();
   for (const step of suite.steps) {

@@ -142,6 +142,7 @@ jobs:
         go-version: ${{ needs.changes.outputs.go }}
         cache-dependency-path: apps/api/go.sum
         cache: ${{ !github.event.repository.private }}
+      id: go-toolchain
     - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
       if: ${{ contains(fromJSON('["network-integration","infrastructure"]'), matrix.suite) }}
       with:
@@ -151,6 +152,7 @@ jobs:
       with:
         path: ~/.npm
         key: npm-${{ runner.os }}-${{ github.event_name == 'push' && 'trusted' || 'pr' }}-${{ hashFiles('**/package-lock.json') }}
+      id: npm-cache
     - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
       if: ${{ !github.event.repository.private && contains(fromJSON('["network","network-wasm","network-integration","node-native","node-windows","solana"]'),
         matrix.suite) }}
@@ -163,6 +165,7 @@ jobs:
         shared-key: ${{ matrix.suite }}-${{ github.event_name == 'push' && 'trusted' || 'pr' }}
         cache-on-failure: 'false'
         cache-targets: ${{ matrix.suite != 'solana' }}
+      id: rust-cache
     - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
       with:
         name: qualification-plan
@@ -173,6 +176,11 @@ jobs:
     - name: Execute shared suite
       shell: bash
       run: node tools/dev.mjs test --suite "${{ matrix.suite }}" --plan .artifacts/plan.json
+      env:
+        SILICIUM_CACHE_ENABLED: ${{ !github.event.repository.private }}
+        SILICIUM_CACHE_NPM: ${{ steps.npm-cache.outputs.cache-hit }}
+        SILICIUM_CACHE_RUST: ${{ steps.rust-cache.outputs.cache-hit }}
+        SILICIUM_CACHE_GO: ${{ steps.go-toolchain.outputs.cache-hit }}
     - name: Check artifact size reservation
       if: ${{ always() }}
       shell: bash

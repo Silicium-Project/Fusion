@@ -11,6 +11,7 @@ import { api, repository, publicMetadata } from './lib/github.mjs';
 import { startIssue, acceptIssue } from './lib/project.mjs';
 import { releasePlan, requestDeploy } from './lib/release.mjs';
 import { diagnosticRequest } from './lib/operations.mjs';
+import { inspectMetrics } from './lib/metrics.mjs';
 
 const commands = [
   {
@@ -30,6 +31,7 @@ const commands = [
     usage: 'ci gate --plan .artifacts/plan.json --reports .artifacts/reports',
   },
   { command: 'ci inspect', effect: 'read', usage: 'ci inspect --run ID' },
+  { command: 'ci metrics', effect: 'read', usage: 'ci metrics [--limit 20] --json' },
   {
     command: 'ci authorize-private',
     effect: 'bounded Actions authorization with --apply; no delivery',
@@ -136,6 +138,8 @@ async function main() {
       jobs: api(`repos/${repository}/actions/runs/${o.run}/jobs?per_page=100`),
     });
   }
+  if (command === 'ci' && subcommand === 'metrics')
+    return output(inspectMetrics(Number(o.limit ?? 20)));
   if (command === 'ci' && subcommand === 'authorize-private') {
     const result = run(['node', 'tools/admin/qualify-private.mjs', ...process.argv.slice(4)], {
       timeout: 120_000,

@@ -65,6 +65,11 @@ infrastructure. Ne pas remplacer ce lock par `pytest>=...` dans le pipeline.
 
 ## Preuves et limites
 
+L'outillage JavaScript contrôle aussi les identifiants non déclarés avec
+ESLint. Un test exécute réellement `dev test --suite docs` dans un sous-processus
+et vérifie son rapport complet ; les seuls tests de fonctions internes ne
+suffisent pas à qualifier le lanceur commun.
+
 Un test obligatoire absent, ignoré ou nul échoue. Le contrôle final compare
 SHA, politique et rapports ; les releases embarquent leurs entrées dans
 `qualification.json`. Toujours indiquer les commandes et plateformes réellement

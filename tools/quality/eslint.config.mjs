@@ -6,6 +6,38 @@ import vueParser from 'vue-eslint-parser';
 export default [
   { ignores: ['**/node_modules/**', '**/dist/**', '**/.nuxt/**', '**/.output/**', '**/target/**'] },
   {
+    files: ['tools/**/*.mjs', 'tests/dev/**/*.mjs'],
+    languageOptions: {
+      globals: Object.fromEntries(
+        [
+          'process',
+          'console',
+          'Buffer',
+          'URL',
+          'URLSearchParams',
+          'fetch',
+          'setTimeout',
+          'clearTimeout',
+          'setInterval',
+          'clearInterval',
+          'TextEncoder',
+          'TextDecoder',
+          'AbortController',
+          'AbortSignal',
+          'Request',
+          'Response',
+          'Headers',
+          'performance',
+          'crypto',
+          'structuredClone',
+          'atob',
+          'btoa',
+        ].map((name) => [name, 'readonly']),
+      ),
+    },
+    rules: { 'no-undef': 'error' },
+  },
+  {
     files: ['**/*.ts', '**/*.mts', '**/*.mjs'],
     languageOptions: { parser: ts.parser, ecmaVersion: 2023, sourceType: 'module' },
     rules: {

@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { resolve } from 'node:path';
 import { countTests } from '../../tools/lib/runner.mjs';
-import { parseArgs, inside } from '../../tools/lib/process.mjs';
+import { parseArgs, inside, run, git } from '../../tools/lib/process.mjs';
 for (const [format, output, count] of [
   ['node', '# tests 4', 4],
   ['vitest', 'Tests  12 passed (12)', 12],
@@ -22,3 +25,25 @@ test('arguments remain data and duplicate options fail', () => {
   assert.throws(() => parseArgs(['--base', 'a', '--base', 'b']));
 });
 test('file boundaries reject escaping paths', () => assert.throws(() => inside('../wallet')));
+test('the actual dev entry point executes a suite and writes complete evidence', () => {
+  const folder = mkdtempSync(resolve(tmpdir(), 'silicium-runner-smoke-'));
+  try {
+    const output = resolve(folder, 'docs.json');
+    const result = run(
+      [process.execPath, 'tools/dev.mjs', 'test', '--suite', 'docs', '--output', output],
+      { allowFailure: true },
+    );
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const report = JSON.parse(readFileSync(output, 'utf8'));
+    assert.equal(report.schema_version, 1);
+    assert.equal(report.suite, 'docs');
+    assert.equal(report.source_sha, git('rev-parse', 'HEAD'));
+    assert.equal(report.status, 'success');
+    assert.equal(report.steps.length, 1);
+    assert.equal(report.steps[0].exit_code, 0);
+    assert.ok(report.toolchain_policy.node);
+    assert.equal(typeof report.dirty_after, 'boolean');
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+});

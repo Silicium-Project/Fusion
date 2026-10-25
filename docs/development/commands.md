@@ -61,6 +61,14 @@ prépare une transition du Project ; `--apply` la réalise après contrôle du W
 `dev release plan` prépare un candidat ; `dev deploy request` prépare ou lance
 un workflow GitHub. Les étapes de production et d'acceptation sont humaines.
 
+`dev ci metrics --limit 20 --json` mesure les durées médianes et p95, le retour
+des contrôles rapides, l'attente des jobs, les échecs et les observations de
+cache disponibles. La commande lit les métadonnées GitHub et télécharge les
+petits rapports dans un répertoire temporaire supprimé après lecture. Elle ne
+relance aucun job. Les échantillons manquants et les caches désactivés restent
+distincts des valeurs nulles ou des échecs de cache ; le volume d'artefacts
+affiché porte sur Fusion, avec une indication de pagination incomplète.
+
 `dev ci authorize-private --head SHA --minutes 180` prépare une fenêtre de
 qualification privée du commit exact. `--apply` exige les droits administratifs,
 un budget Actions à zéro avec arrêt des dépassements, et suspend les anciens
