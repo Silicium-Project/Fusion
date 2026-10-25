@@ -12,8 +12,40 @@ import { releasePlan, requestDeploy } from './lib/release.mjs';
 import { diagnosticRequest } from './lib/operations.mjs';
 import { inspectMetrics } from './lib/metrics.mjs';
 import { inspectRun } from './lib/ci-inspect.mjs';
+import {
+  workspaceStatus,
+  initializeWorkspace,
+  pinComponent,
+  requireSources,
+  guardPrivateSources,
+  trackedSources,
+  workspaceConfig,
+} from './lib/workspace.mjs';
+import { prepareComponent } from './lib/component.mjs';
 
 const commands = [
+  { command: 'workspace status', effect: 'read', usage: 'workspace status --json' },
+  {
+    command: 'workspace verify',
+    effect: 'read',
+    usage: 'workspace verify [--materialized] --json',
+  },
+  {
+    command: 'workspace init',
+    effect: 'private source checkout with --apply',
+    usage: 'workspace init [--component ID] [--apply]',
+  },
+  {
+    command: 'workspace pin',
+    effect: 'component checkout and staged pin with --apply',
+    usage: 'workspace pin --component ID --revision SHA [--apply]',
+  },
+  {
+    command: 'component',
+    effect: 'component qualification in a separate local composition',
+    usage:
+      'component --component ID --source PATH doctor|prepare|test|check|build [--suite ID] [--destination PATH] [--apply]',
+  },
   {
     command: 'doctor',
     effect: 'read',
@@ -30,7 +62,11 @@ const commands = [
     effect: 'read',
     usage: 'ci gate --plan .artifacts/plan.json --reports .artifacts/reports',
   },
-  { command: 'ci inspect', effect: 'read', usage: 'ci inspect --run ID' },
+  {
+    command: 'ci inspect',
+    effect: 'read',
+    usage: 'ci inspect --run ID [--repository Silicium-Project/Integration]',
+  },
   { command: 'ci metrics', effect: 'read', usage: 'ci metrics [--limit 20] --json' },
   {
     command: 'ci authorize-private',
@@ -96,14 +132,81 @@ async function main() {
             : 'available',
       })),
       features: {
+        workspace: 'available',
+        private_integration: 'configuration_required',
         validation: 'available',
-        signed_delivery: 'experimental',
+        signed_delivery: 'configuration_required',
         project_automation: 'configuration_required',
         worker_rolling_update: 'planned',
       },
       suites: Object.keys(registry().suites),
       documentation: 'docs/ai/README.md',
     });
+  if (command === 'workspace') {
+    let result;
+    if (subcommand === 'files') return output(trackedSources());
+    if (subcommand === 'status' || subcommand === 'verify')
+      result = workspaceStatus({ materialized: Boolean(o.materialized) });
+    else if (subcommand === 'init')
+      result = initializeWorkspace({ component: o.component, apply: Boolean(o.apply) });
+    else if (subcommand === 'pin')
+      result = pinComponent({
+        component: o.component,
+        revision: o.revision,
+        apply: Boolean(o.apply),
+      });
+    else throw new Failure('Unknown workspace operation', 2);
+    output(result);
+    process.exitCode = result.status === 'blocked' ? 2 : 0;
+    return;
+  }
+  if (command === 'component') {
+    if (subcommand === 'doctor') {
+      const result = doctor({ profile: o.component });
+      output(result);
+      process.exitCode = result.status === 'success' ? 0 : 2;
+      return;
+    }
+    if (!['prepare', 'test', 'check', 'build'].includes(subcommand))
+      throw new Failure('Unknown component operation', 2);
+    const prepared = prepareComponent({
+      component: o.component,
+      source: o.source,
+      destination: o.destination,
+      expectedRevision: o.revision,
+      apply: subcommand !== 'prepare' || Boolean(o.apply),
+    });
+    if (subcommand === 'prepare') return output(prepared);
+    const cli = resolve(prepared.destination, 'tools/dev.mjs');
+    if (subcommand === 'build') {
+      const result = run(['node', cli, 'build', '--component', o.component], {
+        cwd: prepared.destination,
+        timeout: 3_600_000,
+      });
+      process.stdout.write(result.stdout);
+      return;
+    }
+    const config = workspaceConfig();
+    const allowed = [...config.public_suites, ...config.components[o.component].suites];
+    if (subcommand === 'test' && !allowed.includes(o.suite))
+      throw new Failure(
+        'Suite does not belong to this component; use private integration for consumers',
+        2,
+      );
+    const plan = resolve(prepared.destination, '.artifacts/plan.json');
+    run(['node', cli, 'ci', 'plan', '--scope', `component:${o.component}`, '--output', plan], {
+      cwd: prepared.destination,
+    });
+    const suites = subcommand === 'test' ? [o.suite] : allowed;
+    for (const suite of suites) {
+      const result = run(['node', cli, 'test', '--suite', suite, '--plan', plan], {
+        cwd: prepared.destination,
+        timeout: 3_600_000,
+      });
+      process.stdout.write(result.stdout);
+    }
+    return output({ ...prepared, status: 'success', suites });
+  }
   if (command === 'doctor') {
     const result = doctor(o);
     output(result);
@@ -131,7 +234,7 @@ async function main() {
     return;
   }
   if (command === 'ci' && subcommand === 'inspect') {
-    return output(inspectRun(o.run));
+    return output(inspectRun(o.run, { repo: o.repository }));
   }
   if (command === 'ci' && subcommand === 'metrics')
     return output(inspectMetrics(Number(o.limit ?? 20)));
@@ -166,6 +269,11 @@ async function main() {
     return output({ status: 'success', suites: plan.suites });
   }
   if (command === 'build') {
+    const component = o.component === 'sdk' ? 'solana' : o.component;
+    if (workspaceConfig().components[component]) {
+      guardPrivateSources([component]);
+      requireSources([component]);
+    }
     const builds = {
       web: { cwd: 'apps/web', command: ['npm', 'run', 'build'] },
       api: {

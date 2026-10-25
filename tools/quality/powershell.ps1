@@ -12,7 +12,9 @@ try {
     if ($manifest.Count -ne 1) { throw 'Expected exactly one pinned analysis module' }
     Import-Module $manifest[0].FullName -Force
     $rules = @('PSAvoidUsingInvokeExpression', 'PSAvoidUsingEmptyCatchBlock', 'PSAvoidUsingPlainTextForPassword', 'PSAvoidDefaultValueForMandatoryParameter', 'PSMisleadingBacktick', 'PSUseCorrectCasing')
-    $paths = @(& git -C $root ls-files '*.ps1' | Where-Object { $_ -notlike 'docs/archive/*' })
+    $inventory = & node (Join-Path $root 'tools/dev.mjs') workspace files --json
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot inventory workspace sources' }
+    $paths = @(($inventory | ConvertFrom-Json) | Where-Object { $_ -like '*.ps1' -and $_ -notlike 'docs/archive/*' })
     if ($LASTEXITCODE -ne 0 -or $paths.Count -eq 0) { throw 'Cannot inventory PowerShell sources' }
     $failures = @()
     foreach ($relative in $paths) {

@@ -16,7 +16,7 @@ export function diagnosticRequest(environment, apply = false) {
     requireWriter();
     if (api(`repos/${repository}`).private)
       throw new Failure(
-        'Actions remain suspended while Fusion is private; no VPS or paid runner fallback',
+        'Actions remain suspended for a private integration checkout; no VPS or paid runner fallback',
         4,
       );
     api(`repos/${repository}/actions/workflows/diagnostics.yml/dispatches`, {

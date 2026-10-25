@@ -3,12 +3,12 @@
 ## Références et provenance
 
 Ce workflow reprend les propositions Fusion #242, Network #354, BackEnd #38 et
-FrontEnd #27. Leurs formulaires communs sont regroupés à la racine du monorepo.
+FrontEnd #27. Leurs formulaires communs sont regroupés à la racine de Workbench.
 Les changements utiles sont reportés ; les PR d'origine restent ouvertes tant
 que l'intégration n'a pas été acceptée.
 
 Le Project 12 et le dépôt `planning-private` restent privés. Les issues actives
-de Fusion et ses milestones forment la roadmap publiable. Une décision HOLD
+de Workbench et ses milestones forment la roadmap publiable. Une décision HOLD
 n'est ni un abandon, ni un élément à exposer dans un rapport public.
 
 ## Préparer une tranche
@@ -27,7 +27,7 @@ gouvernance, QRE ou CI avant leurs propres preuves d'acceptation.
 
 ## Relier les PR
 
-Utiliser `Refs: https://github.com/Silicium-Project/Fusion/issues/NUMERO` dans
+Utiliser `Refs: https://github.com/Silicium-Project/Workbench/issues/NUMERO` dans
 chaque PR. Plusieurs PR peuvent contribuer à une même issue. Les mots-clés de
 clôture automatique ne font pas partie de ce workflow.
 
@@ -57,7 +57,7 @@ preuves actuelles ; les événements répétés ne créent pas de doublon.
 ## Accepter
 
 ```sh
-./dev issue accept ISSUE_URL --evidence https://github.com/Silicium-Project/Fusion/actions/runs/ID --human-approved
+./dev issue accept ISSUE_URL --evidence https://github.com/Silicium-Project/Workbench/actions/runs/ID --human-approved
 ```
 
 Le premier appel décrit l'opération. `--apply` enregistre la preuve, applique

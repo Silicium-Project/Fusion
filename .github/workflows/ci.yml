@@ -10,7 +10,7 @@ name: CI
 permissions:
   contents: read
 concurrency:
-  group: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'silicium-main-delivery' || format('ci-{0}', github.event.pull_request.number
+  group: ${{ contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' && 'silicium-main-delivery' || format('ci-{0}', github.event.pull_request.number
     || github.ref) }}
   cancel-in-progress: ${{ github.event_name != 'push' }}
 jobs:
@@ -80,7 +80,7 @@ jobs:
         BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
         SILICIUM_PR_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         SILICIUM_POLICY_MIGRATION_SHA: ${{ vars.SILICIUM_POLICY_MIGRATION_SHA }}
-      run: 'node tools/dev.mjs ci plan --base "${BASE_SHA:-origin/main}" --head HEAD --output .artifacts/plan.json
+      run: 'node tools/dev.mjs ci plan --scope public --base "${BASE_SHA:-origin/main}" --head HEAD --output .artifacts/plan.json
 
         node --input-type=module <<''JS''
 
@@ -194,11 +194,11 @@ jobs:
         if-no-files-found: error
         retention-days: 1
     - name: Check artifact size reservation
-      if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.suite == 'web' }}
+      if: ${{ success() && contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' && matrix.suite == 'web' }}
       shell: bash
       run: node tools/ci/artifact-size.mjs "apps/web/.output" 41943040
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-      if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.suite == 'web' }}
+      if: ${{ success() && contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' && matrix.suite == 'web' }}
       with:
         name: web-output
         path: apps/web/.output
@@ -206,22 +206,22 @@ jobs:
         if-no-files-found: error
         retention-days: 1
     - name: Check artifact size reservation
-      if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.suite == 'node-ui' }}
+      if: ${{ success() && contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' && matrix.suite == 'node-ui' }}
       shell: bash
       run: node tools/ci/artifact-size.mjs "apps/node/dist" 2097152
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-      if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.suite == 'node-ui' }}
+      if: ${{ success() && contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' && matrix.suite == 'node-ui' }}
       with:
         name: node-ui-output
         path: apps/node/dist
         if-no-files-found: error
         retention-days: 1
     - name: Check artifact size reservation
-      if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.suite == 'api' }}
+      if: ${{ success() && contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' && matrix.suite == 'api' }}
       shell: bash
       run: node tools/ci/artifact-size.mjs ".artifacts/build/api" 50331648
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-      if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.suite == 'api' }}
+      if: ${{ success() && contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' && matrix.suite == 'api' }}
       with:
         name: api-binary
         path: .artifacts/build/api
@@ -229,11 +229,11 @@ jobs:
         if-no-files-found: error
         retention-days: 1
     - name: Check artifact size reservation
-      if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.suite == 'network-integration' }}
+      if: ${{ success() && contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' && matrix.suite == 'network-integration' }}
       shell: bash
       run: node tools/ci/artifact-size.mjs ".artifacts/build/network" 117440512
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-      if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.suite == 'network-integration' }}
+      if: ${{ success() && contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' && matrix.suite == 'network-integration' }}
       with:
         name: network-binaries
         path: .artifacts/build/network
@@ -298,20 +298,20 @@ jobs:
     if: ${{ !github.event.repository.private || (github.event_name == 'pull_request' && vars.SILICIUM_PRIVATE_CI_WINDOW != '') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    environment: ${{ github.event_name == 'push' && 'project-automation' || 'qualification-readonly' }}
+    environment: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && 'project-automation' || 'qualification-readonly' }}
     steps:
     - name: PR qualification has no binary upload reservation
-      if: ${{ github.event_name != 'push' }}
+      if: ${{ github.event_name == 'pull_request' }}
       run: echo 'Only qualification plan and bounded reports are transferred; no delivery or binary upload.'
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       with:
         ref: main
         persist-credentials: false
-      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      if: ${{ contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' }}
     - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
       with:
         node-version: 22.23.4
-      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      if: ${{ contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' }}
     - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
       id: budget-token
       with:
@@ -319,7 +319,7 @@ jobs:
         private-key: ${{ secrets.PROJECT_APP_PRIVATE_KEY }}
         owner: Silicium-Project
         permission-actions: read
-      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      if: ${{ contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' }}
     - name: Check organization artifact headroom
       env:
         GH_TOKEN: ${{ steps.budget-token.outputs.token }}
@@ -328,7 +328,7 @@ jobs:
         SILICIUM_BUDGET_APP_PRIVATE_KEY: ${{ secrets.PROJECT_APP_PRIVATE_KEY }}
         SILICIUM_INCOMING_BYTES: '220200960'
       run: node tools/ci/storage-budget.mjs
-      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      if: ${{ contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' }}
   quick:
     needs: *id001
     runs-on: ${{ matrix.runner }}

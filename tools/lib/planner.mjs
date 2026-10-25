@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { git, readJson, root } from './process.mjs';
 import { stepIdentity } from './gate.mjs';
+import { sourceIdentity } from './workspace.mjs';
 
 export const configPath = resolve(root, 'tools/config/lanes.json');
 export const registry = () => readJson(configPath);
@@ -104,7 +105,28 @@ export function route(paths, config = registry()) {
     .sort();
   return { full, paths, reasons, components: [...affected].sort(), suites };
 }
-export function makePlan({ base = 'origin/main', head = 'HEAD', paths, config = registry() } = {}) {
+export function scopeSelection(selected, scope, config, workspace) {
+  if (scope === 'local') return { ...selected, scope };
+  // An old base policy keeps its full obligations until the exact migration is reviewed.
+  if (scope === 'public' && config.workspace_mode !== 'multi-repo')
+    return { ...selected, scope: 'legacy' };
+  let suites;
+  if (scope === 'public') suites = workspace.public_suites;
+  else if (scope === 'integration')
+    suites = Object.keys(config.suites).filter((id) => config.suites[id].tier === 'pr');
+  else if (scope.startsWith('component:') && workspace.components[scope.slice(10)])
+    suites = [...workspace.public_suites, ...workspace.components[scope.slice(10)].suites];
+  else throw new Error(`Unknown qualification scope: ${scope}`);
+  if (suites.some((id) => !config.suites[id])) throw new Error('Unregistered workspace suite');
+  return { ...selected, scope, suites: [...new Set(suites)].sort() };
+}
+export function makePlan({
+  base = 'origin/main',
+  head = 'HEAD',
+  paths,
+  config = registry(),
+  scope = 'local',
+} = {}) {
   const source = git('rev-parse', '--verify', `${head}^{commit}`);
   let baseSha = '',
     changed = paths;
@@ -119,7 +141,8 @@ export function makePlan({ base = 'origin/main', head = 'HEAD', paths, config = 
       changed = ['__unknown_base__'];
     }
   }
-  const selected = route(changed, config);
+  const workspace = readJson(resolve(root, 'tools/config/workspace.json'));
+  const selected = scopeSelection(route(changed, config), scope, config, workspace);
   const policy = createHash('sha256').update(JSON.stringify(config)).digest('hex');
   const dirty = Boolean(git('status', '--porcelain', '--untracked-files=normal'));
   return {
@@ -128,8 +151,19 @@ export function makePlan({ base = 'origin/main', head = 'HEAD', paths, config = 
     head_sha: process.env.SILICIUM_PR_HEAD || source,
     base_sha: baseSha,
     policy_digest: policy,
+    source_components: sourceIdentity(),
     dirty,
     ...selected,
+    deferred_suites:
+      scope === 'public' || scope.startsWith('component:')
+        ? Object.keys(config.suites)
+            .filter((id) => config.suites[id].tier === 'pr' && !selected.suites.includes(id))
+            .map((suite) => ({
+              suite,
+              repository: workspace.integration_repository,
+              reason: 'private integration qualification required before delivery',
+            }))
+        : [],
     requirements: Object.fromEntries(
       selected.suites.map((id) => [
         id,
@@ -146,9 +180,11 @@ export function makePlan({ base = 'origin/main', head = 'HEAD', paths, config = 
       .map(([suite, value]) => ({
         suite,
         reason:
-          value.tier === 'pr'
-            ? 'component and consumers unchanged'
-            : 'requires a signed release candidate; not a source PR obligation',
+          scope !== 'local' && value.tier === 'pr'
+            ? 'outside this qualification scope; see deferred_suites'
+            : value.tier === 'pr'
+              ? 'component and consumers unchanged'
+              : 'requires a signed release candidate; not a source PR obligation',
       })),
     matrix: {
       include: selected.suites.map((suite) => ({
@@ -169,7 +205,16 @@ export function policyFromBase(base) {
 }
 export function combinePlans(plan, previous) {
   if (!previous) return plan;
-  const suites = [...new Set([...plan.suites, ...previous.suites])].sort();
+  const reviewed =
+    /^[a-f0-9]{40}$/.test(plan.head_sha ?? '') &&
+    process.env.SILICIUM_POLICY_MIGRATION_SHA === plan.head_sha;
+  const relocated = previous.suites.filter((id) => !plan.suites.includes(id));
+  const migration = plan.scope === 'public' && previous.scope === 'legacy';
+  if (migration && relocated.length && !reviewed)
+    throw new Error(
+      'Relocating application qualification to private repositories requires explicit maintainer review and the administrator SHA authorization',
+    );
+  const suites = [...new Set([...plan.suites, ...(migration ? [] : previous.suites)])].sort();
   const config = registry();
   for (const id of suites)
     if (!config.suites[id]) throw new Error(`Cannot remove required lane ${id} in its own PR`);
@@ -190,9 +235,6 @@ export function combinePlans(plan, previous) {
       if (!(requirements[id] ?? []).some((current) => stepIdentity(current) === stepIdentity(step)))
         removed.push({ suite: id, step });
     }
-  const reviewed =
-    /^[a-f0-9]{40}$/.test(plan.head_sha ?? '') &&
-    process.env.SILICIUM_POLICY_MIGRATION_SHA === plan.head_sha;
   if (removed.length && !reviewed)
     throw new Error(
       'Validation obligations were removed or altered in this PR; explicit maintainer review and the administrator SHA authorization are required',
@@ -206,6 +248,7 @@ export function combinePlans(plan, previous) {
           reviewed_head: plan.head_sha,
           previous_policy_digest: previous.policy_digest,
           removed_obligations: removed,
+          relocated_suites: migration ? relocated : [],
         }
       : null,
     matrix: {

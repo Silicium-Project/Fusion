@@ -47,3 +47,11 @@ test('a missing, stale or skipped suite cannot become durable qualification', ()
   }
   assert.throws(() => qualificationEvidence({ ...record, event: 'pull_request' }, plan, [report]));
 });
+
+test('public metadata and a single private component never qualify an application release', () => {
+  for (const scope of ['public', 'component:api'])
+    assert.throws(
+      () => qualificationEvidence(record, { ...plan, scope }, [{ ...report, scope }]),
+      /private integration/,
+    );
+});

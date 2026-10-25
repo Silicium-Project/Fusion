@@ -3,12 +3,11 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ESLint } from 'eslint';
 import * as prettier from 'prettier';
-import { root, git, Failure } from '../lib/process.mjs';
+import { root, Failure } from '../lib/process.mjs';
+import { trackedSources } from '../lib/workspace.mjs';
 const mode = process.argv[2] ?? 'check';
 if (!['check', 'write'].includes(mode)) throw new Failure('Expected check or write', 2);
-const paths = [
-  ...new Set(git('ls-files', '-c', '-o', '--exclude-standard', '-z').split('\0').filter(Boolean)),
-].filter(
+const paths = trackedSources({ untracked: true }).filter(
   (file) =>
     /\.(ts|mts|vue|mjs)$/.test(file) &&
     !file.startsWith('docs/archive/') &&

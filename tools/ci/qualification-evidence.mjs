@@ -3,17 +3,21 @@ import { mkdirSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { root, run, readJson, writeJson, Failure } from '../lib/process.mjs';
-import { verifiedRun, repository } from '../lib/github.mjs';
+import { verifiedRun, repository, canonicalRepository } from '../lib/github.mjs';
 import { validateGate, requireGate } from '../lib/gate.mjs';
 
 export function qualificationEvidence(runRecord, plan, reports) {
+  if (plan.scope === 'public' || plan.scope?.startsWith('component:'))
+    throw new Failure(
+      'Public or single-component CI is not complete application qualification; private integration evidence is required',
+    );
   if (
     runRecord.event !== 'push' ||
     runRecord.head_branch !== 'main' ||
     runRecord.conclusion !== 'success' ||
-    runRecord.head_repository?.full_name !== repository
+    canonicalRepository(runRecord.head_repository?.full_name) !== repository
   ) {
-    throw new Failure('Permanent evidence requires a successful main push from Fusion');
+    throw new Failure('Permanent evidence requires a successful trusted main qualification');
   }
   const gate = requireGate(validateGate(plan, reports, { expectedSha: runRecord.head_sha }));
   return {

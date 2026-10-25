@@ -3,7 +3,15 @@ import { api } from '../lib/github.mjs';
 import { Failure } from '../lib/process.mjs';
 const apply = process.argv.includes('--apply');
 const entries = [];
-for (const name of ['Fusion', 'Network', 'BackEnd', 'FrontEnd']) {
+for (const name of [
+  'Workbench',
+  'Network',
+  'BackEnd',
+  'FrontEnd',
+  'DesktopApp',
+  'Solana',
+  'Integration',
+]) {
   const repo = `Silicium-Project/${name}`;
   const permissions = api(`repos/${repo}/actions/permissions`);
   if (permissions.enabled) throw new Failure(`Suspend ${repo} Actions before retiring runners`);

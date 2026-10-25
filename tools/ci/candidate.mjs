@@ -89,7 +89,7 @@ if (operation === 'prepare') {
     }
   }
   if (!previous && changed.length < 4)
-    throw new Failure('First monorepo candidate requires every component output');
+    throw new Failure('First integration candidate requires every component output');
   writeJson(resolve(dir, 'inputs.json'), {
     changed,
     artifacts: Object.fromEntries(changed.map((c) => [c, required[c]])),

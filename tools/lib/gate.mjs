@@ -31,6 +31,13 @@ export function validateGate(
       continue;
     }
     const r = matching[0];
+    if (
+      plan.source_components &&
+      JSON.stringify(r.source_components) !== JSON.stringify(plan.source_components)
+    )
+      errors.push(`${suite}: component revisions differ from the qualification plan`);
+    if (plan.scope && r.scope !== plan.scope)
+      errors.push(`${suite}: qualification scope differs from the plan`);
     const expected = plan.requirements?.[suite];
     if (!Array.isArray(expected) || !expected.length)
       errors.push(`${suite}: execution obligations missing from plan`);

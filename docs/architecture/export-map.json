@@ -1,0 +1,175 @@
+{
+  "schema_version": 1,
+  "source_repository": "Silicium-Project/Workbench",
+  "source_commit": "d85a4a47dae1e4d01cc3c48e2197414d61f3a7a5",
+  "exports": {
+    "network": {
+      "repository": "Silicium-Project/Network",
+      "path": "network",
+      "commit": "d528cd6aeec248648fd20f7ab725c0e292217b1f",
+      "source_commit": "d85a4a47dae1e4d01cc3c48e2197414d61f3a7a5",
+      "source_tree": "216f098d24a0c3d5d2793eab826002e0a1f2c780",
+      "native_tree": "352ddf35fb42961cce8014093ec0cf572d3495c5",
+      "repository_id": 1055719930,
+      "previous_main": "03607d2e7b4842e2c4c48b8e0a6501437488a81f",
+      "parents": [
+        "e2eb8f109d910b2dc30a5cc260bf5055d8c501ab"
+      ],
+      "branch": "lf-refactor-210-workbench"
+    },
+    "api": {
+      "repository": "Silicium-Project/BackEnd",
+      "path": "apps/api",
+      "commit": "dc838a9bd8ce7e0e9c2e8e299cc15fb21d4700eb",
+      "source_commit": "d85a4a47dae1e4d01cc3c48e2197414d61f3a7a5",
+      "source_tree": "a1f293fcef6ca805fd83810ee9c3b716100a5764",
+      "native_tree": "cd2e54b5c395364cc410ebcbdcfd0f6331ebef8e",
+      "repository_id": 1055711381,
+      "previous_main": "46fabfe956ca721d25565491a3e0f9bbd9509a8d",
+      "parents": [
+        "c28aeb99ca3810729c26c67d15d5aaaa4ccc05a2",
+        "8e0b6dfe59fbd1c01d38e7f7b7f1fff0379d6450"
+      ],
+      "branch": "lf-refactor-210-workbench"
+    },
+    "web": {
+      "repository": "Silicium-Project/FrontEnd",
+      "path": "apps/web",
+      "commit": "6bd9391a6a9ce27784b6d5bf58a8c4df5b9fe00e",
+      "source_commit": "d85a4a47dae1e4d01cc3c48e2197414d61f3a7a5",
+      "source_tree": "ec7ba704815dd016efd48762f44ef4a9af84de7b",
+      "native_tree": "bc78dccf41cb735359b3c64068795a08711784dc",
+      "repository_id": 1055711639,
+      "previous_main": "69fffec62ee8ca87d9142489a01aa24bb7eb8e13",
+      "parents": [
+        "6723fcdc3ee7ea63938563f852fc5804d469aa0c"
+      ],
+      "branch": "lf-refactor-210-workbench"
+    },
+    "node": {
+      "repository": "Silicium-Project/DesktopApp",
+      "path": "apps/node",
+      "commit": "dc0e88aeafdbaeab55315df9223425363d7b8cf5",
+      "source_commit": "d85a4a47dae1e4d01cc3c48e2197414d61f3a7a5",
+      "source_tree": "23d6b0cd6321be9961b2ae9fae7f419acff9f51d",
+      "native_tree": "a3391c5a34f5feefe131a6fd4aa8f0314d27c572",
+      "repository_id": 1055712371,
+      "previous_main": "f8b924e61e9b1f35c38257225c6fc2febe1e5217",
+      "parents": [
+        "f8b924e61e9b1f35c38257225c6fc2febe1e5217"
+      ],
+      "branch": "lf-refactor-210-workbench"
+    },
+    "solana": {
+      "repository": "Silicium-Project/Solana",
+      "path": "chain",
+      "commit": "93fb375247826916d56eb5b5ffa332d427d3ce91",
+      "source_commit": "d85a4a47dae1e4d01cc3c48e2197414d61f3a7a5",
+      "source_tree": "80bba56bb4b4bc56f9a3468a080c7fb50855cd57",
+      "native_tree": "c9a04f167754f675968e657b319839171e838cf1",
+      "repository_id": 1433659129,
+      "previous_main": "a132f86671cb47872781e5eb5c8018f13800321a",
+      "parents": [
+        "a132f86671cb47872781e5eb5c8018f13800321a"
+      ],
+      "branch": "lf-refactor-210-workbench"
+    }
+  },
+  "verification": [
+    {
+      "component": "network",
+      "source_files": 305,
+      "metadata_changes": [
+        ".gitattributes",
+        ".github/CODEOWNERS",
+        ".github/ISSUE_TEMPLATE/config.yml",
+        ".gitignore",
+        ".silicium-component.json",
+        ".silicium-provenance.json",
+        "AGENTS.md",
+        "README.md",
+        "dev",
+        "dev.ps1"
+      ],
+      "application_file_changes": 0,
+      "previous_main_preserved": true
+    },
+    {
+      "component": "api",
+      "source_files": 112,
+      "metadata_changes": [
+        ".gitattributes",
+        ".github/CODEOWNERS",
+        ".github/ISSUE_TEMPLATE/config.yml",
+        ".gitignore",
+        ".silicium-component.json",
+        ".silicium-provenance.json",
+        "AGENTS.md",
+        "README.md",
+        "dev",
+        "dev.ps1"
+      ],
+      "application_file_changes": 0,
+      "previous_main_preserved": true
+    },
+    {
+      "component": "web",
+      "source_files": 197,
+      "metadata_changes": [
+        ".gitattributes",
+        ".github/CODEOWNERS",
+        ".github/ISSUE_TEMPLATE/config.yml",
+        ".gitignore",
+        ".silicium-component.json",
+        ".silicium-provenance.json",
+        "AGENTS.md",
+        "README.md",
+        "dev",
+        "dev.ps1"
+      ],
+      "application_file_changes": 0,
+      "previous_main_preserved": true
+    },
+    {
+      "component": "node",
+      "source_files": 52,
+      "metadata_changes": [
+        ".gitattributes",
+        ".github/CODEOWNERS",
+        ".github/ISSUE_TEMPLATE/config.yml",
+        ".gitignore",
+        ".silicium-component.json",
+        ".silicium-provenance.json",
+        "AGENTS.md",
+        "README.md",
+        "dev",
+        "dev.ps1"
+      ],
+      "application_file_changes": 0,
+      "previous_main_preserved": true
+    },
+    {
+      "component": "solana",
+      "source_files": 83,
+      "metadata_changes": [
+        ".gitattributes",
+        ".github/CODEOWNERS",
+        ".github/ISSUE_TEMPLATE/config.yml",
+        ".gitignore",
+        ".silicium-component.json",
+        ".silicium-provenance.json",
+        "AGENTS.md",
+        "LICENSE",
+        "README.md",
+        "dev",
+        "dev.ps1",
+        "sdk/AGENTS.md",
+        "sdk/README.md",
+        "solana/AGENTS.md",
+        "solana/README.md"
+      ],
+      "application_file_changes": 0,
+      "previous_main_preserved": true
+    }
+  ]
+}

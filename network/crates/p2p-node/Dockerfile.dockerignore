@@ -1,7 +1,0 @@
-# Build context is the Network/ workspace root: only ship the Cargo workspace.
-**
-!Cargo.toml
-!Cargo.lock
-!crates/
-crates/**/target
-crates/**/.dockerignore

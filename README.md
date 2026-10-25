@@ -1,47 +1,63 @@
-# Silicium Fusion
+# Silicium Workbench
 
-Silicium développe un réseau de calcul distribué et vérifié. Fusion rassemble
-les applications, le réseau Rust, le programme Solana et leur qualification.
+Workbench est l'atelier d'intégration de Silicium : documentation, roadmap,
+contrats partagés, outillage commun et description exacte des versions compatibles.
+Les applications évoluent dans des dépôts indépendants, actuellement privés.
 
-## Développer
+## Commencer
 
 ```sh
+git clone https://github.com/Silicium-Project/Workbench.git
+cd Workbench
 ./dev doctor --profile tooling
 ./dev capabilities --json
-./dev ci plan --base origin/main --head HEAD --json
-./dev test --suite tooling
+./dev workspace status --json
+./dev ci plan --scope public --base origin/main --json
 ```
 
-Sous Windows, remplacer `./dev` par `.\dev.ps1`. Les prérequis et commandes de
-chaque composant sont dans le [guide de développement](docs/development/commands.md).
+Pour développer un composant, un accès à son dépôt est nécessaire :
 
-## Composants
+```sh
+./dev workspace init --component web       # aperçu, aucune récupération
+./dev workspace init --component web --apply
+cd apps/web
+npm ci
+npm run dev
+```
 
-| Emplacement | Responsabilité |
-| --- | --- |
-| [apps/web](apps/web) | Site Nuxt et parcours des comptes |
-| [apps/api](apps/api) | API Go, comptes et accès au réseau |
-| [apps/node](apps/node) | Application Tauri et supervision d'une machine |
-| [network](network) | Runtime P2P et workloads Rust |
-| [chain/solana](chain/solana) | Programme Anchor et qualification localnet |
-| [chain/sdk](chain/sdk) | SDK TypeScript |
-| [contracts](contracts) | Contrats et schémas partagés |
-| [infra](infra) | Livraison d'artefacts, services et exploitation |
+Sous Windows, utiliser `.\dev.ps1`. Consulter les
+[commandes communes](docs/development/commands.md) et les
+[instructions agents](AGENTS.md).
 
-Les historiques des composants sont conservés sans squash. La
-[carte de migration](docs/architecture/monorepo.md) documente leurs références.
+## Dépôts et responsabilités
 
-## Contribuer et livrer
+| Chemin local | Dépôt | Responsabilité |
+| --- | --- | --- |
+| `apps/web` | [FrontEnd](https://github.com/Silicium-Project/FrontEnd) | Nuxt, comptes et projets |
+| `apps/api` | [BackEnd](https://github.com/Silicium-Project/BackEnd) | API Go et accès au réseau |
+| `apps/node` | [DesktopApp](https://github.com/Silicium-Project/DesktopApp) | Application Tauri et supervision locale |
+| `network` | [Network](https://github.com/Silicium-Project/Network) | Runtime P2P Rust et workloads |
+| `chain` | [Solana](https://github.com/Silicium-Project/Solana) | Programme Anchor dans `solana/`, SDK dans `sdk/` |
+| — | [Integration](https://github.com/Silicium-Project/Integration) | Qualification complète avec sources et journaux privés |
 
-Lire [CONTRIBUTING](CONTRIBUTING.md), les [instructions agents](AGENTS.md) et les
-[procédures de livraison](docs/operations/delivery.md). Pendant la stabilisation,
-les contributions exécutées sont celles de l'équipe. Le Project de référence
-reste privé ; les arbitrages internes ne sont pas publiés avec le code.
+[components.lock.json](components.lock.json) et les gitlinks désignent les mêmes
+commits immuables. Le clone public ne récupère aucune source privée par défaut.
+Un changement de composant passe par sa PR ; son intégration passe par une PR
+Workbench modifiant le pin et son lock ensemble.
 
-Les applications restent en développement. Le registre des commandes décrit
-les capacités présentes ; la roadmap décrit les travaux à réaliser. Une release
-n'est qualifiée qu'avec ses preuves, ses signatures et son manifeste.
+## Historique et qualification
 
-[Documentation](docs/README.md) · [Sécurité](Security.md) · [Licence MIT](LICENSE)
+Workbench conserve l'identité GitHub et l'historique public de Fusion, ainsi que
+ses issues, PR et releases. **Les anciennes sources déjà publiées restent dans
+cet historique.** Les versions futures utilisent les dépôts séparés. Voir
+[la décision et la méthode de migration](docs/architecture/multi-repo.md).
 
-[Roadmap](docs/roadmap/README.md) · [Workflow des issues](docs/development/issue-workflow.md)
+`ci/required` sur Workbench qualifie ses fichiers publics. La compatibilité
+applicative exige une qualification privée complète des cinq pins. Une CI
+publique verte ne suffit pas à publier une application. GitHub Free limite la
+CI des dépôts privés ; aucun dépassement facturé ni runner VPS de secours.
+Les publications automatiques restent suspendues pendant cette transition.
+
+[Documentation](docs/README.md) · [Contribution](CONTRIBUTING.md) ·
+[Sécurité](Security.md) · [Licence MIT de Workbench](LICENSE) ·
+[Roadmap](docs/roadmap/README.md)

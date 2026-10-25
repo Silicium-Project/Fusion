@@ -74,7 +74,7 @@ silicium-vpn on
 silicium-vpn off
 ```
 
-Ce helper préexistant n'est pas distribué par le monorepo actuel. Ne pas
+Ce helper préexistant n'est pas distribué par Workbench. Ne pas
 annoncer son installation par `dev`. Sans helper, une configuration système
 déjà installée dans `/etc/wireguard/wg-dev.conf` peut être activée avec
 `sudo wg-quick up wg-dev`, puis désactivée avec `sudo wg-quick down wg-dev`.

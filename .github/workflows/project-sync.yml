@@ -54,7 +54,7 @@ jobs:
         client-id: ${{ secrets.PROJECT_APP_CLIENT_ID }}
         private-key: ${{ secrets.PROJECT_APP_PRIVATE_KEY }}
         owner: Silicium-Project
-        repositories: Fusion,planning-private
+        repositories: Workbench,planning-private
     - name: Reconcile trusted metadata
       env:
         GH_TOKEN: ${{ steps.token.outputs.token }}

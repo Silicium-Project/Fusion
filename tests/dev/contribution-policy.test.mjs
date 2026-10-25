@@ -8,7 +8,7 @@ import {
 
 const ruleset = {
   source_type: 'Repository',
-  source: 'Silicium-Project/Fusion',
+  source: 'Silicium-Project/Workbench',
   target: 'branch',
   conditions: { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] } },
   rules: [

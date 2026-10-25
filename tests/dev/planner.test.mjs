@@ -72,10 +72,7 @@ test('a PR cannot silently remove the test command from an unchanged suite', () 
 });
 
 test('Solana program and SDK changes qualify the runtime payment consumers', () => {
-  for (const path of [
-    'chain/solana/programs/solana-layer/src/lib.rs',
-    'chain/sdk/src/index.ts',
-  ]) {
+  for (const path of ['chain/solana/programs/solana-layer/src/lib.rs', 'chain/sdk/src/index.ts']) {
     const plan = route([path]);
     for (const suite of [
       'network',

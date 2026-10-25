@@ -23,15 +23,7 @@ if (mode === 'docs') {
         (file) =>
           file.startsWith('docs/') && !file.startsWith('docs/archive/') && file.endsWith('.md'),
       ),
-      ...[
-        'apps/web',
-        'apps/api',
-        'apps/node',
-        'network',
-        'chain/solana',
-        'chain/sdk',
-        'infra',
-      ]
+      ...['apps/web', 'apps/api', 'apps/node', 'network', 'chain/solana', 'chain/sdk', 'infra']
         .flatMap((path) => [path + '/AGENTS.md', path + '/README.md'])
         .filter((file) => existsSync(resolve(root, file))),
     ]),

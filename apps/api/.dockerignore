@@ -1,7 +1,0 @@
-.git
-.github
-.cache
-.env
-storage
-tmp
-*.log

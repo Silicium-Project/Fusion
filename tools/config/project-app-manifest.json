@@ -1,6 +1,6 @@
 {
   "name": "Silicium Project Automation",
-  "url": "https://github.com/Silicium-Project/Fusion",
+  "url": "https://github.com/Silicium-Project/Workbench",
   "description": "Synchronisation du Project 12 à partir de métadonnées et de preuves ; aucun déploiement ou accès au contenu en écriture.",
   "public": false,
   "default_permissions": {

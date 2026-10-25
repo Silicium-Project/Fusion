@@ -1,11 +1,19 @@
 # Contribuer à Silicium
 
+## Dépôt concerné
+
+Les sources applicatives sont dans les dépôts privés indiqués dans le
+[README](README.md). Les issues publiques restent centralisées dans Workbench ;
+une PR native référence leur URL canonique. Une PR Workbench met ensuite à jour
+le gitlink et `components.lock.json`. Le gate public valide le dépôt d’intégration ;
+la qualification applicative complète est privée et obligatoire avant livraison.
+
 ## Parcours
 
 1. Choisir une tranche prête dans le Project 12 ; préparer les prérequis et le
    responsable avant de démarrer. Une tranche active par personne est la règle.
 2. Lire [AGENTS.md](AGENTS.md) et [les commandes communes](docs/development/commands.md).
-3. Créer `<type>/<issue>-<objet>` depuis `main` à jour et ouvrir une PR brouillon.
+3. Créer `lf-<type>-<issue>-<objet>` depuis `main` à jour et ouvrir une PR brouillon.
 4. Référencer les issues par URL dans la section `Refs` du modèle de PR.
 5. Décrire les critères d'acceptation, contrats affectés et risques de migration.
 6. Exécuter le plan de validation applicable et joindre les résultats réels.
