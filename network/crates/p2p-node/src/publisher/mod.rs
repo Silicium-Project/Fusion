@@ -1,0 +1,241 @@
+//! Publisher side of the task book, run periodically: for every task this
+//! node proposed, accept a claim when an attempt is open and a verifier when
+//! a result needs one, announce the task again while nobody claims or
+//! verifies it, and finalize verified results.
+//!
+//! Offers are ranked by the author's reputation derived from the book
+//! (finalized vs failed attempts), then by age. The claimant's offer to
+//! verify itself is only accepted when it is the only worker this node sees
+//! (lone-worker rule, see [`crate::peers`]) and the task terms allow it.
+//!
+//! Among verification offers, those of nodes that worked on another fragment
+//! of the same job come first: they already have the job's model loaded, so
+//! the check does not load it again on one more machine.
+
+mod announce;
+
+pub(crate) use announce::Reannouncer;
+
+use crate::{
+    peers::WorkerView,
+    storage::{TaskBookState, now_ms},
+};
+use silicium_node_core::taskbook::{
+    AuthorRecord, DerivedTaskStatus, OpenClaim, TaskBook, TaskEventBody,
+};
+use std::{
+    cell::RefCell,
+    collections::{BTreeMap, BTreeSet},
+};
+
+/// How long the publisher's own claim waits for other nodes' claims.
+const OWN_CLAIM_GRACE_MS: u64 = 5_000;
+
+/// Inputs shared by the decisions of one sweep.
+struct SweepView<'a> {
+    book: &'a TaskBook,
+    me: &'a str,
+    now: u64,
+    records: BTreeMap<String, AuthorRecord>,
+    workers: WorkerView,
+    /// Tasks published by this node (fragments of a job share its id).
+    tasks: &'a [String],
+    /// Claimants of the fragments of a job, by job id (filled on demand).
+    job_workers: RefCell<BTreeMap<String, BTreeSet<String>>>,
+}
+
+impl SweepView<'_> {
+    /// Nodes that claimed a fragment of the job `task_id` belongs to.
+    fn job_workers(&self, task_id: &str) -> BTreeSet<String> {
+        let Some((job_id, _)) = task_id.rsplit_once(".f") else {
+            return BTreeSet::new();
+        };
+        if let Some(workers) = self.job_workers.borrow().get(job_id) {
+            return workers.clone();
+        }
+        let prefix = format!("{job_id}.f");
+        let workers: BTreeSet<String> = self
+            .tasks
+            .iter()
+            .filter(|id| id.starts_with(&prefix))
+            .filter_map(|id| self.book.task_state(id, self.now))
+            .flat_map(|state| state.attempts.into_iter().map(|a| a.claimant))
+            .collect();
+        self.job_workers
+            .borrow_mut()
+            .insert(job_id.to_string(), workers.clone());
+        workers
+    }
+
+    fn score(&self, author: &str) -> f64 {
+        self.records
+            .get(author)
+            .copied()
+            .unwrap_or_default()
+            .score()
+    }
+
+    /// Best offer: highest reputation, then oldest, then smallest hash.
+    fn best<'o, T>(&self, offers: &'o [T], key: impl Fn(&T) -> (&str, u64, &str)) -> Option<&'o T> {
+        offers.iter().min_by(|left, right| {
+            let (left_author, left_at, left_hash) = key(left);
+            let (right_author, right_at, right_hash) = key(right);
+            self.score(right_author)
+                .total_cmp(&self.score(left_author))
+                .then(left_at.cmp(&right_at))
+                .then(left_hash.cmp(right_hash))
+        })
+    }
+}
+
+/// What the sweep asks the event loop to do.
+#[derive(Debug, Default)]
+pub(crate) struct SweepOutcome {
+    /// Events signed by this node, to gossip.
+    pub(crate) events: Vec<silicium_node_core::taskbook::TaskEvent>,
+    /// Tasks to gossip again: nobody claimed the open attempt, or nobody
+    /// offered to verify the result, since the last announcement.
+    pub(crate) regossip: Vec<String>,
+    /// Tasks that reached a terminal state.
+    pub(crate) finished: Vec<String>,
+}
+
+/// One decision for one task.
+enum Decision {
+    Sign(TaskEventBody),
+    /// Announce the task again (workers that missed it, or joined since).
+    Regossip,
+    Finished,
+}
+
+/// Runs one sweep. `announcer` spaces the announcements of each task.
+pub(crate) fn sweep(
+    taskbook: &TaskBookState,
+    announcer: &mut Reannouncer,
+    workers: WorkerView,
+) -> SweepOutcome {
+    let me = taskbook.author();
+    let now = now_ms();
+    let decisions = taskbook
+        .with_book(|book| {
+            let tasks = book.tasks_published_by(&me);
+            let view = SweepView {
+                book,
+                me: &me,
+                now,
+                records: book.author_records(now),
+                workers,
+                tasks: &tasks,
+                job_workers: RefCell::default(),
+            };
+            tasks
+                .iter()
+                .filter_map(|task_id| decide(&view, task_id).map(|d| (task_id.clone(), d)))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    let mut outcome = SweepOutcome::default();
+    for (task_id, decision) in decisions {
+        match decision {
+            Decision::Sign(body) => match taskbook.append_signed(&task_id, body) {
+                Ok(event) => outcome.events.push(event),
+                Err(err) => println!(" Publisher could not sign for {task_id}: {err}"),
+            },
+            Decision::Regossip => {
+                if announcer.due(&task_id, now) {
+                    outcome.regossip.push(task_id);
+                }
+            }
+            Decision::Finished => {
+                announcer.forget(&task_id);
+                outcome.finished.push(task_id);
+            }
+        }
+    }
+    outcome
+}
+
+/// The publisher's next move for one of its tasks, if any.
+fn decide(view: &SweepView, task_id: &str) -> Option<Decision> {
+    let state = view.book.task_state(task_id, view.now)?;
+    if state.status.is_terminal() {
+        return Some(Decision::Finished);
+    }
+    if state.status == DerivedTaskStatus::Verified {
+        let attempt = state.attempts.last()?.attempt;
+        return Some(Decision::Sign(TaskEventBody::TaskFinalized { attempt }));
+    }
+    if state.status == DerivedTaskStatus::Completed {
+        return accept_verifier(view, task_id, state.attempts.last()?.attempt);
+    }
+    let attempt = state.next_attempt?;
+    let claims = eligible_claims(view, view.book.open_claims(task_id, view.now));
+    let chosen = view.best(&claims, |c| (&c.author, c.issued_at_ms, &c.event_hash));
+    match chosen {
+        Some(claim) => Some(Decision::Sign(TaskEventBody::ClaimAccepted {
+            attempt,
+            claim: claim.event_hash.clone(),
+        })),
+        // Nobody can be accepted yet: workers may have missed the task.
+        None => Some(Decision::Regossip),
+    }
+}
+
+/// Claims the publisher may accept now: its own claim (this node also works
+/// on its tasks) only when nobody else offered and either no other worker is
+/// connected or the claim waited [`OWN_CLAIM_GRACE_MS`], so that other nodes
+/// get the work first.
+fn eligible_claims(view: &SweepView, claims: Vec<OpenClaim>) -> Vec<OpenClaim> {
+    let (own, others): (Vec<_>, Vec<_>) = claims.into_iter().partition(|c| c.author == view.me);
+    if !others.is_empty() {
+        return others;
+    }
+    own.into_iter()
+        .filter(|c| {
+            view.workers.no_other_worker()
+                || view.now.saturating_sub(c.issued_at_ms) >= OWN_CLAIM_GRACE_MS
+        })
+        .collect()
+}
+
+/// Accepts the best verification offer while a verifier slot is open. An
+/// independent verifier is always preferred; the claimant's own offer is
+/// accepted only when it is the only worker on the network (lone-worker
+/// rule). Among independent offers, a node that worked on another fragment
+/// of the same job (its model is loaded) comes first. With no acceptable
+/// offer, the task is announced again so that verifiers which missed it
+/// learn about it.
+fn accept_verifier(view: &SweepView, task_id: &str, attempt: u32) -> Option<Decision> {
+    if view.book.verification_slots_open(task_id, view.now) == 0 {
+        return None;
+    }
+    // The publisher's own offer while it rejects the result itself (a
+    // failed canary, see `crate::results`) is accepted there, not here.
+    let offers: Vec<_> = view
+        .book
+        .open_verifications(task_id, view.now)
+        .into_iter()
+        .filter(|o| !(o.author == view.me && crate::results::rejecting(task_id, attempt)))
+        .collect();
+    let independent: Vec<_> = offers.iter().filter(|o| !o.self_offer).cloned().collect();
+    let pool = if independent.is_empty() && view.workers.lone_worker() {
+        offers
+    } else {
+        let job_workers = view.job_workers(task_id);
+        let (warm, cold): (Vec<_>, Vec<_>) = independent
+            .into_iter()
+            .partition(|o| job_workers.contains(&o.author));
+        if warm.is_empty() { cold } else { warm }
+    };
+    let Some(offer) = view.best(&pool, |o| (&o.author, o.issued_at_ms, &o.event_hash)) else {
+        return Some(Decision::Regossip);
+    };
+    Some(Decision::Sign(TaskEventBody::VerifierAccepted {
+        attempt,
+        claim: offer.event_hash.clone(),
+    }))
+}
+
+#[cfg(test)]
+mod tests;

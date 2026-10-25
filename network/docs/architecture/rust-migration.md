@@ -1,0 +1,83 @@
+# Migration du runtime vers Rust
+
+> **État (2026-10-13) : terminée.** Le runtime Python (nœud, orchestration
+> raytracer, API MCP, RPC, CLI `silicium`, TUI, catalogue `workloads/`) a été
+> supprimé (phase 7). Ce document reste comme historique de la bascule ; les
+> tableaux « ce qui manque » ci-dessous décrivent l'état d'avant.
+
+**Règle du projet :** Rust pour tout ce qui s'exécute chez un utilisateur ou sur
+le serveur ; Python uniquement pour l'outillage des développeurs (tests, E2E,
+démos, contrôles qualité, scripts de release).
+
+Le BackEnd Go, le FrontEnd Nuxt et le SDK TypeScript Solana restent dans leur
+langage : la migration concerne le runtime réseau.
+
+## Pourquoi on ne peut pas migrer nœud par nœud
+
+Les nœuds Python parlent HTTP + gossip maison avec une clé mesh partagée ; les
+nœuds Rust parlent libp2p. Il n'y a aucun protocole commun. La bascule se fait
+donc **pour tout le réseau à la fois** (canal `dev`, puis `prod` avec mise à jour
+forcée de l'app), une fois que le nœud Rust a rattrapé le Python.
+
+## Ce qui manque au nœud Rust
+
+| Capacité | Python (prod) | Rust (`crates/p2p-node`) |
+| --- | --- | --- |
+| Découpage d'un job en fragments | oui | oui : tuiles publiées comme tâches `<job>.f<NNN>`, réassemblage et PNG chez l'éditeur (`p2p-node/src/jobs/`) |
+| Attribution d'une tâche à un seul nœud (claim, bail, retry) | oui | oui : journal de tâches v2 (`node-core::taskbook`) — l'éditeur accepte une proposition, bail renouvelable, nouvelles tentatives, facturation dérivée |
+| Transfert des entrées / résultats entre pairs | blobs par `content_id` | oui : contenus par SHA-256, fournisseurs DHT + requête-réponse libp2p (`p2p-node/src/fetch/`), image finale contrôlée contre les jalons |
+| Vérification par un autre pair | oui | oui : vérificateur accepté par l'éditeur, recalcul des jalons tirés au sort ; auto-vérification d'un worker seul (l'orchestrateur ne compte pas) |
+| Réassemblage, reçus, facturation | oui | réassemblage et PNG branchés dans le nœud ; facturation dérivée du journal de tâches ; reçus Solana non |
+| NAT : connexion directe + relais | ICE, punch UDP, relais HTTP, TURN | AutoNAT + relais serveur seulement |
+| API de contrôle pour le BackEnd | `/gossip/publish` + fichiers | `/publish`, `/tasks/{id}` (sans authentification) |
+
+## Bloquants de sécurité
+
+| # | Problème | État |
+| --- | --- | --- |
+| 1 | Une tâche reçue par gossip pouvait fixer `runtime_image`, `runtime_workdir` et `runtime_env` (image Docker arbitraire, dossier de l'hôte monté) | **Corrigé** : `TaskEnvelope::sanitize_remote` refuse les images OCI et retire dossier et environnement ; WASM seulement si `SILICIUM_ALLOW_REMOTE_WASM=1` |
+| 2 | `scene_path` / `output_path` choisis par un pair distant | **Corrigé** : chemins relatifs sans `..` résolus dans le dossier de travail (`node-core::sandbox`) ; sortie choisie localement ; le compute-daemon refuse tout chemin hors de `SILICIUM_COMPUTE_ROOT` |
+| 3 | API du nœud sans authentification | **Corrigé** : `SILICIUM_NODE_CONTROL_TOKEN` (bearer) ; écoute hors loopback refusée sans jeton ; idem pour le compute-daemon (`SILICIUM_COMPUTE_TOKEN`) |
+| 4 | Tout pair du topic peut faire exécuter une tâche | **Corrigé** : seules les tâches signées par un éditeur de confiance (`SILICIUM_TRUSTED_PUBLISHERS`, ou pair d'amorçage épinglé `/p2p/<peer id>`) sont exécutées ; `SILICIUM_ACCEPT_UNTRUSTED_TASKS` est refusé sur les canaux `dev` et `prod` (l'app desktop l'activait) |
+| 5 | Clé mesh `demo-mesh` codée en dur dans l'app desktop publiée | **Sans objet** : la clé mesh n'existait que dans le réseau Python, supprimé ; le réseau Rust repose sur les tâches signées (4) |
+
+## Phases
+
+| Phase | Contenu | Critère de sortie |
+| --- | --- | --- |
+| 0. Assainir | Dossiers par partie (`crates/`, `tools/dev/`, `docs/` rangé), vestiges supprimés, workspace Cargo et CI Rust unifiée | CI verte, aucun comportement changé |
+| 1. Figer les contrats | Types Rust versionnés (tâche, fragment, reçu, événement) ; golden files capturés depuis le Python | Les types Rust relisent les sorties Python à l'identique |
+| 2. Sécuriser le nœud Rust | Les 5 bloquants ci-dessus, timeouts, limites de ressources | Tests négatifs (tâche non signée, chemin `..`, API sans jeton) — **fait pour 1 à 4** ; reste la clé mesh (5) et les limites de ressources |
+| 3. Pipeline raytracer en Rust | `crates/raytracer` devient une bibliothèque : découpage, jalons, vérification, réassemblage | Rendu octet pour octet identique au corpus golden — **fait** (tests de parité `crates/raytracer/tests/python_parity.rs`) |
+| 4. Ordonnanceur et transport | Claim/bail/retry/annulation, blobs libp2p, relais client + DCUtR, vérification croisée, reprise après redémarrage | Test d'intégration à 3 nœuds |
+| 5. Parité BackEnd / FrontEnd / Solana | API `/v1` complète (progression, fragments, reçus), télémétrie, séquence Solana identique | Tests Go + Playwright, `devnet_minimal_job_flow.ts` |
+| 6. Bascule | Orchestrateur Rust sur le VPS, app lançant directement le binaire, plus de clé mesh | Canal `dev` stable une semaine, installeur sans Python |
+| 7. Nettoyage | Suppression de `tools/*.py` runtime, `networked/`, `workloads/`, dépendance `python3` des paquets | **Fait** : plus aucun service de prod ni installeur ne lance ou n'embarque Python |
+
+## Correspondance Python → Rust
+
+| Python (legacy) | Remplacé par |
+| --- | --- |
+| `tools/network_node.py` + `tools/node/` (`peer/`, `daemon/`, `cli.py`…) | `crates/p2p-node` + ordonnanceur + API `/v1` (correspondance par module : voir `tools/node/README.md`) |
+| `tools/direct_transport.py` | libp2p (Circuit Relay v2 + DCUtR) — pas de portage ligne à ligne |
+| `tools/runtime_telemetry.py` | crate `telemetry` (`tracing` + métriques) |
+| `tools/resource_intelligence.py` | `crates/node-core` (`hardware.rs`, `beta.rs`) |
+| `tools/rpc_*.py`, `proto/` | disparaissent (plus de ZeroMQ) |
+| `tools/solana_layer_bridge.cjs` | `crates/reputation-bridge` ou petit service TypeScript isolé |
+| `networked/networked_runtime.py` | `crates/node-core` (blobs de contenu) |
+| `workloads/raytracer/*.py` | `crates/raytracer` (bibliothèque) |
+| `workloads/standard/*.py` | trait `Workload` de `crates/p2p-node/src/workload/` : `calcul/integrity/sha256` porté ; les autres (libm, zstd, monte-carlo, matrix, blender, h265…) n'étaient que des prototypes du nœud Python et ont été supprimés avec lui (historique Git) |
+| `tools/mcp_server.py` | supprimé (API expérimentale sans utilisateur ; le BackEnd utilise l'API `/v1` du nœud) |
+
+## Décisions
+
+- API expérimentale MCP (`tools/mcp_server.py`) : supprimée.
+- Workloads « standard » : seul `calcul/integrity/sha256` a été porté ; les
+  autres sont à réécrire en Rust (trait `Workload`) s'ils redeviennent utiles.
+- Contrat de progression : fichiers JSON écrits par le nœud Rust
+  (`../contracts/backend-files.md`).
+
+## Reste ouvert
+
+- Solana côté nœud : Rust natif ou service TypeScript isolé (les reçus signés
+  et la séquence on-chain du nœud Python n'ont pas été portés).

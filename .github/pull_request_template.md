@@ -1,25 +1,29 @@
-**Description**
-Please include a summary of the change and which issue is fixed. Include relevant motivation and context.
+## Objet et périmètre
 
-**Fixes Issue:** #[Issue Number]
+Décrire le comportement livré, ses limites et les composants touchés.
 
-**Type of change**
-Please delete options that are not relevant.
-- [ ] Bug fix (non-breaking change which fixes an issue)
-- [ ] New feature (non-breaking change which adds functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
-- [ ] Documentation update
+## Issues associées
 
-**How Has This Been Tested?**
-Please describe the tests that you ran to verify your changes.
-- [ ] Test A
-- [ ] Test B
+Refs: URL canonique de chaque issue. Plusieurs PR peuvent contribuer à une issue.
+La clôture intervient après acceptation, avec ses preuves de validation.
 
-**Checklist:**
-- [ ] My code follows the style guidelines of this project
-- [ ] I have performed a self-review of my own code
-- [ ] I have commented my code, particularly in hard-to-understand areas
-- [ ] I have made corresponding changes to the documentation
-- [ ] My changes generate no new warnings
-- [ ] I have added tests that prove my fix is effective or that my feature works
-- [ ] New and existing unit tests pass locally with my changes
+## Contrats et migration
+
+- Contrats/consommateurs affectés :
+- Migration, compatibilité et retour arrière :
+- Données, identités et droits conservés :
+
+## Validation observée
+
+- Commande `./dev ci plan --base origin/main --head HEAD --json` :
+- Suites réellement exécutées, résultat et SHA :
+- Suites non exécutées et motif :
+- Cible d'acceptation : Documentation / CI / Dev / Prod
+
+## Documentation et revue
+
+- [ ] Contrats, exemples et erreurs documentés dans la même PR.
+- [ ] Instructions humaines et IA actualisées.
+- [ ] Aucune donnée sensible dans le diff, les captures ou les preuves.
+- [ ] Changements examinés et décision de fusion demandée au mainteneur ; revue externe facultative.
+- [ ] Changements de politique CI identifiés et obligations de base conservées.

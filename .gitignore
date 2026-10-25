@@ -1,66 +1,34 @@
-# Runtime state
+# Build and runtime state
+**/node_modules/
+**/target/
+**/dist/
+**/.nuxt/
+**/.output/
+**/gen/
+**/.anchor/
+**/artifacts/
+**/test-results/
+.artifacts/
 .silicium/
 .silicium-world/
-Network/.silicium/
-Network/.silicium-world/
-Network/%SystemDrive%/
-Network/Network/
-BackEnd/storage/
-
-# Python
+**/.silicium/
+**/.silicium-world/
+apps/node/src-tauri/resources/runtime/
+apps/api/storage/
+*.tsbuildinfo
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
-venv/
-
-# Node / frontend builds
-node_modules/
-.nuxt/
-.output/
-dist/
-apps/**/src-tauri/target/
-apps/**/src-tauri/gen/
-apps/silicium-node/src-tauri/resources/runtime/
-apps/silicium-node/*.exe
-FrontEnd/public/downloads/*.exe
-.data/
-.temp/
-*.tsbuildinfo
-
-# Imported repository metadata
-BackEnd/.github/
-BackEnd/.git/
-BackEnd/.gitignore
-FrontEnd/.github/
-FrontEnd/.git/
-FrontEnd/.gitignore
-
-# Environment and logs
 .env
 .env.*
 !.env.example
-logs/
 *.log
-npm-debug.log*
-yarn-debug.log*
-pnpm-debug.log*
-
-# Solana / Anchor generated output
-Network/solana-layer/target/
-Network/solana-layer/idl/
-
-# Local raytracer source/build artifacts
-Network/demo/raytracer/**/raytracer.exe
-Network/demo/raytracer/**/*.o
-Network/demo/raytracer/**/*.a
-Network/demo/raytracer/**/*.out
-Network/demo/raytracer/**/*.ppm
-
-# OS / IDE
+*.pfx
+*.p12
+**/*keypair.json
+**/ledger/
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
-.aider*
-.agents/

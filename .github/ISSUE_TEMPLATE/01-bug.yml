@@ -1,0 +1,48 @@
+name: Bug reproductible
+description: Décrire un défaut observé et sa non-régression attendue.
+title: '[Bug] '
+type: Bug
+projects:
+- Silicium-Project/12
+body:
+- type: markdown
+  attributes:
+    value: Consultez les issues existantes et le Project commun. Ne publiez aucune clé, jeton, donnée
+      personnelle ou contenu confidentiel. Une demande est à qualifier avant tout engagement.
+- type: textarea
+  id: expected
+  attributes:
+    label: Résultat attendu et impact
+    description: Comportement attendu, impact utilisateur et éventuelle conséquence de sécurité.
+  validations:
+    required: true
+- type: textarea
+  id: observed
+  attributes:
+    label: Comportement observé et reproduction
+    description: Étapes minimales, attendu contre observé, fréquence et preuves expurgées.
+  validations:
+    required: true
+- type: textarea
+  id: environment
+  attributes:
+    label: Version et environnement
+    description: Commit/build, OS, profil dev/prod, réseau et composants concernés. Indiquer toute information
+      inconnue.
+  validations:
+    required: true
+- type: textarea
+  id: validation
+  attributes:
+    label: Validation du correctif attendue
+    description: Oracle et cas négatif ou de non-régression ; ne pas annoncer un test non exécuté.
+  validations:
+    required: true
+- type: textarea
+  id: links
+  attributes:
+    label: Parent, dépendances et références
+    description: URL complète de la spécification, du blocage ou de l’incident lié. Les relations natives
+      sont renseignées au triage.
+  validations:
+    required: false

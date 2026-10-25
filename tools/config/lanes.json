@@ -1,0 +1,743 @@
+{
+  "schema_version": 1,
+  "max_parallel": 4,
+  "components": {
+    "docs": {
+      "paths": [
+        "docs/",
+        "design/"
+      ],
+      "depends_on": []
+    },
+    "tooling": {
+      "paths": [
+        "tools/",
+        "tests/dev/"
+      ],
+      "depends_on": []
+    },
+    "network": {
+      "paths": [
+        "network/"
+      ],
+      "depends_on": [
+        "solana",
+        "sdk"
+      ]
+    },
+    "solana": {
+      "paths": [
+        "chain/solana/"
+      ],
+      "depends_on": []
+    },
+    "sdk": {
+      "paths": [
+        "packages/solana-sdk/"
+      ],
+      "depends_on": [
+        "solana"
+      ]
+    },
+    "api": {
+      "paths": [
+        "apps/api/"
+      ],
+      "depends_on": [
+        "network",
+        "solana",
+        "contracts"
+      ]
+    },
+    "web": {
+      "paths": [
+        "apps/web/"
+      ],
+      "depends_on": [
+        "api",
+        "sdk",
+        "contracts"
+      ]
+    },
+    "node": {
+      "paths": [
+        "apps/node/"
+      ],
+      "depends_on": [
+        "network",
+        "contracts"
+      ]
+    },
+    "infra": {
+      "paths": [
+        "infra/",
+        "tests/test_release_channels.py",
+        "tests/test_vpn_deployment.py"
+      ],
+      "depends_on": [
+        "api",
+        "web",
+        "network"
+      ]
+    },
+    "contracts": {
+      "paths": [
+        "contracts/"
+      ],
+      "depends_on": []
+    },
+    "wasm": {
+      "paths": [
+        "network/crates/node-core/src/runtime",
+        "network/crates/node-core/Cargo.toml",
+        "network/Cargo.toml",
+        "network/Cargo.lock"
+      ],
+      "depends_on": []
+    }
+  },
+  "suites": {
+    "tooling": {
+      "components": [
+        "tooling"
+      ],
+      "steps": [
+        {
+          "command": [
+            "npm",
+            "ci",
+            "--ignore-scripts",
+            "--no-audit",
+            "--no-fund"
+          ],
+          "cwd": "tools/quality",
+          "kind": "check"
+        },
+        {
+          "command": [
+            "node",
+            "--test",
+            "--test-reporter=tap",
+            "tests/dev/*.test.mjs"
+          ],
+          "cwd": ".",
+          "kind": "test",
+          "format": "node"
+        },
+        {
+          "command": [
+            "node",
+            "tools/tasks/quality.mjs",
+            "repository"
+          ],
+          "cwd": ".",
+          "kind": "check"
+        },
+        {
+          "command": [
+            "node",
+            "tools/quality/run.mjs",
+            "check"
+          ],
+          "cwd": ".",
+          "kind": "check"
+        },
+        {
+          "command": [
+            "node",
+            "tools/quality/shell.mjs"
+          ],
+          "cwd": ".",
+          "kind": "check"
+        }
+      ],
+      "timeout_minutes": 10,
+      "runner": "ubuntu-24.04",
+      "tier": "pr",
+      "phase": "quick"
+    },
+    "docs": {
+      "components": [
+        "docs"
+      ],
+      "steps": [
+        {
+          "command": [
+            "node",
+            "tools/tasks/quality.mjs",
+            "docs"
+          ],
+          "cwd": ".",
+          "kind": "check"
+        }
+      ],
+      "timeout_minutes": 10,
+      "runner": "ubuntu-24.04",
+      "tier": "pr",
+      "phase": "quick"
+    },
+    "api": {
+      "components": [
+        "api"
+      ],
+      "steps": [
+        {
+          "command": [
+            "node",
+            "tools/tasks/quality.mjs",
+            "go-format"
+          ],
+          "cwd": ".",
+          "kind": "check"
+        },
+        {
+          "command": [
+            "go",
+            "vet",
+            "./..."
+          ],
+          "cwd": "apps/api",
+          "kind": "check"
+        },
+        {
+          "command": [
+            "go",
+            "test",
+            "-race",
+            "-json",
+            "./..."
+          ],
+          "cwd": "apps/api",
+          "kind": "test",
+          "format": "go"
+        },
+        {
+          "command": [
+            "go",
+            "build",
+            "-trimpath",
+            "-ldflags=-s -w",
+            "-o",
+            "../../.artifacts/build/api/silicium-api",
+            "./cmd"
+          ],
+          "cwd": "apps/api",
+          "kind": "build",
+          "env": {
+            "CGO_ENABLED": "0"
+          }
+        },
+        {
+          "command": [
+            "node",
+            "tools/tasks/api-smoke.mjs"
+          ],
+          "cwd": ".",
+          "kind": "test",
+          "format": "node"
+        }
+      ],
+      "timeout_minutes": 30,
+      "runner": "ubuntu-24.04",
+      "tier": "pr",
+      "phase": "quick"
+    },
+    "web": {
+      "components": [
+        "web"
+      ],
+      "steps": [
+        {
+          "command": [
+            "npm",
+            "ci"
+          ],
+          "cwd": "apps/web",
+          "kind": "check"
+        },
+        {
+          "command": [
+            "npm",
+            "exec",
+            "--",
+            "nuxi",
+            "typecheck"
+          ],
+          "cwd": "apps/web",
+          "kind": "check"
+        },
+        {
+          "command": [
+            "npm",
+            "test"
+          ],
+          "cwd": "apps/web",
+          "kind": "test",
+          "format": "vitest"
+        },
+        {
+          "command": [
+            "npm",
+            "run",
+            "build"
+          ],
+          "cwd": "apps/web",
+          "kind": "build"
+        },
+        {
+          "command": [
+            "node",
+            "tools/tasks/browser-prerequisites.mjs"
+          ],
+          "cwd": ".",
+          "kind": "check"
+        },
+        {
+          "command": [
+            "npm",
+            "run",
+            "test:functional"
+          ],
+          "cwd": "apps/web",
+          "kind": "test",
+          "format": "playwright"
+        }
+      ],
+      "timeout_minutes": 30,
+      "runner": "ubuntu-24.04",
+      "tier": "pr"
+    },
+    "node-ui": {
+      "components": [
+        "node"
+      ],
+      "steps": [
+        {
+          "command": [
+            "npm",
+            "ci"
+          ],
+          "cwd": "apps/node",
+          "kind": "check"
+        },
+        {
+          "command": [
+            "npm",
+            "test"
+          ],
+          "cwd": "apps/node",
+          "kind": "test",
+          "format": "vitest"
+        },
+        {
+          "command": [
+            "npm",
+            "run",
+            "build"
+          ],
+          "cwd": "apps/node",
+          "kind": "build"
+        }
+      ],
+      "timeout_minutes": 30,
+      "runner": "ubuntu-24.04",
+      "tier": "pr",
+      "phase": "quick"
+    },
+    "node-native": {
+      "components": [
+        "node"
+      ],
+      "steps": [
+        {
+          "command": [
+            "cargo",
+            "fmt",
+            "--all",
+            "--manifest-path",
+            "apps/node/src-tauri/Cargo.toml",
+            "--check"
+          ],
+          "cwd": ".",
+          "kind": "check"
+        },
+        {
+          "command": [
+            "cargo",
+            "clippy",
+            "--locked",
+            "--manifest-path",
+            "apps/node/src-tauri/Cargo.toml",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "cwd": ".",
+          "kind": "check",
+          "env": {
+            "TAURI_CONFIG": "{\"bundle\":{\"resources\":[]}}"
+          }
+        },
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--manifest-path",
+            "apps/node/src-tauri/Cargo.toml"
+          ],
+          "cwd": ".",
+          "kind": "test",
+          "format": "rust",
+          "env": {
+            "TAURI_CONFIG": "{\"bundle\":{\"resources\":[]}}"
+          }
+        }
+      ],
+      "timeout_minutes": 30,
+      "runner": "ubuntu-24.04",
+      "tier": "pr"
+    },
+    "node-windows": {
+      "components": [
+        "node"
+      ],
+      "steps": [
+        {
+          "command": [
+            "cargo",
+            "fmt",
+            "--all",
+            "--manifest-path",
+            "apps/node/src-tauri/Cargo.toml",
+            "--check"
+          ],
+          "cwd": ".",
+          "kind": "check"
+        },
+        {
+          "command": [
+            "cargo",
+            "clippy",
+            "--locked",
+            "--manifest-path",
+            "apps/node/src-tauri/Cargo.toml",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "cwd": ".",
+          "kind": "check",
+          "env": {
+            "TAURI_CONFIG": "{\"bundle\":{\"resources\":[]}}"
+          }
+        },
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--manifest-path",
+            "apps/node/src-tauri/Cargo.toml"
+          ],
+          "cwd": ".",
+          "kind": "test",
+          "format": "rust",
+          "env": {
+            "TAURI_CONFIG": "{\"bundle\":{\"resources\":[]}}"
+          }
+        }
+      ],
+      "timeout_minutes": 30,
+      "runner": "windows-2022",
+      "tier": "pr"
+    },
+    "network": {
+      "components": [
+        "network"
+      ],
+      "steps": [
+        {
+          "command": [
+            "cargo",
+            "fmt",
+            "--all",
+            "--check"
+          ],
+          "cwd": "network",
+          "kind": "check"
+        },
+        {
+          "command": [
+            "cargo",
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--locked",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "cwd": "network",
+          "kind": "check"
+        },
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--workspace",
+            "--locked"
+          ],
+          "cwd": "network",
+          "kind": "test",
+          "format": "rust"
+        }
+      ],
+      "timeout_minutes": 30,
+      "runner": "ubuntu-24.04",
+      "tier": "pr"
+    },
+    "network-integration": {
+      "components": [
+        "network",
+        "infra"
+      ],
+      "steps": [
+        {
+          "command": [
+            "bash",
+            "ci/e2e.sh"
+          ],
+          "cwd": "network",
+          "kind": "test",
+          "format": "node"
+        },
+        {
+          "command": [
+            "python3",
+            "-m",
+            "pytest",
+            "-q"
+          ],
+          "cwd": "network",
+          "kind": "test",
+          "format": "pytest"
+        },
+        {
+          "command": [
+            "node",
+            "tools/tasks/runtime-artifacts.mjs"
+          ],
+          "cwd": ".",
+          "kind": "build"
+        }
+      ],
+      "timeout_minutes": 30,
+      "runner": "ubuntu-24.04",
+      "tier": "pr"
+    },
+    "solana": {
+      "components": [
+        "solana",
+        "sdk"
+      ],
+      "steps": [
+        {
+          "command": [
+            "cargo",
+            "fmt",
+            "--all",
+            "--check"
+          ],
+          "cwd": "chain/solana",
+          "kind": "check"
+        },
+        {
+          "command": [
+            "cargo",
+            "clippy",
+            "--locked",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "cwd": "chain/solana",
+          "kind": "check"
+        },
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--lib",
+            "--locked"
+          ],
+          "cwd": "chain/solana",
+          "kind": "test",
+          "format": "rust"
+        },
+        {
+          "command": [
+            "yarn",
+            "install",
+            "--frozen-lockfile"
+          ],
+          "cwd": "chain/solana",
+          "kind": "check"
+        },
+        {
+          "command": [
+            "npm",
+            "ci"
+          ],
+          "cwd": "packages/solana-sdk",
+          "kind": "check"
+        },
+        {
+          "command": [
+            "npm",
+            "run",
+            "build"
+          ],
+          "cwd": "packages/solana-sdk",
+          "kind": "build"
+        },
+        {
+          "command": [
+            "node",
+            "tools/tasks/solana.mjs"
+          ],
+          "cwd": ".",
+          "kind": "test",
+          "format": "anchor"
+        }
+      ],
+      "timeout_minutes": 45,
+      "runner": "ubuntu-24.04",
+      "tier": "pr"
+    },
+    "infrastructure": {
+      "components": [
+        "infra"
+      ],
+      "steps": [
+        {
+          "command": [
+            "python3",
+            "-m",
+            "pytest",
+            "-q",
+            "tests/test_release_channels.py",
+            "tests/test_vpn_deployment.py",
+            "tests/test_delivery.py",
+            "tests/test_update_manifest.py",
+            "tests/test_diagnostics.py"
+          ],
+          "cwd": ".",
+          "kind": "test",
+          "format": "pytest"
+        },
+        {
+          "command": [
+            "node",
+            "tools/tasks/compose.mjs"
+          ],
+          "cwd": ".",
+          "kind": "test",
+          "format": "node"
+        }
+      ],
+      "timeout_minutes": 30,
+      "runner": "ubuntu-24.04",
+      "tier": "pr"
+    },
+    "security": {
+      "components": [
+        "tooling"
+      ],
+      "tier": "pr",
+      "runner": "ubuntu-24.04",
+      "timeout_minutes": 10,
+      "steps": [
+        {
+          "command": [
+            "node",
+            "tools/tasks/security.mjs"
+          ],
+          "cwd": ".",
+          "kind": "check"
+        }
+      ],
+      "phase": "quick"
+    },
+    "network-wasm": {
+      "components": [
+        "wasm"
+      ],
+      "tier": "pr",
+      "runner": "ubuntu-24.04",
+      "timeout_minutes": 45,
+      "steps": [
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            "silicium_node_core",
+            "--features",
+            "runtime-wasm"
+          ],
+          "cwd": "network",
+          "kind": "test",
+          "format": "rust"
+        }
+      ]
+    },
+    "powershell": {
+      "components": [
+        "tooling",
+        "infra",
+        "node"
+      ],
+      "steps": [
+        {
+          "command": [
+            "pwsh",
+            "-NoProfile",
+            "-File",
+            "tools/quality/powershell.ps1"
+          ],
+          "cwd": ".",
+          "kind": "check"
+        }
+      ],
+      "timeout_minutes": 10,
+      "runner": "windows-2022",
+      "tier": "pr",
+      "phase": "quick"
+    },
+    "package-installation": {
+      "components": [
+        "infra",
+        "node"
+      ],
+      "tier": "release",
+      "runner": "ubuntu-24.04",
+      "timeout_minutes": 30,
+      "steps": [
+        {
+          "command": [
+            "node",
+            "tools/ci/installation-checks.mjs"
+          ],
+          "cwd": ".",
+          "kind": "test",
+          "format": "node"
+        }
+      ]
+    }
+  }
+}

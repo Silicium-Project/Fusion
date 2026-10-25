@@ -1,0 +1,46 @@
+name: Tranche d'implémentation
+description: Travail borné, dépendances explicites et acceptation vérifiable.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: purpose
+    attributes:
+      label: Objectif et périmètre
+      description: Bénéfice, comportements attendus et limites de cette tranche.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dépendances et parent
+      description: URL canoniques ; compléter les relations natives GitHub après création.
+    validations:
+      required: true
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Méthode et contrats
+      description: Composants, contrats, migrations, droits et stratégie de reprise.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Conditions d'acceptation
+      value: "- [ ] Comportement et erreurs couverts par des tests identifiés.\n- [ ] Contrats et consommateurs qualifiés.\n- [ ] Documentation humaine et IA livrée.\n- [ ] Preuves de la cible de validation acceptées par un humain."
+    validations:
+      required: true
+  - type: dropdown
+    id: target
+    attributes:
+      label: Validation cible
+      options: [Documentation, CI, Dev, Prod]
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: Tests et preuves à produire
+      description: Cas nominaux, erreurs, sécurité, limites et parcours d'intégration réels.
+    validations:
+      required: true

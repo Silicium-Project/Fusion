@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "contracts": [
+    {
+      "id": "http-api",
+      "version": "1.1.0",
+      "owner": "apps/api",
+      "consumers": [
+        "apps/web",
+        "apps/node"
+      ],
+      "definition": "contracts/http/api.openapi.yaml",
+      "validation_suites": [
+        "api",
+        "web",
+        "node-ui"
+      ]
+    },
+    {
+      "id": "ci-plan",
+      "version": "1",
+      "owner": "tools",
+      "consumers": [
+        "tools",
+        "GitHub Actions"
+      ],
+      "definition": "contracts/ci/plan.schema.json",
+      "validation_suites": [
+        "tooling"
+      ]
+    },
+    {
+      "id": "ci-report",
+      "version": "1",
+      "owner": "tools",
+      "consumers": [
+        "tools",
+        "GitHub Actions"
+      ],
+      "definition": "contracts/ci/report.schema.json",
+      "validation_suites": [
+        "tooling"
+      ]
+    },
+    {
+      "id": "delivery-candidate",
+      "version": "1",
+      "owner": "infra",
+      "consumers": [
+        "tools",
+        "infra"
+      ],
+      "definition": "contracts/ci/candidate.schema.json",
+      "validation_suites": [
+        "tooling",
+        "infrastructure"
+      ]
+    },
+    {
+      "id": "p2p-taskbook",
+      "version": "1",
+      "owner": "network",
+      "consumers": [
+        "network",
+        "apps/api",
+        "apps/node"
+      ],
+      "definition": "network/crates/node-core/src/taskbook/mod.rs",
+      "validation_suites": [
+        "network",
+        "network-integration",
+        "api",
+        "node-native"
+      ]
+    },
+    {
+      "id": "solana-instructions",
+      "version": "Anchor 0.32.1",
+      "owner": "chain/solana",
+      "consumers": [
+        "packages/solana-sdk",
+        "apps/web",
+        "network"
+      ],
+      "definition": "chain/solana/programs/solana-layer/src/lib.rs",
+      "generated": "chain/solana/target/idl/solana_layer.json",
+      "validation_suites": [
+        "solana"
+      ]
+    },
+    {
+      "id": "package-installation-snippets-v1",
+      "version": 1,
+      "owner": "infra",
+      "co_owners": [
+        "apps/web"
+      ],
+      "definition": "contracts/install/repositories.json",
+      "consumers": [
+        "apps/web",
+        "tools/ci/installation-checks.mjs"
+      ],
+      "validation_suites": [
+        "tooling",
+        "web",
+        "package-installation"
+      ]
+    }
+  ]
+}

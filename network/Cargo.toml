@@ -1,0 +1,32 @@
+# Workspace Cargo unique pour tout le runtime Rust de Network.
+# Un seul Cargo.lock, un seul dossier target/, des profils communs.
+# `../chain/solana` est un workspace Anchor séparé (toolchain dédiée).
+[workspace]
+resolver = "3"
+members = [
+    "crates/compute-daemon",
+    "crates/embedding",
+    "crates/llm",
+    "crates/node-core",
+    "crates/p2p-node",
+    "crates/raytracer",
+    "crates/reputation-bridge",
+]
+
+# Versions partagées : une crate les référence avec `dep = { workspace = true }`.
+[workspace.dependencies]
+axum = "0.8.9"
+ed25519-dalek = "2.1.1"
+futures = "0.3.33"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+tokio = { version = "1.53.1", features = ["full"] }
+silicium_node_core = { path = "crates/node-core" }
+
+# Le raytracer est livré aux utilisateurs : binaire optimisé et sans symboles.
+# (`lto` ne peut pas être réglé par paquet ; il n'a pas d'effet notable sur le
+# raytracer, qui n'a aucune dépendance externe.)
+[profile.release.package.silicium-raytracer]
+codegen-units = 1
+strip = true

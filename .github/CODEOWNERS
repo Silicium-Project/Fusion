@@ -1,0 +1,8 @@
+# Owners identify reviewers; the sole-maintainer policy does not require external approval.
+* @Luis1454 @Mogza @ThomasW03
+/.github/ @Luis1454 @Mogza
+/chain/ @Luis1454 @Mogza
+/network/crates/node-core/ @Luis1454 @Mogza
+/contracts/ @Luis1454 @Mogza
+/infra/ @Luis1454 @Mogza
+/tools/ @Luis1454 @Mogza

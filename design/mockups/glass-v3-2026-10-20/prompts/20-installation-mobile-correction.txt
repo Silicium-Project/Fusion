@@ -1,0 +1,5 @@
+Use case: precise-object-edit. Edit this mobile installation UI mockup. Preserve the exact new logo, page layout, calm white/blue glass styling, headings, switches, cards and all other content. Change ONLY the first dark code block under 'Ajouter le dépôt': remove the invented inline repository configuration and replace it with this real command sequence, rendered in clear monospace with soft visual wrapping inside the panel. Text verbatim:
+sudo install -d -m 0755 /etc/yum.repos.d
+sudo curl -fsSL https://vps-910c1dbc.vps.ovh.net/downloads/rpm/silicium-node.repo \
+  -o /etc/yum.repos.d/silicium-prod.repo
+Keep the Copier button above code without covering letters. Resize this one code block vertically to fit the shorter text, then close the unused space naturally; all following sections shift upward with unchanged styling. Do not alter the correct install/update commands elsewhere. Output the whole tall mobile page, same visual style. Only Linux and Windows. No invented repository fields or keys.

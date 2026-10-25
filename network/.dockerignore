@@ -1,0 +1,11 @@
+.git
+.gitmodules
+.silicium
+**/target
+**/node_modules
+**/dist
+**/.cache
+solana-layer
+tests
+test-results
+playwright-report

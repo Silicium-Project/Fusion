@@ -26,46 +26,11 @@ $ErrorActionPreference = "Stop"
 
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-function Ensure-Submodules {
-    $gitmodules = Join-Path $Root ".gitmodules"
-    $requiredPaths = @(
-        (Join-Path $Root "Network"),
-        (Join-Path $Root "BackEnd"),
-        (Join-Path $Root "FrontEnd")
-    )
 
-    if (-not (Test-Path -LiteralPath $gitmodules -PathType Leaf)) {
-        return
-    }
 
-    $missing = @()
-    foreach ($path in $requiredPaths) {
-        if (-not (Test-Path -LiteralPath $path -PathType Container)) {
-            $missing += $path
-        }
-    }
-
-    if ($missing.Count -eq 0) {
-        return
-    }
-
-    if (-not (Get-Command "git" -ErrorAction SilentlyContinue)) {
-        throw "git is required to initialize Fusion submodules. Run git submodule update --init --recursive manually."
-    }
-
-    Push-Location $Root
-    try {
-        git submodule update --init --recursive
-    } finally {
-        Pop-Location
-    }
-}
-
-Ensure-Submodules
-
-$NetworkRoot = Join-Path $Root "Network"
-$BackendRoot = Join-Path $Root "BackEnd"
-$FrontendRoot = Join-Path $Root "FrontEnd"
+$NetworkRoot = Join-Path $Root "network"
+$BackendRoot = Join-Path $Root "apps/api"
+$FrontendRoot = Join-Path $Root "apps/web"
 $LogRoot = Join-Path $Root ".silicium\logs\local-start"
 $DefaultSqlitePath = Join-Path $Root ".silicium\site\silicium.db"
 $RaytracerEnvFile = Join-Path $Root ".silicium\env\raytracer.env"
@@ -212,9 +177,9 @@ function Start-LoggedProcess {
     Write-Host "START $Name"
 }
 
-Assert-Directory $NetworkRoot "Network"
-Assert-Directory $BackendRoot "BackEnd"
-Assert-Directory $FrontendRoot "FrontEnd"
+Assert-Directory $NetworkRoot "network"
+Assert-Directory $BackendRoot "apps/api"
+Assert-Directory $FrontendRoot "apps/web"
 
 New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
 

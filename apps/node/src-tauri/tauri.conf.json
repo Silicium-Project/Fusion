@@ -1,0 +1,56 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Silicium Node",
+  "version": "0.2.9-dev.29",
+  "identifier": "network.silicium.node",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "node scripts/build-frontend.mjs",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Silicium Node",
+        "width": 1040,
+        "height": 760,
+        "minWidth": 760,
+        "minHeight": 620
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "deb", "appimage", "rpm"],
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "resources": [
+      "resources/runtime"
+    ],
+    "linux": {
+      "deb": {
+        "depends": ["curl", "openssl", "ca-certificates"]
+      },
+      "rpm": {
+        "depends": ["curl", "openssl", "ca-certificates"]
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    },
+    "windows": {
+      "nsis": {
+        "installerHooks": "windows/nsis-hooks.nsh",
+        "installMode": "currentUser",
+        "languages": ["French", "English"],
+        "startMenuFolder": "Silicium"
+      }
+    }
+  }
+}

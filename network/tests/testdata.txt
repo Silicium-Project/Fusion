@@ -1,0 +1,135 @@
+# Variables (key value pairs, placeholders referenced as ${key})
+var urls.localnet http://127.0.0.1:8899
+var urls.devnet https://api.devnet.solana.com
+var urls.testnet https://api.testnet.solana.com
+var urls.mainnet https://api.mainnet-beta.solana.com
+var urls.custom_override https://rpc.custom.silicium.network
+var pubkeys.local_airdrop 7GGDEpHsMZykU36k4ozeAo6Ttc6yzv9QntcnXvfY3BwN
+var pubkeys.devnet_transfer_dest 9pXXQScF6nHDp7t1Y7y7aH6m5Nc7zzSVeLg8DY3b1RAn
+var paths.default_signer .config/solana/id.json
+var urls.localnet_custom http://127.0.0.1:9000
+var ports.localnet_custom 9000
+var rpc.public_mainnet validator.public.silicium:8899
+
+# Scenario: local network validator
+scenario localnet_uses_test_validator
+desc Ensure the silicium network uses the local test validator and configures the CLI for localnet.
+op start_network silicium
+rule expect_success
+rule log_requires_entries solana-test-validator
+rule log_contains solana-test-validator --bind-address 0.0.0.0
+rule log_contains solana config set --url ${urls.localnet}
+end
+
+# Scenario: devnet validator with entrypoints
+scenario devnet_invokes_validator_with_entrypoints
+desc Verify the devnet setup uses solana-validator with the proper entrypoints and CLI URL.
+op start_network devnet
+rule expect_success
+rule log_requires_entries solana-validator
+rule log_contains solana-validator entrypoint.devnet.solana.com:8001
+rule log_contains solana config set --url ${urls.devnet}
+end
+
+# Scenario: CLI signer generation
+scenario cli_mode_generates_default_signer
+desc When running the CLI directly, a default signer must be generated and the CLI configured for devnet.
+env SILICIUM_NETWORK devnet
+op cli_command solana balance
+rule expect_success
+rule log_contains solana-keygen id.json
+rule file_exists ${paths.default_signer}
+rule log_contains solana config set --url ${urls.devnet}
+rule log_contains solana solana balance
+end
+
+# Scenario: invalid network should fail
+scenario unknown_network_fails
+desc An explicit but unsupported network should fail fast with a clear error message.
+op start_network invalid-network
+rule expect_failure
+rule stderr_contains Unknown network
+end
+
+# Scenario: default network is testnet
+scenario missing_network_defaults_to_testnet
+desc When network is omitted, the CLI should default to testnet.
+op start_network
+rule expect_success
+rule log_contains solana config set --url ${urls.testnet}
+end
+
+# Scenario: local airdrop uses local RPC
+scenario localnet_airdrop_command_uses_local_rpc
+desc Local airdrop commands should keep the local RPC endpoint and forward the command verbatim.
+env SILICIUM_NETWORK silicium
+op airdrop 50 ${pubkeys.local_airdrop}
+rule expect_success
+rule log_contains solana config set --url ${urls.localnet}
+rule log_contains solana solana airdrop 50 ${pubkeys.local_airdrop}
+end
+
+# Scenario: devnet transfer is forwarded
+scenario devnet_transfer_command_forwarded
+desc Transfers on devnet should configure the CLI and forward the transfer command with all flags.
+env SILICIUM_NETWORK devnet
+op transfer ${pubkeys.devnet_transfer_dest} 5 --allow-unfunded-recipient
+rule expect_success
+rule log_contains solana config set --url ${urls.devnet}
+rule log_contains solana solana transfer ${pubkeys.devnet_transfer_dest} 5 --allow-unfunded-recipient
+end
+
+# Scenario: localnet reset flag
+scenario localnet_reset_resets_ledger
+desc When SILICIUM_LOCAL_RESET is true, the validator should reset the ledger before starting.
+env SILICIUM_LOCAL_RESET true
+op start_network silicium
+rule expect_success
+rule log_contains solana-test-validator --reset
+end
+
+# Scenario: mainnet public RPC exposure
+scenario mainnet_public_rpc_address_exposed
+desc Mainnet validators should pass through the configured public RPC address.
+env SILICIUM_PUBLIC_RPC_ADDRESS ${rpc.public_mainnet}
+op start_network mainnet
+rule expect_success
+rule log_contains solana-validator --public-rpc-address ${rpc.public_mainnet}
+rule log_contains solana config set --url ${urls.mainnet}
+end
+
+# Scenario: custom localnet RPC port
+scenario localnet_custom_rpc_port
+desc Overriding the localnet RPC port should update both CLI config and validator flags.
+op start_network silicium --rpc-port ${ports.localnet_custom}
+rule expect_success
+rule log_contains solana config set --url ${urls.localnet_custom}
+rule log_contains solana-test-validator --rpc-port ${ports.localnet_custom}
+end
+
+# Scenario: CLI URL override
+scenario custom_cli_url_override
+desc SILICIUM_CLI_URL should override whichever RPC URL would otherwise be selected.
+env SILICIUM_CLI_URL ${urls.custom_override}
+op start_network testnet
+rule expect_success
+rule log_contains solana config set --url ${urls.custom_override}
+end
+
+# Scenario: CLI mainnet invocation
+scenario cli_mode_obeys_mainnet
+desc CLI-only runs against mainnet should inherit the mainnet RPC URL.
+env SILICIUM_NETWORK mainnet
+op cli_command solana balance
+rule expect_success
+rule log_contains solana config set --url ${urls.mainnet}
+rule log_contains solana solana balance
+end
+
+# Scenario: validator identity generation
+scenario devnet_validator_identity_generated
+desc Starting a validator should create the validator identity signer if it is missing.
+op start_network devnet
+rule expect_success
+rule log_contains solana-keygen validator-identity
+end

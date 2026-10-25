@@ -5,14 +5,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from deploy.release.channel import infer_from_ref, metadata, normalize
+from infra.release.channel import infer_from_ref, metadata, normalize
 
 
 def test_release_channels_are_explicit_and_isolated() -> None:
     dev = metadata("dev")
     prod = metadata("prod")
 
-    assert dev["branch"] == "dev"
+    assert dev["branch"] == "main"
     assert dev["node_update_channel"] == "dev"
     assert dev["deployment_root"] != prod["deployment_root"]
     assert dev["data_dir"] != prod["data_dir"]
@@ -30,11 +30,18 @@ def test_release_channels_are_explicit_and_isolated() -> None:
     assert "vpn_interface" not in prod
 
 
-def test_channel_inference_keeps_main_and_tags_production_only() -> None:
+def test_branch_inference_never_authorizes_production() -> None:
     assert infer_from_ref("dev") == "dev"
     assert infer_from_ref("refs/heads/dev") == "dev"
-    assert infer_from_ref("main") == "prod"
-    assert infer_from_ref("refs/tags/v1.2.3") == "prod"
+    assert infer_from_ref("main") == "dev"
+    assert infer_from_ref("refs/heads/main") == "dev"
+    assert normalize("prod") == "prod"
+    try:
+        infer_from_ref("refs/tags/v1.2.3")
+    except ValueError as error:
+        assert "explicitly" in str(error)
+    else:
+        raise AssertionError("a Git ref must not authorize production")
 
 
 def test_normalize_rejects_cross_channel_values() -> None:

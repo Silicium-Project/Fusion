@@ -1,0 +1,2 @@
+# Repeated deterministic hexadecimal literal in a JWTKey unit test.
+10981a01671a6d82285725ff1b742ab93351da9e:Site/BackEnd-main/internal/security/jwt_test.go:generic-api-key:26

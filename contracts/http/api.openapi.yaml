@@ -1,0 +1,321 @@
+openapi: 3.0.3
+info:
+  title: Silicium API
+  version: 1.1.0
+  description: API du site, des tâches et de la télémétrie Silicium. Les messages destinés aux utilisateurs suivent `Accept-Language` (fr par défaut, en, de). Les access tokens (audience `silicium-api`) et refresh tokens (audience `silicium-refresh`) ne sont pas interchangeables.
+servers:
+  - url: http://localhost:8080
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Message:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string }
+    User:
+      type: object
+      required: [id, email]
+      properties:
+        id: { type: integer }
+        email: { type: string, format: email }
+        username: { type: string }
+        firstName: { type: string }
+        lastName: { type: string }
+        walletAddress: { type: string }
+        role: { type: string }
+    Tokens:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string }
+        refresh_token: { type: string }
+    Job:
+      type: object
+      required: [id, title, workload, status, siliciumJobId]
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        description: { type: string }
+        workload: { type: string }
+        priority: { type: string }
+        fragmentCount: { type: integer }
+        status: { type: string }
+        siliciumJobId: { type: string }
+        billableWorkUnits: { type: integer, format: int64 }
+        computeReceiptHash: { type: string }
+        network: { type: object, additionalProperties: true }
+    Status:
+      type: object
+      required: [status, checkedAt, backend, network, blockchain]
+      properties:
+        status: { type: string, enum: [operational, degraded, unavailable] }
+        checkedAt: { type: string, format: date-time }
+        backend: { type: object, additionalProperties: true }
+        network: { type: object, additionalProperties: true }
+        blockchain: { type: object, additionalProperties: true }
+security:
+  - bearerAuth: []
+paths:
+  /health:
+    get:
+      security: []
+      summary: Sonde de disponibilité minimale
+      responses:
+        '200': { description: OK }
+  /healthz:
+    get:
+      security: []
+      summary: Alias de la sonde de disponibilité
+      responses:
+        '200': { description: OK }
+  /status:
+    get:
+      security: []
+      summary: État consolidé de l’API, du réseau et de Solana
+      responses:
+        '200':
+          description: Snapshot mis en cache cinq secondes
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Status' }
+  /register:
+    post:
+      security: []
+      summary: Créer un compte
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8, description: '8 caractères au moins, 72 octets au plus' }
+                username: { type: string, pattern: '^[A-Za-z0-9._-]{3,30}$', description: 'Unique sans tenir compte de la casse' }
+                first_name: { type: string, maxLength: 50 }
+                last_name: { type: string, maxLength: 50 }
+      responses:
+        '201': { description: Compte créé }
+        '400': { description: Champ refusé (message dans la langue de `Accept-Language`) }
+        '409': { description: E-mail ou nom déjà utilisé }
+  /login:
+    post:
+      security: []
+      summary: Ouvrir une session avec un e-mail ou un nom d’utilisateur
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [identifier, password]
+              properties:
+                identifier: { type: string }
+                password: { type: string }
+      responses:
+        '200':
+          description: Access token de 15 minutes et refresh token de 7 jours
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tokens' }
+        '401': { description: Identifiants invalides }
+        '429': { description: 10 échecs en 15 minutes sur cet identifiant ; en-tête `Retry-After` }
+  /refresh:
+    post:
+      security: []
+      summary: Renouveler l’access token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        '200':
+          description: Token renouvelé
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tokens' }
+        '401': { description: Session expirée }
+  /user:
+    get:
+      summary: Lire le profil courant
+      responses:
+        '200':
+          description: Profil
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+    patch:
+      summary: Modifier le profil courant
+      responses:
+        '200': { description: Profil modifié }
+  /user/password:
+    put:
+      summary: Modifier le mot de passe
+      responses:
+        '200': { description: Mot de passe modifié }
+  /user/wallet/challenge:
+    post:
+      summary: Créer un challenge de preuve de propriété Solana
+      responses:
+        '200': { description: Message à signer, nonce et expiration }
+  /user/wallet:
+    post:
+      summary: Vérifier la signature et rattacher le portefeuille
+      responses:
+        '200': { description: Portefeuille vérifié }
+        '401': { description: Challenge expiré, réutilisé ou signature invalide }
+  /jobs:
+    get:
+      summary: Lister les tâches du compte
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+        - { name: status, in: query, schema: { type: string } }
+      responses:
+        '200': { description: Liste paginée }
+    post:
+      summary: Soumettre une tâche multipart
+      description: >
+        `workload` choisit le calcul : `raytracer` (champ `file`, une scène),
+        `calcul/integrity/sha256` (champ `file`), ou
+        `ai/embedding/multilingual-e5-small` pour une recherche dans des
+        documents (champs `files` : PDF, .docx, texte, Markdown, ou un seul ZIP ;
+        64 Mio au total ; `acknowledge_sharing=1` obligatoire, car les machines du
+        réseau lisent le texte ; `collection_id` facultatif pour ajouter les
+        documents à une collection existante du compte).
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                workload: { type: string }
+                title: { type: string }
+                file: { type: string, format: binary }
+                files: { type: array, items: { type: string, format: binary } }
+                acknowledge_sharing: { type: string, enum: ['1', 'true'] }
+                collection_id: { type: string }
+                fragment_count: { type: integer, minimum: 1, maximum: 256 }
+                max_runtime_seconds: { type: integer, minimum: 30, maximum: 86400 }
+      responses:
+        '202': { description: Tâche acceptée }
+        '400': { description: Formulaire ou documents refusés (message pour l’utilisateur) }
+        '404': { description: Collection d’un autre compte ou inconnue }
+  /jobs/network/peers:
+    get:
+      summary: Lire le registre des nœuds annoté avec les versions
+      responses:
+        '200': { description: Nœuds }
+  /jobs/network/tasks:
+    get:
+      summary: Lire les travaux RPC agrégés
+      responses:
+        '200': { description: Travaux }
+  /jobs/{id}/dashboard:
+    get:
+      summary: Lire le détail métier et technique d’une exécution
+      description: Pour une recherche dans des documents terminée, `documentIndex` (documents lus, fichiers ignorés, nombre de passages de cette tâche) et `collectionDocuments` (tous les documents couverts par une recherche, `{jobId, name, pages, passages}`, 500 au plus). Pour un traitement par IA, `batchAI` : `request` (`task`, `instruction`, `output`, `maxTokens`, `itemCount`, `source`) et, une fois terminé, `result` (`model`, `itemCount`, `answered`).
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Détail de l’exécution }
+        '404': { description: Tâche introuvable }
+  /jobs/{id}/cancel:
+    post:
+      summary: Propager l’arrêt d’une tâche
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '202': { description: Arrêt accepté }
+  /jobs/{id}/result:
+    get:
+      summary: Télécharger le résultat final
+      description: Pour une recherche dans des documents, un ZIP de l’index (index.json, vectors.f32, passages.jsonl, LISEZMOI.txt). Pour un traitement par IA, le tableau des réponses en CSV (UTF-8 avec BOM), ou en JSON Lines avec `format=jsonl`.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: format, in: query, schema: { type: string, enum: [csv, jsonl] }, description: Traitement par IA seulement }
+      responses:
+        '200': { description: Artefact final }
+  /jobs/{id}/search:
+    get:
+      summary: Chercher dans les documents d’une collection
+      description: Cherche par le sens dans toutes les tâches terminées de la collection de la tâche `id`.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: q, in: query, required: true, schema: { type: string, maxLength: 1000 } }
+        - { name: k, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 10 } }
+      responses:
+        '200':
+          description: Passages les plus proches, du meilleur au moins bon
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  query: { type: string }
+                  searchedJobs: { type: integer }
+                  hits:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        jobId: { type: integer }
+                        passageId: { type: integer }
+                        document: { type: string }
+                        page: { type: integer, nullable: true }
+                        section: { type: string, description: "Chemin des titres du passage (« Bail › Article 6 »), vide sans titre" }
+                        text: { type: string }
+                        score: { type: number }
+        '400': { description: Question vide ou trop longue }
+        '404': { description: Tâche introuvable ou qui n’est pas une recherche dans des documents }
+        '502': { description: Recherche indisponible }
+        '503': { description: Le modèle se prépare ; réessayer après `Retry-After` secondes }
+  /jobs/{id}/answers:
+    get:
+      summary: Lire les réponses d’un traitement par IA
+      description: Éléments répondus, dans l’ordre. Tant que la tâche tourne, seuls ceux des parties déjà vérifiées par le réseau sont là (`complete` faux).
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        '200':
+          description: Une page de réponses
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total: { type: integer, description: Éléments de la demande }
+                  available: { type: integer, description: Éléments répondus et vérifiés à ce jour }
+                  complete: { type: boolean }
+                  offset: { type: integer }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer }
+                        input: { type: string }
+                        output: { description: "Texte, catégorie, objet `{champ: texte}` ou null" }
+        '404': { description: Tâche introuvable ou qui n’est pas un traitement par IA }
+  /jobs/{id}/documents:
+    get:
+      summary: Ouvrir un document envoyé
+      description: Sert un document de la tâche (nom tel que donné par un résultat de recherche), pour lecture seulement.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: name, in: query, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Le document }
+        '404': { description: Document introuvable }
