@@ -215,6 +215,21 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
+    - name: Check planner and execution readiness
+      env:
+        PLANNER_RESULT: ${{ needs.changes.result }}
+        QUICK_RESULT: ${{ needs.quick.result }}
+        EXECUTION_RESULT: ${{ needs.validate.result }}
+        INTEGRATION_COUNT: ${{ needs.changes.outputs.integration_count }}
+      run: 'node --input-type=module <<''JS''
+
+        const values=Object.fromEntries([''PLANNER_RESULT'',''QUICK_RESULT'',''EXECUTION_RESULT'',''INTEGRATION_COUNT''].map(key=>[key,process.env[key]]));
+
+        console.log(JSON.stringify(values));
+
+        if(values.PLANNER_RESULT!==''success''||values.QUICK_RESULT!==''success''||(values.INTEGRATION_COUNT===''0''?values.EXECUTION_RESULT!==''skipped'':values.EXECUTION_RESULT!==''success''))process.exit(1);
+
+        JS'
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       with:
         persist-credentials: 'false'
@@ -244,18 +259,23 @@ jobs:
 
         node tools/dev.mjs ci gate --plan .artifacts/plan.json --reports .artifacts/reports --sha "$GITHUB_SHA"'
   budget:
-    if: ${{ !github.event.repository.private && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    if: ${{ !github.event.repository.private || (github.event_name == 'pull_request' && vars.SILICIUM_PRIVATE_CI_WINDOW != '') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    environment: project-automation
+    environment: ${{ github.event_name == 'push' && 'project-automation' || 'qualification-readonly' }}
     steps:
+    - name: PR qualification has no binary upload reservation
+      if: ${{ github.event_name != 'push' }}
+      run: echo 'Only qualification plan and bounded reports are transferred; no delivery or binary upload.'
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       with:
         ref: main
         persist-credentials: false
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
       with:
         node-version: 22.23.4
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
       id: budget-token
       with:
@@ -263,6 +283,7 @@ jobs:
         private-key: ${{ secrets.PROJECT_APP_PRIVATE_KEY }}
         owner: Silicium-Project
         permission-actions: read
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     - name: Check organization artifact headroom
       env:
         GH_TOKEN: ${{ steps.budget-token.outputs.token }}
@@ -271,6 +292,7 @@ jobs:
         SILICIUM_BUDGET_APP_PRIVATE_KEY: ${{ secrets.PROJECT_APP_PRIVATE_KEY }}
         SILICIUM_INCOMING_BYTES: '220200960'
       run: node tools/ci/storage-budget.mjs
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
   quick:
     needs: *id001
     runs-on: ${{ matrix.runner }}
