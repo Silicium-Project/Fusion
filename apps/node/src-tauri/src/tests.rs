@@ -402,6 +402,45 @@ fn managed_runtime_copy_never_restores_the_legacy_openssl_cli() {
     fs::remove_dir_all(directory).unwrap();
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn managed_runtime_copy_can_replace_a_running_executable() {
+    let directory =
+        env::temp_dir().join(format!("silicium-runtime-busy-copy-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&directory);
+    let source = directory.join("source");
+    let target = directory.join("target");
+    let source_binary = source.join("Network").join("bin").join("p2p_node");
+    let target_binary = target.join("Network").join("bin").join("p2p_node");
+    fs::create_dir_all(source_binary.parent().unwrap()).unwrap();
+    fs::copy("/usr/bin/sleep", &source_binary).unwrap();
+    fs::write(
+        source.join("Network").join("bin").join("compute_daemon"),
+        b"compute",
+    )
+    .unwrap();
+    copy_dir_all(&source, &target).unwrap();
+
+    let mut worker = Command::new(&target_binary).arg("30").spawn().unwrap();
+    let copy_result = fs::copy("/usr/bin/true", &source_binary)
+        .map_err(|error| error.to_string())
+        .and_then(|_| copy_dir_all(&source, &target));
+    let worker_kept_running = worker.try_wait().unwrap().is_none();
+    let _ = worker.kill();
+    let _ = worker.wait();
+
+    copy_result.unwrap();
+    assert!(
+        worker_kept_running,
+        "the executable should still be running during replacement"
+    );
+    assert_eq!(
+        fs::read(&target_binary).unwrap(),
+        fs::read("/usr/bin/true").unwrap()
+    );
+    fs::remove_dir_all(directory).unwrap();
+}
+
 #[test]
 fn raytracer_env_resolves_relative_paths_from_runtime_root() {
     let directory = env::temp_dir().join(format!("silicium-raytracer-env-{}", std::process::id()));

@@ -3,6 +3,11 @@
 //! environment given to child processes.
 
 use crate::*;
+#[cfg(unix)]
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+
+#[cfg(unix)]
+static RUNTIME_COPY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) fn resolve_optional_repo_root(_repo_root: Option<&str>) -> Option<PathBuf> {
     if let Some(root) = discover_managed_runtime_root() {
@@ -263,10 +268,58 @@ pub(crate) fn copy_dir_all(source: &Path, target: &Path) -> Result<(), String> {
             if let Some(parent) = target_path.parent() {
                 fs::create_dir_all(parent).map_err(|error| error.to_string())?;
             }
-            fs::copy(&source_path, &target_path).map_err(|error| error.to_string())?;
+            copy_runtime_file(&source_path, &target_path)?;
         }
     }
     Ok(())
+}
+
+/// Replaces runtime files by rename on Unix. `fs::copy` truncates its target,
+/// which returns ETXTBSY when a managed executable is currently running.
+/// Copying beside the target and renaming keeps the old inode available to
+/// running workers while new processes see the complete replacement.
+fn copy_runtime_file(source: &Path, target: &Path) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        let parent = target
+            .parent()
+            .ok_or_else(|| format!("runtime_target_has_no_parent:{}", target.display()))?;
+        let temporary = loop {
+            let sequence = RUNTIME_COPY_SEQUENCE.fetch_add(1, AtomicOrdering::Relaxed);
+            let candidate = parent.join(format!(
+                ".silicium-runtime-copy-{}-{sequence}",
+                std::process::id()
+            ));
+            match OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&candidate)
+            {
+                Ok(file) => {
+                    drop(file);
+                    break candidate;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(error.to_string()),
+            }
+        };
+
+        if let Err(error) = fs::copy(source, &temporary) {
+            let _ = fs::remove_file(&temporary);
+            return Err(error.to_string());
+        }
+        if let Err(error) = fs::rename(&temporary, target) {
+            let _ = fs::remove_file(&temporary);
+            return Err(error.to_string());
+        }
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        fs::copy(source, target)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
 }
 
 pub(crate) fn apply_raytracer_env(command: &mut Command, repo_root: &Path) {
