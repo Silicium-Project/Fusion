@@ -1,9 +1,12 @@
 # Refonte : état de référence et conditions d'activation
 
-Cette page décrit les livrables préparés dans la branche d'intégration. La
-[PR centrale #317](https://github.com/Silicium-Project/Fusion/pull/317) porte
-les résultats du dernier commit. Ni cette page ni une qualification de PR
-n'autorisent une fusion, une acceptation ou une livraison.
+La [PR centrale #317](https://github.com/Silicium-Project/Fusion/pull/317) a été
+intégrée le 25 octobre 2026, après réussite de la qualification de sa révision
+`24c7590c`. Le squash utilisé a conservé exactement le code qualifié mais pas
+l'ascendance des imports. Le [rattachement des historiques](git-history-recovery.md)
+est préparé dans une PR distincte, avec sauvegarde et preuve d'identité des
+arbres. Son intégration et la qualification `push main` restent à vérifier.
+Ni cette page ni une qualification de PR ne valent acceptation ou livraison.
 
 ## Décisions conservées
 
@@ -26,7 +29,7 @@ n'autorisent une fusion, une acceptation ou une livraison.
 |---|---|---|
 | L0 | Références Git et GitHub, sauvegardes des historiques, patchs et fichiers locaux, inventaire des CI et runners | Conserver l'inventaire privé comme référence de restauration ; actualiser les nouvelles preuves |
 | L1 | Audit d'exposition actualisé, ouverture et publication des visuels validées, HOLD isolés, contribution et consignes IA | Conserver les rapports privés et contrôler les nouveaux contenus |
-| L2 | Historiques importés sans squash, gitlinks retirés, chemins corrigés, issues et relations transférées | Examen et décision humaine de fusion ; qualification complète du dernier commit avant intégration |
+| L2 | Imports historiques conservés dans la branche source, gitlinks retirés, chemins corrigés, issues et relations transférées ; rattachement au squash préparé | Fusion normale du rattachement, preuve d'ascendance sur `main` et qualification du SHA intégré |
 | L3 | Fusion public, `main` protégé, environnements restreints, approbation des workflows externes et retrait des anciens runners | Vérifier la qualification publique complète et les accès avant toute livraison |
 | L4 | `dev`/`dev.ps1`, registre, routage, contrôle final, normes, diagnostics et métriques | Résultat GitHub complet du commit évalué et parcours Windows/Anchor ; voir les checks de la PR |
 | L5 | Construction sur GitHub, manifeste, signatures et snapshots, tests d'installation, application et rollback API/web | Provisionner les signatures/SSH, qualifier installations et mises à niveau, adopter le VPS et démontrer le rollback ; drainage/canari runtime toujours bloquants |
@@ -59,6 +62,13 @@ a ensuite réussi les **14 suites**, dont Windows et Solana, pour la tête de PR
 `ci/required` réussi et rapports vérifiés. Les changements ultérieurs doivent
 obtenir leur propre qualification ; ces résultats ne valent pas déploiement.
 
+La [qualification 40232356923](https://github.com/Silicium-Project/Fusion/actions/runs/40232356923)
+a ensuite réussi les 14 suites et `ci/required` sur `24c7590c`, avant la fusion
+de #317. Le job Solana a pris 13 min 13 s et l'outillage a exécuté 93 tests.
+Le SHA squash intégré n'a pas reçu de qualification `push` : une ancienne
+directive CI a été recopiée dans son message. Cette absence reste un blocage
+de livraison, malgré l'identité du code et la réussite de la qualification PR.
+
 Le run a exécuté notamment 151 tests Go, 112 unités web et 56 scénarios
 navigateur, 34 unités natives Linux, 323 tests runtime et 69 tests WASM. Les
 trois scénarios P2P existants et 22 tests Python réseau ont passé. Ces scénarios
@@ -82,9 +92,9 @@ unitaires de scripts ne remplacent pas ces preuves.
 
 ## Activation restante, dans l'ordre
 
-1. Achever la qualification du commit et l'examen des changements ; traiter
-   les commentaires avant la décision humaine d'intégration. La revue externe
-   est facultative dans le mode mainteneur unique.
+1. Qualifier et intégrer le rattachement des historiques avec Merge commit,
+   puis vérifier les ancêtres et la qualification du SHA exact de `main`.
+   La revue externe est facultative dans le mode mainteneur unique.
 2. Conserver les livraisons désactivées pendant la qualification publique et
    la préparation des signatures et accès. L'ouverture du code n'est pas une
    qualification du candidat ni une acceptation de livraison.

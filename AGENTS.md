@@ -57,6 +57,11 @@ est facultative ; un mainteneur humain décide de la fusion, y compris pour sa
 propre PR. Une analyse automatisée ne constitue pas une approbation humaine.
 Les approbations des environnements de production restent indépendantes.
 
+Les imports et rattachements d'historiques utilisent **Merge commit** ; aucun
+squash ou rebase. Vérifier l'ascendance Git après fusion. Pendant la réparation
+de #317, seul ce mode de fusion est activé ; voir
+[la procédure et ses preuves](docs/operations/git-history-recovery.md).
+
 Privilégier des modules courts, des responsabilités explicites et les contrats
 aux points d'extension réels. Ne pas introduire d'abstraction sans besoin concret.
 Rapporter SHA, commandes, codes de sortie, tests réellement exécutés, artefacts
