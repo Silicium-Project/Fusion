@@ -142,8 +142,8 @@ pub fn handler(ctx: Context<SlashVote>) -> Result<()> {
     require!(!vote.slashed, SiliciumError::VoteAlreadySlashed);
 
     let wrong = match fragment.status {
-        FragmentStatus::Verified => vote.choice == false,
-        FragmentStatus::Rejected => vote.choice == true,
+        FragmentStatus::Verified => !vote.choice,
+        FragmentStatus::Rejected => vote.choice,
         FragmentStatus::Available => false,
         FragmentStatus::Claimed => false,
         FragmentStatus::Submitted => false,

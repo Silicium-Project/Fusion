@@ -11,7 +11,7 @@ use crate::{
         fragment::{Fragment, FragmentStatus},
         job::{Job, JobStatus},
         split_proposal::SplitProposal,
-        worker::{Worker, WorkerStatus, ROLE_COMPUTE},
+        worker::{meets_minimum_stake, Worker, WorkerStatus, ROLE_COMPUTE},
     },
 };
 
@@ -27,7 +27,7 @@ pub struct ProposeFragmentSplit<'info> {
         constraint = splitter_worker.owner == splitter.key() @ SiliciumError::NotAuthorized,
         constraint = splitter_worker.status == WorkerStatus::Active @ SiliciumError::NotAuthorized,
         constraint = splitter_worker.compute_reputation >= SPLIT_MIN_REPUTATION @ SiliciumError::ComputeReputationTooLow,
-        constraint = splitter_worker.stake_amount >= SPLIT_MIN_STAKE @ SiliciumError::StakeTooLow
+        constraint = meets_minimum_stake(splitter_worker.stake_amount, SPLIT_MIN_STAKE) @ SiliciumError::StakeTooLow
     )]
     pub splitter_worker: Box<Account<'info, Worker>>,
 

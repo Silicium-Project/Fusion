@@ -1,3 +1,7 @@
+// Anchor consumes the generated account modules from these exports. Handlers
+// are called through their qualified instruction module, never this namespace.
+#![allow(ambiguous_glob_reexports)]
+
 pub mod approve_fragment_split;
 pub mod cancel_job;
 pub mod claim_fragment;

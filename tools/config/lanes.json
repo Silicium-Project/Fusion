@@ -547,6 +547,29 @@
         {
           "command": [
             "cargo",
+            "fmt",
+            "--all",
+            "--check"
+          ],
+          "cwd": "chain/solana",
+          "kind": "check"
+        },
+        {
+          "command": [
+            "cargo",
+            "clippy",
+            "--locked",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "cwd": "chain/solana",
+          "kind": "check"
+        },
+        {
+          "command": [
+            "cargo",
             "test",
             "--lib",
             "--locked"

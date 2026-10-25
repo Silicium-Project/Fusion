@@ -164,11 +164,11 @@ pub fn recompute_worker_score(worker: &mut Worker, reason: u8) {
 
     let compute_penalty = (worker.compute_fraud_strikes as u64)
         .saturating_mul(1_500)
-        .saturating_add((worker.compute_failures as u64).saturating_mul(25));
+        .saturating_add(worker.compute_failures.saturating_mul(25));
 
     let verify_penalty = (worker.verify_fraud_strikes as u64)
         .saturating_mul(1_500)
-        .saturating_add((worker.verify_failures as u64).saturating_mul(25));
+        .saturating_add(worker.verify_failures.saturating_mul(25));
 
     let compute_score = compute_raw
         .saturating_sub(compute_penalty)

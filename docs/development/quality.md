@@ -72,6 +72,13 @@ associé au commit du tag dans `anchor-tools.json` et `upstreams.json`. Son cach
 est revérifié avant exécution. Il n'est plus recompilé à chaque bootstrap.
 La construction du programme SBF et tous les tests localnet restent exécutés.
 
+Rustfmt et Clippy avec `-D warnings` sont aussi obligatoires pour le programme.
+Le formatage initial est un commit distinct. Les seules exceptions ciblent
+les réexports de modules générés par Anchor et les deux signatures positionnelles
+de `create_job`, dont le changement modifierait l'ABI. Les seuils de stake,
+les données sérialisées et les erreurs de validation restent conservés ; les
+bornes zéro et `u64::MAX` du prédicat de stake sont testées explicitement.
+
 Le validateur 2.3.0 n'accepte pas `--rpc-bind-address` et ses services RPC/faucet
 écoutent largement malgré `--bind-address`. La qualification le lance donc
 dans des namespaces réseau/PID jetables, avec uniquement le loopback. Les

@@ -14,6 +14,8 @@ declare_id!("64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG");
 pub mod solana_layer {
     use super::*;
 
+    // Preserve the positional arguments of the existing on-chain instruction ABI.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_job(
         ctx: Context<CreateJob>,
         job_id: u64,

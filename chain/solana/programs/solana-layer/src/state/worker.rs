@@ -10,6 +10,28 @@ pub const ROLE_AUTO: u8 = 0;
 pub const ROLE_COMPUTE_PREFERRED: u8 = 1;
 pub const ROLE_VERIFY_PREFERRED: u8 = 2;
 
+/// A zero threshold intentionally allows stake-free participation. Keep the
+/// same comparison when a configured threshold is positive, without changing
+/// account fields or the instruction ABI.
+pub fn meets_minimum_stake(stake: u64, minimum: u64) -> bool {
+    stake >= minimum
+}
+
+#[cfg(test)]
+mod stake_threshold_tests {
+    use super::meets_minimum_stake;
+
+    #[test]
+    fn zero_and_positive_thresholds_keep_the_unsigned_boundary() {
+        assert!(meets_minimum_stake(0, 0));
+        assert!(meets_minimum_stake(u64::MAX, 0));
+        assert!(!meets_minimum_stake(9, 10));
+        assert!(meets_minimum_stake(10, 10));
+        assert!(!meets_minimum_stake(u64::MAX - 1, u64::MAX));
+        assert!(meets_minimum_stake(u64::MAX, u64::MAX));
+    }
+}
+
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
 pub enum WorkerStatus {
     Active,

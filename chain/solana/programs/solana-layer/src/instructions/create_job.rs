@@ -56,6 +56,8 @@ pub struct CreateJob<'info> {
     pub rent: Sysvar<'info, Rent>,
 }
 
+// Preserve the positional arguments of the existing on-chain instruction ABI.
+#[allow(clippy::too_many_arguments)]
 pub fn handler(
     ctx: Context<CreateJob>,
     job_id: u64,
