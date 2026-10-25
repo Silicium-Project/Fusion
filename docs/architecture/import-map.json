@@ -16,5 +16,13 @@
     "reconciled_head": "6723fcdc3ee7ea63938563f852fc5804d469aa0c",
     "source_main": "69fffec62ee8ca87d9142489a01aa24bb7eb8e13",
     "destination": "apps/web"
-  }
+  },
+  "additional_source_commits": [
+    {
+      "repository": "BackEnd",
+      "source_sha": "8e0b6dfe59fbd1c01d38e7f7b7f1fff0379d6450",
+      "reason": "Committed work present in the original detached checkout; imported after the canonical dev/main merge",
+      "path": "apps/api"
+    }
+  ]
 }
