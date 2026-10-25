@@ -1,0 +1,38 @@
+name: Mirror Epitech
+'on':
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      qualification_run:
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: mirror-epitech
+  cancel-in-progress: false
+jobs:
+  mirror:
+    if: ${{ !github.event.repository.private && vars.SILICIUM_MIRROR_ENABLED == '1' && github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: epitech-mirror
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      with:
+        ref: main
+        fetch-depth: 0
+        persist-credentials: false
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      with:
+        node-version: 22.23.4
+    - name: Mirror exact qualified Fusion tree
+      env:
+        GH_TOKEN: ${{ github.token }}
+        QUALIFICATION_RUN: ${{ inputs.qualification_run || github.event.workflow_run.id }}
+        MIRROR_SSH_KEY: ${{ secrets.MIRROR_SSH_KEY }}
+        MIRROR_KNOWN_HOSTS: ${{ vars.MIRROR_KNOWN_HOSTS }}
+      run: node tools/ci/mirror.mjs

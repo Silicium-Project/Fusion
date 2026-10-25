@@ -24,6 +24,11 @@ rapport et environnement. Corriger l'erreur d'infrastructure ou l'oracle
 fonctionnel identifié. Une relance d'erreur fonctionnelle ne remplace pas une
 correction. Une nouvelle révision invalide les anciens résultats applicables.
 
+Pour un service : préparer `dev ops diagnose --environment dev --json`, puis
+utiliser `--apply` si l'automatisation est configurée et autorisée. Lire
+[les observations et leurs limites](../operations/diagnostics.md). Une absence
+de télémétrie ne signifie jamais que les workers sont inactifs.
+
 ## Modifier un contrat
 
 Identifier producteur, consommateurs, version et fixtures dans `contracts`.

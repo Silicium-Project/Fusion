@@ -10,6 +10,7 @@ import { doctor } from './lib/doctor.mjs';
 import { api, repository, publicMetadata } from './lib/github.mjs';
 import { startIssue, acceptIssue } from './lib/project.mjs';
 import { releasePlan, requestDeploy } from './lib/release.mjs';
+import { diagnosticRequest } from './lib/operations.mjs';
 
 const commands = [
   { command: 'doctor', effect: 'read', usage: 'doctor --profile tooling|web|api|node|network|solana|delivery|all' },
@@ -24,12 +25,13 @@ const commands = [
   { command: 'issue accept', effect: 'issue closure with human approval', usage: 'issue accept ISSUE_URL --evidence URL --human-approved [--apply]' },
   { command: 'release plan', effect: 'read', usage: 'release plan --channel dev|prod --version VERSION [--run ID]' },
   { command: 'deploy request', effect: 'workflow dispatch with --apply', usage: 'deploy request --manifest FILE --environment dev|prod [--apply]' },
+  { command: 'ops diagnose', effect: 'read-only host observations through workflow dispatch with --apply', usage: 'ops diagnose --environment dev|prod [--apply]' },
 ];
 async function main() {
   const { args, options: o } = parseArgs(process.argv.slice(2));
   const [command = 'help', subcommand, value] = args;
   const output = (v) => print(v, Boolean(o.json));
-  if (command === 'help' || command === 'capabilities') return output({ schema_version: 1, commands: commands.map(c=>({...c,availability:c.command.startsWith('deploy')||c.command.startsWith('issue')?'configuration_required':'available'})), features:{validation:'available',signed_delivery:'experimental',project_automation:'configuration_required',worker_rolling_update:'planned'}, suites: Object.keys(registry().suites), documentation: 'docs/ai/README.md' });
+  if (command === 'help' || command === 'capabilities') return output({ schema_version: 1, commands: commands.map(c=>({...c,availability:c.command.startsWith('deploy')||c.command.startsWith('issue')||c.command.startsWith('ops')?'configuration_required':'available'})), features:{validation:'available',signed_delivery:'experimental',project_automation:'configuration_required',worker_rolling_update:'planned'}, suites: Object.keys(registry().suites), documentation: 'docs/ai/README.md' });
   if (command === 'doctor') { const result = doctor(o); output(result); process.exitCode = result.status === 'success' ? 0 : 2; return; }
   if (command === 'ci' && subcommand === 'plan') {
     let plan = makePlan(o);
@@ -82,6 +84,7 @@ async function main() {
   if (command === 'issue' && subcommand === 'accept') return output(acceptIssue(value, o.evidence, { apply: Boolean(o.apply), humanApproved: Boolean(o['human-approved']) }));
   if (command === 'release' && subcommand === 'plan') return output(releasePlan(o));
   if (command === 'deploy' && subcommand === 'request') return output(requestDeploy(o.manifest, { environment: o.environment, apply: Boolean(o.apply) }));
+  if (command === 'ops' && subcommand === 'diagnose') return output(diagnosticRequest(o.environment, Boolean(o.apply)));
   throw new Failure('Unknown command; run ./dev help', 2);
 }
 main().catch((error) => { print({ schema_version: 1, status: 'failure', error: error.message, exit_code: error.exitCode ?? 1 }); process.exitCode = error.exitCode ?? 1; });

@@ -55,3 +55,8 @@ localnet et des clés jetables ; Devnet est une opération explicite distincte.
 prépare une transition du Project ; `--apply` la réalise après contrôle du WIP.
 `dev release plan` prépare un candidat ; `dev deploy request` prépare ou lance
 un workflow GitHub. Les étapes de production et d'acceptation sont humaines.
+
+`dev ops diagnose --environment dev --json` prépare les observations CPU,
+disque, conteneurs et RPC. `--apply` demande le workflow protégé : voir
+[les diagnostics](../operations/diagnostics.md). Le [miroir Epitech](../operations/epitech-mirror.md)
+est une automatisation GitHub distincte, indépendante de la livraison.

@@ -487,7 +487,8 @@
             "tests/test_release_channels.py",
             "tests/test_vpn_deployment.py",
             "tests/test_delivery.py",
-            "tests/test_update_manifest.py"
+            "tests/test_update_manifest.py",
+            "tests/test_diagnostics.py"
           ],
           "cwd": ".",
           "kind": "test",

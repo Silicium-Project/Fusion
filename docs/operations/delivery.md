@@ -35,10 +35,11 @@ Examiner le résultat avant d'ajouter `--apply`. Les requêtes passent par le
 workflow GitHub `deploy.yml` ; aucune construction n'est faite sur le VPS.
 Les signatures et empreintes doivent être vérifiées avant activation.
 
-L'application prépare un répertoire distinct, vérifie l'état des services et
-la disponibilité des machines, puis active progressivement. Une télémétrie
-absente empêche la mise à jour d'une machine susceptible de calculer. Les
-volumes, identités, wallets et tâches ne sont jamais réinitialisés.
+L'application prépare un répertoire distinct et vérifie les identités de
+l'API et du web avant de changer le pointeur de paquets. Le changement d'image
+réseau reste bloqué jusqu'à qualification d'un protocole de drainage et de
+mise à jour progressive des machines. Une télémétrie absente ne démontre pas
+leur disponibilité. Les volumes, identités, wallets et tâches sont conservés.
 
 ## Retour arrière
 
@@ -54,3 +55,7 @@ les mesures de santé, versions, espace et ressources en lecture seule. Les
 opérations modificatrices ciblent un service ou un candidat explicite.
 Le VPS exécute les services et sert les paquets ; les builds/tests de CI
 s'exécutent sur GitHub.
+
+Voir [les diagnostics](diagnostics.md), [l'activation contrôlée](bootstrap.md)
+et [le miroir Epitech indépendant](epitech-mirror.md). Le maintien privé décidé
+par le propriétaire conserve ces workflows désactivés.

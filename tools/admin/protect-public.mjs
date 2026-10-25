@@ -10,7 +10,7 @@ if(apply) {
  api(`repos/${repository}/branches/main/protection`,{method:'PUT',body:protection});
  api(`repos/${repository}/actions/permissions/fork-pr-contributor-approval`,{method:'PUT',body:{approval_policy:'all_external_contributors'}});
  api(`repos/${repository}/actions/permissions/workflow`,{method:'PUT',body:{default_workflow_permissions:'read',can_approve_pull_request_reviews:false}});
- for(const name of ['development','production','signing-development','signing-production','windows-signing-development','windows-signing-production','project-automation']) {
+ for(const name of ['development','production','signing-development','signing-production','windows-signing-development','windows-signing-production','project-automation','epitech-mirror']) {
   const env=api(`repos/${repository}/environments/${name}`,{method:'PUT',body:{wait_timer:0,prevent_self_review:name.includes('production'),reviewers:name.includes('production')?reviewers:[],deployment_branch_policy:{protected_branches:false,custom_branch_policies:true}}});
   const rules=api(`repos/${repository}/environments/${name}/deployment-branch-policies`).branch_policies;
   if(!rules.some(r=>r.name==='main'&&r.type==='branch'))api(`repos/${repository}/environments/${name}/deployment-branch-policies`,{method:'POST',body:{name:'main',type:'branch'}});
@@ -19,4 +19,4 @@ if(apply) {
 }
 const current=apply?api(`repos/${repository}/branches/main/protection`):null;
 if(apply&&(!current.enforce_admins?.enabled||!current.required_conversation_resolution?.enabled||!current.required_status_checks?.contexts?.includes('ci/required')))throw new Failure('Protection verification failed; keep Actions suspended');
-console.log(JSON.stringify({schema_version:1,operation:'protect-public',status:apply?'verified':'planned',protection,environments:['development','production','signing-development','signing-production','windows-signing-development','windows-signing-production','project-automation'],actions_enabled:false},null,2));
+console.log(JSON.stringify({schema_version:1,operation:'protect-public',status:apply?'verified':'planned',protection,environments:['development','production','signing-development','signing-production','windows-signing-development','windows-signing-production','project-automation','epitech-mirror'],actions_enabled:false},null,2));
