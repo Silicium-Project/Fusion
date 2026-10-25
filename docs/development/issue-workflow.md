@@ -42,6 +42,14 @@ Une PR brouillon indique du travail commencé. `Revue` exige que toutes les PR
 actives soient prêtes et que leur contrôle `ci/required` soit réussi pour leur
 dernier commit. Une PR fermée sans fusion ne vaut pas livraison.
 
+`main` utilise le mode mainteneur unique décidé par le propriétaire le
+25 octobre 2026 : PR obligatoire, contrôle CI obligatoire lié à GitHub Actions,
+branche à jour et discussions résolues. Aucune approbation par un autre compte
+n'est imposée ; CODEOWNERS conserve la carte des responsabilités. Le mainteneur
+examine les changements et décide de la fusion, même s'il en est l'auteur.
+La revue automatisée reste une aide. Les protections de production et la
+décision humaine d'acceptation des issues ne sont pas supprimées.
+
 Après fusion, l'issue reste en `Validation`. Ni un ancien événement CI, ni une
 fusion ne suffisent à la déclarer terminée. La réconciliation consulte les
 preuves actuelles ; les événements répétés ne créent pas de doublon.
@@ -58,7 +66,9 @@ donnée ; un agent ne doit pas s'attribuer cette approbation par la seule prése
 du drapeau. Les droits GitHub du contributeur restent vérifiés.
 
 La commande vérifie la checklist, les enfants obligatoires, toutes les PR liées,
-leur revue humaine indépendante et l'inclusion des changements dans la preuve.
+leur fusion par un humain autorisé en écriture et l'inclusion des changements
+dans la preuve. L'auteur peut être cet humain ; aucun bot ne peut s'y substituer.
+La preuve conserve le mode de contribution, les SHA et l'identité de fusion.
 Une cible Dev/Prod exige aussi une livraison réussie du candidat exact. Une
 phase dont un livrable obligatoire reste ouvert ne peut pas être acceptée.
 

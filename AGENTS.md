@@ -51,6 +51,12 @@ production restent des décisions humaines explicites.
 
 ## Qualité et fin de tâche
 
+`main` utilise le mode mainteneur unique : PR obligatoire, `ci/required` réussi
+pour le commit courant, branche à jour et discussions résolues. La revue externe
+est facultative ; un mainteneur humain décide de la fusion, y compris pour sa
+propre PR. Une analyse automatisée ne constitue pas une approbation humaine.
+Les approbations des environnements de production restent indépendantes.
+
 Privilégier des modules courts, des responsabilités explicites et les contrats
 aux points d'extension réels. Ne pas introduire d'abstraction sans besoin concret.
 Rapporter SHA, commandes, codes de sortie, tests réellement exécutés, artefacts

@@ -1,4 +1,4 @@
-# One independent owner approval is required by the public main ruleset.
+# Owners identify reviewers; the sole-maintainer policy does not require external approval.
 * @Luis1454 @Mogza @ThomasW03
 /.github/ @Luis1454 @Mogza
 /chain/ @Luis1454 @Mogza

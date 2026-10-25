@@ -25,5 +25,5 @@ La clôture intervient après acceptation, avec ses preuves de validation.
 - [ ] Contrats, exemples et erreurs documentés dans la même PR.
 - [ ] Instructions humaines et IA actualisées.
 - [ ] Aucune donnée sensible dans le diff, les captures ou les preuves.
-- [ ] Revue indépendante demandée ; propriétaires des surfaces sensibles inclus.
+- [ ] Changements examinés et décision de fusion demandée au mainteneur ; revue externe facultative.
 - [ ] Changements de politique CI identifiés et obligations de base conservées.

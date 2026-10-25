@@ -112,8 +112,8 @@ exécutées : un lint réussi ne prouve pas une installation ou un déploiement.
 Le plan enregistre aussi chaque commande, répertoire, type de contrôle et
 variable déclarée. Un rapport amputé d'un test ou qui le rebaptise en simple
 contrôle échoue. Les suites non applicables portent leur justification.
-Supprimer ou changer une obligation existante dans une PR exige une revue
-indépendante, puis l'autorisation administrateur `SILICIUM_POLICY_MIGRATION_SHA`
+Supprimer ou changer une obligation existante dans une PR exige un examen
+explicite du mainteneur, puis l'autorisation administrateur `SILICIUM_POLICY_MIGRATION_SHA`
 égale au SHA de cette PR. Un agent ne doit pas se donner cette autorisation.
 Les ajouts de contrôles et la conservation des obligations de l'ancienne
 politique restent automatiques ; la CI utilise la variable administrateur.

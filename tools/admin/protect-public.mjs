@@ -1,6 +1,11 @@
 /** Apply only after the owner's exposure-report approval and the visibility change. */
-import { api, pages, repository, requireWriter } from '../lib/github.mjs';
+import { api, repository, requireWriter } from '../lib/github.mjs';
 import { Failure } from '../lib/process.mjs';
+import {
+  mainProtection,
+  soleMaintainerRules,
+  verifyMainProtection,
+} from '../lib/contribution-policy.mjs';
 const apply = process.argv.includes('--apply');
 requireWriter();
 const metadata = api(`repos/${repository}`);
@@ -9,26 +14,24 @@ if (metadata.private)
     'Public protections require the separately approved visibility change; this command never opens a repository',
     3,
   );
+if (metadata.default_branch !== 'main')
+  throw new Failure('Confirm the default branch before applying main protections', 3);
 const reviewers = ['Luis1454', 'Mogza'].map((login) => ({
   type: 'User',
   id: api(`users/${login}`).id,
 }));
-const protection = {
-  required_status_checks: { strict: true, contexts: ['ci/required'] },
-  enforce_admins: true,
-  required_pull_request_reviews: {
-    dismiss_stale_reviews: true,
-    require_code_owner_reviews: true,
-    required_approving_review_count: 1,
-    require_last_push_approval: true,
-  },
-  restrictions: null,
-  required_conversation_resolution: true,
-  allow_force_pushes: false,
-  allow_deletions: false,
-};
+const protection = mainProtection();
+const effectiveRules = api(`repos/${repository}/rules/branches/main`);
+const rulesets = [
+  ...new Set(effectiveRules.filter((r) => r.type === 'pull_request').map((r) => r.ruleset_id)),
+].map((id) => ({
+  id,
+  rules: soleMaintainerRules(api(`repos/${repository}/rulesets/${id}`)),
+}));
 if (apply) {
   api(`repos/${repository}/branches/main/protection`, { method: 'PUT', body: protection });
+  for (const { id, rules } of rulesets)
+    api(`repos/${repository}/rulesets/${id}`, { method: 'PUT', body: { rules } });
   api(`repos/${repository}/actions/permissions/fork-pr-contributor-approval`, {
     method: 'PUT',
     body: { approval_policy: 'all_external_contributors' },
@@ -83,20 +86,16 @@ if (apply) {
   }
 }
 const current = apply ? api(`repos/${repository}/branches/main/protection`) : null;
-if (
-  apply &&
-  (!current.enforce_admins?.enabled ||
-    !current.required_conversation_resolution?.enabled ||
-    !current.required_status_checks?.contexts?.includes('ci/required'))
-)
-  throw new Failure('Protection verification failed; keep Actions suspended');
+if (apply) verifyMainProtection(current, api(`repos/${repository}/rules/branches/main`));
 console.log(
   JSON.stringify(
     {
       schema_version: 1,
       operation: 'protect-public',
       status: apply ? 'verified' : 'planned',
+      contribution_mode: 'sole-maintainer',
       protection,
+      rulesets,
       environments: [
         'development',
         'production',

@@ -18,6 +18,21 @@ du composant. `./dev capabilities --json` est l'interface de découverte ;
 8. Présenter les changements, résultats observés et limites ; laisser la
    décision de revue/acceptation à un humain autorisé.
 
+### Faire intégrer une PR
+
+Le mode mainteneur unique autorise le mainteneur à examiner sa propre PR.
+Vérifier le SHA courant, `ci/required`, la mise à jour avec `main` et les
+discussions résolues, puis présenter les preuves pour sa décision de fusion.
+Une revue externe est facultative ; ne pas fabriquer une approbation via un
+bot ou un autre compte. L'accord pour changer les règles ne vaut pas accord
+pour fusionner une PR. Conserver les merges d'historiques de la migration.
+
+Pour une issue, `dev issue accept` demande toujours une autorisation humaine
+explicite, la checklist complète et la preuve de la cible sur `main`. Il vérifie
+que les PR ont été fusionnées par un humain ayant les droits d'écriture et
+enregistre les SHA et ce compte. Ne pas ajouter `--human-approved` de sa propre
+initiative. La production conserve ses approbations indépendantes.
+
 ## Diagnostiquer une CI
 
 Lire le run exact avec `dev ci inspect --run ID`. Comparer SHA, suite, plan,

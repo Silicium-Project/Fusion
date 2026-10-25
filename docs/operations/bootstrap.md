@@ -57,9 +57,11 @@ réactiver les workflows des trois dépôts sources ou les runners VPS.
 1. Valider le rapport d'exposition avant l'ouverture publique.
 2. Suspendre Actions, vérifier l'absence de jobs VPS actifs, puis désenregistrer
    les runners des quatre dépôts. Ne pas interrompre leurs services applicatifs.
-3. Après ouverture : protéger `main`, imposer `ci/required`, la revue indépendante,
-   CODEOWNERS, la résolution des conversations et la révocation des anciennes
-   approbations. Exiger l'approbation des workflows de tous les contributeurs
+3. Après ouverture : protéger `main`, imposer les PR, `ci/required` lié à GitHub
+   Actions, la branche à jour et la résolution des conversations, administrateurs
+   compris. Le mode mainteneur unique n'impose aucune approbation externe ;
+   CODEOWNERS indique les responsables et la révocation des anciennes approbations
+   reste activée. Exiger l'approbation des workflows de tous les contributeurs
    externes et ne pas les approuver pendant la stabilisation.
 4. Restreindre les environnements à `main`. `production` et
    `signing-production` exigent une approbation humaine indépendante.
@@ -70,6 +72,29 @@ réactiver les workflows des trois dépôts sources ou les runners VPS.
 L'organisation transmet actuellement un droit d'écriture par défaut. L'audit
 des membres et l'attribution nominative doivent précéder une éventuelle
 modification de ce défaut, qui affecterait aussi les autres dépôts.
+
+### Mode mainteneur unique
+
+Ce mode remplace l'exigence initiale de revue indépendante, avec l'accord
+explicite du propriétaire le 25 octobre 2026. `main` conserve une protection
+de PR avec zéro approbation exigée ; ne pas supprimer cette protection entière.
+Les options imposant une revue CODEOWNERS ou une approbation du dernier push
+sont désactivées. Les conversations, la CI stricte liée à l'App GitHub Actions,
+l'application aux administrateurs et l'interdiction des pushes forcés et des
+suppressions restent actives. Aucun nouveau droit de contournement n'est créé.
+
+Vérifier aussi `repos/Silicium-Project/Fusion/rules/branches/main` : les règles
+s'ajoutent à la protection classique. L'ancienne règle `Protect Main` exigeait
+elle aussi une approbation et celle du dernier push ; seule cette exigence est
+adaptée, avec les éventuels approbateurs spécifiques et l'approbation des
+changements non attribués. Les autres règles, conditions et acteurs sont conservés.
+
+`node tools/admin/protect-public.mjs` prépare cette configuration ; `--apply`
+l'applique après autorisation. Il refuse de modifier une règle héritée ou
+partagée avec d'autres branches et vérifie les obligations effectives. Ses
+environnements de production conservent les approbateurs et l'interdiction
+d'auto-approbation : ce changement concerne l'intégration dans `main`.
+Une fusion et une acceptation d'issue restent des décisions humaines distinctes.
 
 ## Signatures et registre
 

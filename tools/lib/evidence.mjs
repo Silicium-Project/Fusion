@@ -1,4 +1,4 @@
-/** Acceptance requires live, independent review and qualification evidence, not a URL-shaped string. */
+/** Acceptance requires a human maintainer's merge and qualification evidence, not a URL-shaped string. */
 import { api, repository } from './github.mjs';
 import { Failure } from './process.mjs';
 import { referencesIssue } from './issue-links.mjs';
@@ -7,23 +7,6 @@ export function acceptanceChecklistComplete(body) {
   if (!heading) return false;
   const section = body.slice(heading.index + heading[0].length).split(/\n#{1,6}\s/)[0];
   return Boolean(section && /- \[[xX]\]/.test(section) && !/- \[ \]/.test(section));
-}
-export function independentApproval(pr, reviews) {
-  const latest = new Map();
-  for (const r of reviews)
-    if (
-      r.user?.login &&
-      (!latest.has(r.user.login) ||
-        Date.parse(r.submitted_at) > Date.parse(latest.get(r.user.login).submitted_at))
-    )
-      latest.set(r.user.login, r);
-  return [...latest.values()].some(
-    (r) =>
-      r.user.type === 'User' &&
-      r.user.login !== pr.user.login &&
-      r.state === 'APPROVED' &&
-      r.commit_id === pr.head.sha,
-  );
 }
 export function inspectEvidence(url, target, issueUrl, { request = api } = {}) {
   if (!['Documentation', 'CI', 'Dev', 'Prod'].includes(target))
@@ -84,27 +67,29 @@ export function inspectEvidence(url, target, issueUrl, { request = api } = {}) {
   if (search.total_count < 1 || search.total_count > 100)
     throw new Failure('Link all contributing PRs to the issue by canonical URL', 3);
   const prs = [];
+  const merges = [];
   for (const item of search.items) {
     const pr = request(`repos/${repository}/pulls/${item.number}`);
     if (!referencesIssue(pr.body, issueUrl)) continue;
     if (!pr.merged_at || pr.base.ref !== 'main')
       throw new Failure('A contributing PR remains unmerged', 3);
-    const reviews = request(`repos/${repository}/pulls/${item.number}/reviews?per_page=100`);
-    const authorizedReviews = reviews.filter(
-      (r) =>
-        r.user?.type === 'User' &&
-        ['admin', 'maintain', 'write'].includes(
-          request(
-            `repos/${repository}/collaborators/${encodeURIComponent(r.user.login)}/permission`,
-          ).permission,
-        ),
-    );
-    if (!independentApproval(pr, authorizedReviews))
-      throw new Failure('Independent human approval of the current PR head is missing', 3);
+    if (pr.merged_by?.type !== 'User' || !pr.merged_by.login)
+      throw new Failure('A contributing PR was not merged by a human maintainer', 3);
+    const permission = request(
+      `repos/${repository}/collaborators/${encodeURIComponent(pr.merged_by.login)}/permission`,
+    ).permission;
+    if (!['admin', 'maintain', 'write'].includes(permission))
+      throw new Failure('The contributing PR merger lacks maintainer write permission', 3);
     const compare = request(`repos/${repository}/compare/${pr.merge_commit_sha}...${sourceSha}`);
     if (!['ahead', 'identical'].includes(compare.status))
       throw new Failure('Evidence does not contain every contributing change', 3);
     prs.push(pr.html_url);
+    merges.push({
+      pr_url: pr.html_url,
+      head_sha: pr.head.sha,
+      merge_sha: pr.merge_commit_sha,
+      actor: pr.merged_by.login,
+    });
   }
   if (!prs.length)
     throw new Failure('No contributing PR has an exact canonical Refs: line for this issue', 3);
@@ -117,6 +102,8 @@ export function inspectEvidence(url, target, issueUrl, { request = api } = {}) {
     evidence_url: parsed.href,
     issue_url: issueUrl,
     pr_urls: prs,
+    contribution_mode: 'sole-maintainer',
+    pr_merges: merges,
     deployment_id: deployment?.id ?? null,
   };
 }

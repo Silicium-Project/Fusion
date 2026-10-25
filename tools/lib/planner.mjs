@@ -195,7 +195,7 @@ export function combinePlans(plan, previous) {
     process.env.SILICIUM_POLICY_MIGRATION_SHA === plan.head_sha;
   if (removed.length && !reviewed)
     throw new Error(
-      'Validation obligations were removed or altered in this PR; independent review and the administrator SHA authorization are required',
+      'Validation obligations were removed or altered in this PR; explicit maintainer review and the administrator SHA authorization are required',
     );
   return {
     ...plan,

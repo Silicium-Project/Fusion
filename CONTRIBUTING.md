@@ -10,15 +10,25 @@
 5. Décrire les critères d'acceptation, contrats affectés et risques de migration.
 6. Exécuter le plan de validation applicable et joindre les résultats réels.
 7. Mettre à jour documentation humaine, instructions IA et exemples.
-8. Faire revoir la PR ; après intégration, qualifier la cible de livraison.
+8. Faire examiner les changements et obtenir la décision de fusion du mainteneur ;
+   après intégration, qualifier la cible de livraison.
 
 Éviter les mots-clés de clôture automatique : une PR fusionnée place une issue
 en validation, elle ne démontre pas seule que son résultat est accepté.
 
 ## Revue
 
+Le propriétaire a retenu le mode **mainteneur unique** le 25 octobre 2026.
+Une PR, la réussite de `ci/required` sur la révision courante, une branche à jour
+et la résolution des discussions restent obligatoires, administrateurs compris.
+La revue par un autre compte est facultative. Le mainteneur peut examiner et
+fusionner sa propre PR ; la CI et une analyse automatisée ne remplacent pas sa
+décision humaine. La fusion ne vaut toujours pas acceptation d'une issue.
+
 Les modifications du protocole, de Solana, des contrats, des secrets et de la
-CI doivent recevoir la revue du propriétaire correspondant. Les modifications
+CI doivent être examinées par le propriétaire correspondant, qui peut aussi
+être l'auteur. CODEOWNERS indique ces responsabilités sans imposer un second
+approbateur. Les protections de production ne changent pas. Les modifications
 mécaniques, mises à niveau et évolutions fonctionnelles sont des PR distinctes.
 Une validation échouée ou impossible à exécuter reste explicitement visible.
 

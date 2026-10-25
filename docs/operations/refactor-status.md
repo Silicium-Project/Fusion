@@ -16,6 +16,9 @@ n'autorisent une fusion, une acceptation ou une livraison.
 - Le checkout initial et ses changements restent conservés. Les travaux sont
   préparés dans une copie isolée, avec sauvegardes et carte de provenance.
 - Aucun programme, wallet ou autorité Solana n'est remplacé par cette refonte.
+- Le propriétaire a adopté le mode mainteneur unique le 25 octobre 2026 : PR,
+  CI stricte et discussions résolues obligatoires ; revue externe facultative.
+  Les approbations de production et l'acceptation humaine des issues sont conservées.
 
 ## Lots et preuves attendues
 
@@ -23,7 +26,7 @@ n'autorisent une fusion, une acceptation ou une livraison.
 |---|---|---|
 | L0 | Références Git et GitHub, sauvegardes des historiques, patchs et fichiers locaux, inventaire des CI et runners | Conserver l'inventaire privé comme référence de restauration ; actualiser les nouvelles preuves |
 | L1 | Audit d'exposition actualisé, ouverture et publication des visuels validées, HOLD isolés, contribution et consignes IA | Conserver les rapports privés et contrôler les nouveaux contenus |
-| L2 | Historiques importés sans squash, gitlinks retirés, chemins corrigés, issues et relations transférées | Revue indépendante des PR ; qualification complète du dernier commit avant intégration |
+| L2 | Historiques importés sans squash, gitlinks retirés, chemins corrigés, issues et relations transférées | Examen et décision humaine de fusion ; qualification complète du dernier commit avant intégration |
 | L3 | Fusion public, `main` protégé, environnements restreints, approbation des workflows externes et retrait des anciens runners | Vérifier la qualification publique complète et les accès avant toute livraison |
 | L4 | `dev`/`dev.ps1`, registre, routage, contrôle final, normes, diagnostics et métriques | Résultat GitHub complet du commit évalué et parcours Windows/Anchor ; voir les checks de la PR |
 | L5 | Construction sur GitHub, manifeste, signatures et snapshots, tests d'installation, application et rollback API/web | Provisionner les signatures/SSH, qualifier installations et mises à niveau, adopter le VPS et démontrer le rollback ; drainage/canari runtime toujours bloquants |
@@ -48,8 +51,13 @@ a été refusée par GitHub avant l'allocation de runners, pour un motif de
 facturation ou de limite de dépenses. Aucun test de cette tentative n'a
 démarré. L'écran de facturation fourni ensuite par le propriétaire confirme
 **2 000 minutes utilisées sur 2 000 incluses** pour l'organisation. Cette
-tentative privée précède l'ouverture ; le plafond reste à zéro. Le dernier
-commit attend sa qualification GitHub publique complète.
+tentative privée précède l'ouverture ; le plafond reste à zéro.
+
+La [qualification publique 40223122663](https://github.com/Silicium-Project/Fusion/actions/runs/40223122663)
+a ensuite réussi les **14 suites**, dont Windows et Solana, pour la tête de PR
+`03e62285bb7c3cc95f1c375416667f148a505cc3` : 975 tests/scénarios observés, contrôle
+`ci/required` réussi et rapports vérifiés. Les changements ultérieurs doivent
+obtenir leur propre qualification ; ces résultats ne valent pas déploiement.
 
 Le run a exécuté notamment 151 tests Go, 112 unités web et 56 scénarios
 navigateur, 34 unités natives Linux, 323 tests runtime et 69 tests WASM. Les
@@ -74,8 +82,9 @@ unitaires de scripts ne remplacent pas ces preuves.
 
 ## Activation restante, dans l'ordre
 
-1. Achever la qualification du commit, demander la revue indépendante et
-   traiter les commentaires avant une intégration humaine.
+1. Achever la qualification du commit et l'examen des changements ; traiter
+   les commentaires avant la décision humaine d'intégration. La revue externe
+   est facultative dans le mode mainteneur unique.
 2. Conserver les livraisons désactivées pendant la qualification publique et
    la préparation des signatures et accès. L'ouverture du code n'est pas une
    qualification du candidat ni une acceptation de livraison.
