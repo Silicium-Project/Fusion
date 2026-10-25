@@ -16,6 +16,7 @@ const plan = {
   dirty: false,
   policy_digest: 'policy',
   suites: ['unit'],
+  requirements: { unit: [{ command: ['node', 'unit'], cwd: '.', kind: 'test', env: {} }] },
 };
 const report = {
   schema_version: 1,
@@ -24,7 +25,9 @@ const report = {
   policy_digest: 'policy',
   suite: 'unit',
   status: 'success',
-  steps: [{ kind: 'test', exit_code: 0, tests_executed: 1 }],
+  steps: [
+    { command: ['node', 'unit'], cwd: '.', env: {}, kind: 'test', exit_code: 0, tests_executed: 1 },
+  ],
 };
 test('durable evidence embeds the gate inputs and exact qualified commit', () => {
   const evidence = qualificationEvidence(record, plan, [report]);

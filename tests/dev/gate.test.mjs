@@ -7,6 +7,7 @@ const plan = {
   source_sha: sha,
   policy_digest: 'policy',
   suites: ['unit'],
+  requirements: { unit: [{ command: ['node', 'unit'], cwd: '.', kind: 'test', env: {} }] },
   dirty: false,
 };
 const report = () => ({
@@ -16,7 +17,9 @@ const report = () => ({
   suite: 'unit',
   dirty: false,
   status: 'success',
-  steps: [{ kind: 'test', exit_code: 0, tests_executed: 3 }],
+  steps: [
+    { command: ['node', 'unit'], cwd: '.', env: {}, kind: 'test', exit_code: 0, tests_executed: 3 },
+  ],
 });
 test('actual successful required execution passes', () =>
   assert.equal(validateGate(plan, [report()]).status, 'success'));
@@ -40,4 +43,17 @@ test('failed commands cannot be hidden by success status', () => {
   const r = report();
   r.steps[0].exit_code = 1;
   assert.equal(validateGate(plan, [r]).status, 'failure');
+});
+
+test('success cannot hide a removed test, changed command or test recast as a check', () => {
+  for (const edit of [
+    (r) => (r.steps = []),
+    (r) => (r.steps[0].command = ['node', 'other']),
+    (r) => (r.steps[0].kind = 'check'),
+  ]) {
+    const r = report();
+    edit(r);
+    assert.equal(validateGate(plan, [r]).status, 'failure');
+  }
+  assert.equal(validateGate({ ...plan, requirements: undefined }, [report()]).status, 'failure');
 });

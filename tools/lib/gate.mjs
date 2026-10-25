@@ -1,5 +1,12 @@
 /** The required gate validates evidence for every selected lane, never an aggregate green alone. */
 import { Failure } from './process.mjs';
+export const stepIdentity = (step) =>
+  JSON.stringify({
+    command: step.command,
+    cwd: step.cwd ?? '.',
+    kind: step.kind,
+    env: Object.fromEntries(Object.entries(step.env ?? {}).sort(([a], [b]) => a.localeCompare(b))),
+  });
 export function validateGate(
   plan,
   reports,
@@ -24,6 +31,17 @@ export function validateGate(
       continue;
     }
     const r = matching[0];
+    const expected = plan.requirements?.[suite];
+    if (!Array.isArray(expected) || !expected.length)
+      errors.push(`${suite}: execution obligations missing from plan`);
+    else if (
+      !Array.isArray(r.steps) ||
+      r.steps.length !== expected.length ||
+      expected.some(
+        (step, index) => !r.steps[index] || stepIdentity(step) !== stepIdentity(r.steps[index]),
+      )
+    )
+      errors.push(`${suite}: executed commands do not match every planned obligation`);
     if (
       r.schema_version !== 1 ||
       r.source_sha !== expectedSha ||

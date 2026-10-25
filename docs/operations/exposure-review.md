@@ -64,8 +64,8 @@ publication. L'audit n'attribue pas de droits nouveaux sur ces ressources.
 
 Les anciennes Actions des quatre dépôts sont suspendues et six runners VPS
 inactifs ont été désenregistrés. Les services dev répondent toujours aux
-contrôles de santé. Les nouveaux workflows ne s'exécutent que sur un dépôt
-public ; la livraison exige en plus une activation explicite.
+contrôles de santé. La livraison exige une ouverture approuvée et une activation explicite. Les
+qualifications privées ponctuelles restent limitées au commit autorisé.
 
 Après validation : appliquer les protections publiques, restreindre les
 environnements et traiter les secrets historiques avant de réactiver les

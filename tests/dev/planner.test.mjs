@@ -24,7 +24,10 @@ test('documentation does not compile applications', () =>
     'tooling',
   ]));
 test('unknown paths require the entire registered matrix', () =>
-  assert.equal(route(['unexpected.file']).suites.length, Object.keys(registry().suites).length));
+  assert.equal(
+    route(['unexpected.file']).suites.length,
+    Object.values(registry().suites).filter((suite) => suite.tier === 'pr').length,
+  ));
 test('network changes qualify API, web and desktop consumers', () => {
   const p = route(['network/crates/node-core/src/lib.rs']);
   for (const c of ['network', 'api', 'web', 'node', 'infra']) assert.ok(p.components.includes(c));
@@ -54,4 +57,16 @@ test('quick feedback uses separate lanes and docs needs no integration build', (
   });
   assert.equal(phases.integration_count, 0);
   assert.equal(phases.quick.include.length, suites.length);
+});
+
+test('a PR cannot silently remove the test command from an unchanged suite', () => {
+  const step = { command: ['node', 'unit'], cwd: '.', kind: 'test', env: {} };
+  assert.throws(
+    () =>
+      combinePlans(
+        { suites: ['tooling'], requirements: { tooling: [] }, head_sha: 'a'.repeat(40) },
+        { suites: ['tooling'], requirements: { tooling: [step] } },
+      ),
+    /obligations/,
+  );
 });

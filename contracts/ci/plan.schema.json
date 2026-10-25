@@ -9,7 +9,8 @@
     "policy_digest",
     "suites",
     "matrix",
-    "paths"
+    "paths",
+    "requirements"
   ],
   "properties": {
     "schema_version": {
@@ -39,6 +40,13 @@
     },
     "matrix": {
       "type": "object"
+    },
+    "requirements": {
+      "type": "object",
+      "minProperties": 1
+    },
+    "not_applicable": {
+      "type": "array"
     }
   }
 }

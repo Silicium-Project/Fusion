@@ -63,6 +63,7 @@ export function executeSuite(id, { plan, output } = {}) {
     const exit = result.status || (step.kind === 'test' && count < 1 ? 1 : 0);
     report.steps.push({
       command: step.command,
+      env: step.env ?? {},
       cwd: step.cwd ?? '.',
       kind: step.kind,
       exit_code: exit,

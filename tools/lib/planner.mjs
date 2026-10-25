@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { git, readJson, root } from './process.mjs';
+import { stepIdentity } from './gate.mjs';
 
 export const configPath = resolve(root, 'tools/config/lanes.json');
 export const registry = () => readJson(configPath);
@@ -129,6 +130,26 @@ export function makePlan({ base = 'origin/main', head = 'HEAD', paths, config = 
     policy_digest: policy,
     dirty,
     ...selected,
+    requirements: Object.fromEntries(
+      selected.suites.map((id) => [
+        id,
+        config.suites[id].steps.map((step) => ({
+          command: step.command,
+          cwd: step.cwd ?? '.',
+          kind: step.kind,
+          env: step.env ?? {},
+        })),
+      ]),
+    ),
+    not_applicable: Object.entries(config.suites)
+      .filter(([id]) => !selected.suites.includes(id))
+      .map(([suite, value]) => ({
+        suite,
+        reason:
+          value.tier === 'pr'
+            ? 'component and consumers unchanged'
+            : 'requires a signed release candidate; not a source PR obligation',
+      })),
     matrix: {
       include: selected.suites.map((suite) => ({
         suite,
@@ -152,9 +173,41 @@ export function combinePlans(plan, previous) {
   const config = registry();
   for (const id of suites)
     if (!config.suites[id]) throw new Error(`Cannot remove required lane ${id} in its own PR`);
+  const requirements = Object.fromEntries(
+    suites.map((id) => [
+      id,
+      config.suites[id].steps.map((step) => ({
+        command: step.command,
+        cwd: step.cwd ?? '.',
+        kind: step.kind,
+        env: step.env ?? {},
+      })),
+    ]),
+  );
+  const removed = [];
+  for (const id of previous.suites)
+    for (const step of previous.requirements?.[id] ?? []) {
+      if (!(requirements[id] ?? []).some((current) => stepIdentity(current) === stepIdentity(step)))
+        removed.push({ suite: id, step });
+    }
+  const reviewed =
+    /^[a-f0-9]{40}$/.test(plan.head_sha ?? '') &&
+    process.env.SILICIUM_POLICY_MIGRATION_SHA === plan.head_sha;
+  if (removed.length && !reviewed)
+    throw new Error(
+      'Validation obligations were removed or altered in this PR; independent review and the administrator SHA authorization are required',
+    );
   return {
     ...plan,
     suites,
+    requirements,
+    policy_migration: removed.length
+      ? {
+          reviewed_head: plan.head_sha,
+          previous_policy_digest: previous.policy_digest,
+          removed_obligations: removed,
+        }
+      : null,
     matrix: {
       include: suites.map((suite) => ({
         suite,
