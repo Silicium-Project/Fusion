@@ -35,6 +35,27 @@ export function nextStatus(item) {
   if (item.status && ['Backlog', 'Prêt'].includes(item.status)) return 'Backlog';
   return 'À qualifier';
 }
+export function dependencyAccepted(child, itemsById) {
+  const item = itemsById.get(child.id);
+  return (
+    child.state === 'CLOSED' &&
+    child.stateReason === 'COMPLETED' &&
+    Boolean(item) &&
+    fieldValues(item).Status === 'Terminé'
+  );
+}
+export function assertCompleteRelations(items) {
+  for (const item of items.filter((item) => item.content?.url))
+    for (const name of ['blockedBy', 'subIssues'])
+      if (
+        item.content[name]?.pageInfo?.hasNextPage !== false ||
+        !Array.isArray(item.content[name]?.nodes)
+      )
+        throw new Failure(
+          `Project relationship data is incomplete for ${item.content.url}/${name}; expand pagination before changing its state`,
+          3,
+        );
+}
 export function projectState() {
   const data = graphql(`
     query ($cursor: String) {
@@ -99,6 +120,9 @@ export function projectState() {
                     }
                   }
                   blockedBy(first: 100) {
+                    pageInfo {
+                      hasNextPage
+                    }
                     nodes {
                       id
                       state
@@ -106,6 +130,9 @@ export function projectState() {
                     }
                   }
                   subIssues(first: 100) {
+                    pageInfo {
+                      hasNextPage
+                    }
                     nodes {
                       id
                       state
@@ -175,6 +202,9 @@ export function projectState() {
                         }
                       }
                       blockedBy(first: 100) {
+                        pageInfo {
+                          hasNextPage
+                        }
                         nodes {
                           id
                           state
@@ -182,6 +212,9 @@ export function projectState() {
                         }
                       }
                       subIssues(first: 100) {
+                        pageInfo {
+                          hasNextPage
+                        }
                         nodes {
                           id
                           state
@@ -205,6 +238,7 @@ export function projectState() {
     items.push(...page.nodes);
     cursor = page.pageInfo;
   }
+  assertCompleteRelations(items);
   return { ...project, items };
 }
 export function fieldValues(item) {
@@ -241,11 +275,16 @@ export function startIssue(url, apply = false) {
     !['Documentation', 'CI', 'Dev', 'Prod'].includes(f['Validation cible']) ||
     f.Status !== 'Prêt' ||
     f['Préparation'] !== 'Validée' ||
+    !f.Size ||
+    f.Phase === 'HOLD' ||
     issue.state !== 'OPEN'
   )
     throw new Failure('Issue is not prepared and ready', 3);
-  if (issue.blockedBy.nodes.some((x) => x.state !== 'CLOSED' || x.stateReason !== 'COMPLETED'))
-    throw new Failure('Open dependencies remain', 3);
+  const itemsById = new Map(
+    project.items.filter((x) => x.content?.id).map((x) => [x.content.id, x]),
+  );
+  if (!issue.blockedBy.nodes.every((child) => dependencyAccepted(child, itemsById)))
+    throw new Failure('Dependencies require accepted completion in the Project', 3);
   if (!issue.assignees.nodes.some((x) => x.login === viewer.login))
     throw new Failure('Assign the issue to the contributor before starting it', 3);
   const busy = project.items.filter(
@@ -274,10 +313,20 @@ export function acceptIssue(url, evidence, { apply = false, humanApproved = fals
     item = project.items.find((x) => x.content?.url === ref.url);
   if (!item || !['Validation', 'Terminé'].includes(fieldValues(item).Status))
     throw new Failure('Issue must be in Validation', 3);
+  if (fieldValues(item).Phase === 'HOLD' || ref.repo.endsWith('/planning-private'))
+    throw new Failure('HOLD requires a separate explicit arbitration', 3);
+  const itemsById = new Map(
+    project.items.filter((x) => x.content?.id).map((x) => [x.content.id, x]),
+  );
   if (
-    item.content.subIssues.nodes.some((x) => x.state !== 'CLOSED' || x.stateReason !== 'COMPLETED')
+    ![...item.content.subIssues.nodes, ...item.content.blockedBy.nodes].every((child) =>
+      dependencyAccepted(child, itemsById),
+    )
   )
-    throw new Failure('Required children remain open', 3);
+    throw new Failure(
+      'Required children and dependencies must have accepted completion in the Project',
+      3,
+    );
   if (!acceptanceChecklistComplete(item.content.body))
     throw new Failure('Complete the acceptance checklist before requesting closure', 3);
   const verification = inspectEvidence(evidence, fieldValues(item)['Validation cible'], ref.url);

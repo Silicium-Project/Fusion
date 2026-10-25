@@ -8,6 +8,7 @@ import {
 const sha = 'a'.repeat(40),
   issue = 'https://github.com/Silicium-Project/Fusion/issues/1';
 const pr = {
+  body: `Refs: ${issue}`,
   merged_at: '2026-01-01',
   user: { login: 'author' },
   head: { sha },
@@ -95,4 +96,15 @@ test('GitHub issue-form headings delimit the acceptance checklist', () => {
     true,
   );
   assert.equal(acceptanceChecklistComplete('### Conditions d’acceptation\n- [ ] missing'), false);
+});
+test('incidental mentions and issue-number prefixes cannot qualify another issue', () => {
+  for (const body of [`Discussion: ${issue}`, `Refs: ${issue}0`])
+    assert.throws(
+      () =>
+        inspectEvidence('https://github.com/Silicium-Project/Fusion/actions/runs/1', 'CI', issue, {
+          request: (p) =>
+            p.includes('/pulls/') && !p.includes('reviews') ? { ...pr, body } : request(p),
+        }),
+      /No contributing PR/,
+    );
 });

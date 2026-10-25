@@ -1,7 +1,14 @@
 /** Reconcile trusted GitHub metadata; never check out or execute PR content. */
 import { api, pages, repository } from '../lib/github.mjs';
-import { projectState, fieldValues, nextStatus, setField } from '../lib/project.mjs';
+import {
+  projectState,
+  fieldValues,
+  nextStatus,
+  setField,
+  dependencyAccepted,
+} from '../lib/project.mjs';
 import { inspectEvidence } from '../lib/evidence.mjs';
+import { referencesIssue } from '../lib/issue-links.mjs';
 
 const apply = process.argv.includes('--apply');
 const project = projectState();
@@ -16,7 +23,7 @@ for (const item of items.values()) {
     f.Phase === 'HOLD' ||
     f.Status === 'Arbitrage';
   if (hold) continue;
-  const linked = prs.filter((p) => (p.body ?? '').includes(issue.url));
+  const linked = prs.filter((p) => referencesIssue(p.body, issue.url));
   const active = [];
   for (const p of linked.filter((x) => !x.merged_at && x.state === 'open')) {
     if (p.head.repo?.full_name !== repository) continue;
@@ -36,14 +43,7 @@ for (const item of items.values()) {
       changes_requested: [...latest.values()].some((r) => r.state === 'CHANGES_REQUESTED'),
     });
   }
-  const completed = (child) => {
-    const childItem = items.get(child.id);
-    return (
-      child.state === 'CLOSED' &&
-      child.stateReason === 'COMPLETED' &&
-      (!childItem || fieldValues(childItem).Status === 'Terminé')
-    );
-  };
+  const completed = (child) => dependencyAccepted(child, items);
   let acceptance = null;
   if (issue.state === 'CLOSED' && issue.stateReason === 'COMPLETED') {
     for (const c of pages(

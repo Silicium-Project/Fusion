@@ -1,6 +1,7 @@
 /** Acceptance requires live, independent review and qualification evidence, not a URL-shaped string. */
 import { api, repository } from './github.mjs';
 import { Failure } from './process.mjs';
+import { referencesIssue } from './issue-links.mjs';
 export function acceptanceChecklistComplete(body) {
   const heading = /^#{2,3}\s+(?:Conditions|Critères) d[’']acceptation\s*$/im.exec(body ?? '');
   if (!heading) return false;
@@ -85,6 +86,7 @@ export function inspectEvidence(url, target, issueUrl, { request = api } = {}) {
   const prs = [];
   for (const item of search.items) {
     const pr = request(`repos/${repository}/pulls/${item.number}`);
+    if (!referencesIssue(pr.body, issueUrl)) continue;
     if (!pr.merged_at || pr.base.ref !== 'main')
       throw new Failure('A contributing PR remains unmerged', 3);
     const reviews = request(`repos/${repository}/pulls/${item.number}/reviews?per_page=100`);
@@ -104,6 +106,8 @@ export function inspectEvidence(url, target, issueUrl, { request = api } = {}) {
       throw new Failure('Evidence does not contain every contributing change', 3);
     prs.push(pr.html_url);
   }
+  if (!prs.length)
+    throw new Failure('No contributing PR has an exact canonical Refs: line for this issue', 3);
   return {
     schema_version: 1,
     verified: true,

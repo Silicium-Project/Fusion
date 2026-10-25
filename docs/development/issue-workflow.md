@@ -31,6 +31,13 @@ Utiliser `Refs: https://github.com/Silicium-Project/Fusion/issues/NUMERO` dans
 chaque PR. Plusieurs PR peuvent contribuer à une même issue. Les mots-clés de
 clôture automatique ne font pas partie de ce workflow.
 
+Écrire une ligne `Refs:` par URL, sans fragment ni paramètres. Une simple
+mention dans un paragraphe est informative et ne rend pas la PR obligatoire
+pour l'acceptation. Les liens sont comparés exactement : l'issue 21 n'hérite
+pas des PR de l'issue 210. Une contribution remplacée doit être arbitrée
+explicitement dans les PR et leurs références ; une fermeture sans fusion
+n'est jamais déduite comme une réalisation.
+
 Une PR brouillon indique du travail commencé. `Revue` exige que toutes les PR
 actives soient prêtes et que leur contrôle `ci/required` soit réussi pour leur
 dernier commit. Une PR fermée sans fusion ne vaut pas livraison.
@@ -54,6 +61,11 @@ La commande vérifie la checklist, les enfants obligatoires, toutes les PR liée
 leur revue humaine indépendante et l'inclusion des changements dans la preuve.
 Une cible Dev/Prod exige aussi une livraison réussie du candidat exact. Une
 phase dont un livrable obligatoire reste ouvert ne peut pas être acceptée.
+
+Une dépendance fermée exige aussi `Status = Terminé` dans le Project ; une
+fermeture manuelle sans acceptation ne suffit pas. Une dépendance absente de
+l'inventaire ou une liste de relations tronquée bloque la transition : il
+faut restaurer les données ou étendre la pagination, jamais ignorer le reste.
 
 L'abandon ou le doublon est une décision explicite (`Abandonné`). Les issues
 HOLD exigent un arbitrage individuel dans l'espace privé.
