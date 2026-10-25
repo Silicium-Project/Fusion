@@ -18,8 +18,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     if: ${{ always() && (!github.event.repository.private || (github.event_name == 'pull_request' && vars.SILICIUM_PRIVATE_CI_WINDOW != '')) &&
-      (github.event_name != 'push' || needs.budget.result == 'success') && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name
-      == github.repository && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association))) }}
+      (github.event_name != 'push' || needs.budget.result == 'success') }}
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       node: ${{ steps.versions.outputs.node }}
@@ -28,6 +27,31 @@ jobs:
       integration_matrix: ${{ steps.plan.outputs.integration_matrix }}
       integration_count: ${{ steps.plan.outputs.integration_count }}
     steps:
+    - name: Authorize internal writer pull request from authoritative metadata
+      if: ${{ github.event_name == 'pull_request' }}
+      env:
+        GH_TOKEN: ${{ github.token }}
+        PULL_NUMBER: ${{ github.event.number }}
+      run: 'node --input-type=module <<''JS''
+
+        const repo=process.env.GITHUB_REPOSITORY,number=process.env.PULL_NUMBER;
+
+        if(!/^[1-9][0-9]*$/.test(number??''''))throw new Error(''Missing pull request number'');
+
+        const get=async path=>{const r=await fetch(`https://api.github.com/${path}`,{headers:{authorization:`Bearer ${process.env.GH_TOKEN}`,accept:''application/vnd.github+json''},signal:AbortSignal.timeout(15000)});if(!r.ok)throw
+        new Error(`GitHub authorization metadata failed: HTTP ${r.status}`);return r.json()};
+
+        const pr=await get(`repos/${repo}/pulls/${number}`);
+
+        if(pr.head.repo?.id!==pr.base.repo?.id)throw new Error(''External contributions remain disabled during stabilization'');
+
+        const permission=await get(`repos/${repo}/collaborators/${encodeURIComponent(pr.user.login)}/permission`);
+
+        if(![''admin'',''maintain'',''write''].includes(permission.permission))throw new Error(''Team write permission is required for qualification'');
+
+        console.log(JSON.stringify({pull_request:Number(number),same_repository:true,permission:permission.permission}));
+
+        JS'
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       with:
         fetch-depth: 0
@@ -89,6 +113,9 @@ jobs:
         retention-days: 1
     needs:
     - budget
+    permissions:
+      contents: read
+      pull-requests: read
   validate:
     needs: &id001
     - changes
