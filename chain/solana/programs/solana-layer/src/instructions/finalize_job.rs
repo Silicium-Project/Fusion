@@ -54,11 +54,7 @@ pub struct FinalizeJob<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler(
-    ctx: Context<FinalizeJob>,
-    final_hash: [u8; 32],
-    output_uri: Vec<u8>,
-) -> Result<()> {
+pub fn handler(ctx: Context<FinalizeJob>, final_hash: [u8; 32], output_uri: Vec<u8>) -> Result<()> {
     require!(output_uri.len() <= URI_MAX_LEN, SiliciumError::UriTooLong);
 
     require!(

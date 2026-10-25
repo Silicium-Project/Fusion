@@ -1,10 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{Mint, Token, TokenAccount};
 
-use crate::{
-    events::StakingPoolInitialized,
-    state::staking_pool::StakingPool,
-};
+use crate::{events::StakingPoolInitialized, state::staking_pool::StakingPool};
 
 #[derive(Accounts)]
 pub struct InitStakingPool<'info> {

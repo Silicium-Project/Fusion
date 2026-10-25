@@ -132,10 +132,7 @@ pub fn handler(ctx: Context<ClaimVerifierReward>) -> Result<()> {
         SiliciumError::InvalidParams
     );
 
-    require!(
-        !vote.reward_claimed,
-        SiliciumError::RewardAlreadyClaimed
-    );
+    require!(!vote.reward_claimed, SiliciumError::RewardAlreadyClaimed);
 
     require!(
         round_resolution.claimed_rewards < round_resolution.eligible_rewards,
@@ -175,11 +172,9 @@ pub fn handler(ctx: Context<ClaimVerifierReward>) -> Result<()> {
 
     vote.reward_claimed = true;
 
-    round_resolution.claimed_rewards =
-        round_resolution.claimed_rewards.saturating_add(1);
+    round_resolution.claimed_rewards = round_resolution.claimed_rewards.saturating_add(1);
 
-    job.claimed_verifier_rewards_total =
-        job.claimed_verifier_rewards_total.saturating_add(reward);
+    job.claimed_verifier_rewards_total = job.claimed_verifier_rewards_total.saturating_add(reward);
 
     job.paid_amount = job.paid_amount.saturating_add(reward);
 

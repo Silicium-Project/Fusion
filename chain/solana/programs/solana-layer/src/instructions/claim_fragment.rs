@@ -63,7 +63,10 @@ pub struct ClaimFragment<'info> {
 }
 
 pub fn handler(ctx: Context<ClaimFragment>, fragment_index: u32) -> Result<()> {
-    require!(fragment_index < ctx.accounts.job.max_fragments, SiliciumError::InvalidParams);
+    require!(
+        fragment_index < ctx.accounts.job.max_fragments,
+        SiliciumError::InvalidParams
+    );
 
     require!(
         ctx.accounts.worker_account.has_role(ROLE_COMPUTE),
@@ -119,7 +122,10 @@ pub fn handler(ctx: Context<ClaimFragment>, fragment_index: u32) -> Result<()> {
         f.bump = ctx.bumps.fragment;
     } else {
         require!(f.job == job_key, SiliciumError::InvalidParams);
-        require!(f.fragment_index == fragment_index, SiliciumError::InvalidParams);
+        require!(
+            f.fragment_index == fragment_index,
+            SiliciumError::InvalidParams
+        );
     }
 
     require!(f.is_leaf, SiliciumError::BadFragmentState);
@@ -139,7 +145,10 @@ pub fn handler(ctx: Context<ClaimFragment>, fragment_index: u32) -> Result<()> {
             f.voting_deadline_unix = 0;
         }
         FragmentStatus::Claimed => {
-            require!(now > f.claim_deadline_unix, SiliciumError::FragmentAlreadyClaimed);
+            require!(
+                now > f.claim_deadline_unix,
+                SiliciumError::FragmentAlreadyClaimed
+            );
         }
         _ => {
             return err!(SiliciumError::BadFragmentState);
@@ -154,7 +163,10 @@ pub fn handler(ctx: Context<ClaimFragment>, fragment_index: u32) -> Result<()> {
         ctx.accounts.worker_account.stake_amount >= f.required_stake,
         SiliciumError::StakeTooLow
     );
-    require!(now <= ctx.accounts.job.deadline_unix, SiliciumError::JobExpired);
+    require!(
+        now <= ctx.accounts.job.deadline_unix,
+        SiliciumError::JobExpired
+    );
 
     f.assigned_worker = worker_key;
     f.worker = Pubkey::default();

@@ -2,9 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
 use crate::{
-    constants::REWARD_SCALE,
-    error::SiliciumError,
-    events::StakingRewardsFunded,
+    constants::REWARD_SCALE, error::SiliciumError, events::StakingRewardsFunded,
     state::staking_pool::StakingPool,
 };
 

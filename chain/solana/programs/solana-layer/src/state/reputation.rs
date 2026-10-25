@@ -249,7 +249,10 @@ fn update_compute_reputation_with_weight(
     event: ReputationEvent,
     weight_bps: u64,
 ) {
-    decay_short_memory(&mut worker.compute_alpha_short, &mut worker.compute_beta_short);
+    decay_short_memory(
+        &mut worker.compute_alpha_short,
+        &mut worker.compute_beta_short,
+    );
 
     let reason = match event {
         ReputationEvent::ComputeSuccess => {
@@ -303,7 +306,10 @@ fn update_compute_reputation_with_weight(
 }
 
 pub fn update_verify_reputation(worker: &mut Worker, event: ReputationEvent) {
-    decay_short_memory(&mut worker.verify_alpha_short, &mut worker.verify_beta_short);
+    decay_short_memory(
+        &mut worker.verify_alpha_short,
+        &mut worker.verify_beta_short,
+    );
 
     let reason = match event {
         ReputationEvent::VerificationSuccess => {

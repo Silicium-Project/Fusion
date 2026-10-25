@@ -65,7 +65,11 @@ pub fn handler(ctx: Context<RegisterWorker>) -> Result<()> {
         payout.payout_wallet = worker_key;
         payout.bump = ctx.bumps.worker_payout;
     } else {
-        require_keys_eq!(payout.worker, worker_key, crate::error::SiliciumError::InvalidParams);
+        require_keys_eq!(
+            payout.worker,
+            worker_key,
+            crate::error::SiliciumError::InvalidParams
+        );
     }
 
     emit!(WorkerRegistered {

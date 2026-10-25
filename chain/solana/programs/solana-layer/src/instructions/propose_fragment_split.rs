@@ -2,7 +2,9 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::TokenAccount;
 
 use crate::{
-    constants::{MAX_CHILDREN_PER_SPLIT, SPLIT_MIN_COMPLEXITY, SPLIT_MIN_REPUTATION, SPLIT_MIN_STAKE},
+    constants::{
+        MAX_CHILDREN_PER_SPLIT, SPLIT_MIN_COMPLEXITY, SPLIT_MIN_REPUTATION, SPLIT_MIN_STAKE,
+    },
     error::SiliciumError,
     events::{FragmentSplitApproved, FragmentSplitProposed},
     state::{
@@ -80,26 +82,53 @@ pub fn handler(
     let splitter_worker = &mut ctx.accounts.splitter_worker;
 
     require!(now <= job.deadline_unix, SiliciumError::JobExpired);
-    require!(splitter_worker.has_role(ROLE_COMPUTE), SiliciumError::MissingComputeRole);
-    require!(child_count >= 2, SiliciumError::SplitChildLimitExceeded);
-    require!(child_count <= MAX_CHILDREN_PER_SPLIT, SiliciumError::SplitChildLimitExceeded);
-    require!(parent.is_leaf, SiliciumError::ParentFragmentNotLeaf);
-    require!(parent.status != FragmentStatus::SplitParent, SiliciumError::FragmentAlreadySplit);
-    require!(parent.depth < job.max_fragment_depth, SiliciumError::SplitDepthExceeded);
-    require!(parent.complexity_score >= SPLIT_MIN_COMPLEXITY, SiliciumError::SplitComplexityTooLow);
     require!(
-        matches!(parent.status, FragmentStatus::Claimed | FragmentStatus::Submitted),
+        splitter_worker.has_role(ROLE_COMPUTE),
+        SiliciumError::MissingComputeRole
+    );
+    require!(child_count >= 2, SiliciumError::SplitChildLimitExceeded);
+    require!(
+        child_count <= MAX_CHILDREN_PER_SPLIT,
+        SiliciumError::SplitChildLimitExceeded
+    );
+    require!(parent.is_leaf, SiliciumError::ParentFragmentNotLeaf);
+    require!(
+        parent.status != FragmentStatus::SplitParent,
+        SiliciumError::FragmentAlreadySplit
+    );
+    require!(
+        parent.depth < job.max_fragment_depth,
+        SiliciumError::SplitDepthExceeded
+    );
+    require!(
+        parent.complexity_score >= SPLIT_MIN_COMPLEXITY,
+        SiliciumError::SplitComplexityTooLow
+    );
+    require!(
+        matches!(
+            parent.status,
+            FragmentStatus::Claimed | FragmentStatus::Submitted
+        ),
         SiliciumError::SplitNotAllowed
     );
-    require!(parent.assigned_worker == ctx.accounts.splitter.key(), SiliciumError::NotAuthorized);
-    require!(manifest_hash != [0u8; 32], SiliciumError::InvalidSplitManifest);
+    require!(
+        parent.assigned_worker == ctx.accounts.splitter.key(),
+        SiliciumError::NotAuthorized
+    );
+    require!(
+        manifest_hash != [0u8; 32],
+        SiliciumError::InvalidSplitManifest
+    );
 
     let projected_total = job
         .total_fragments_created
         .checked_add(child_count as u32)
         .ok_or(SiliciumError::InvalidParams)?;
 
-    require!(projected_total <= job.max_fragments, SiliciumError::TooManyFragments);
+    require!(
+        projected_total <= job.max_fragments,
+        SiliciumError::TooManyFragments
+    );
 
     // The initial escrow reserves the maximum tree budget. Keep this check at
     // the split boundary so a malformed or old quote cannot create work that
@@ -161,7 +190,10 @@ pub fn handler(
         .saturating_sub(1)
         .checked_add(child_count as u32)
         .ok_or(SiliciumError::InvalidParams)?;
-    require!(new_expected <= max_leaf_fragments, SiliciumError::TooManyFragments);
+    require!(
+        new_expected <= max_leaf_fragments,
+        SiliciumError::TooManyFragments
+    );
     let max_required_compute = (max_leaf_fragments as u128)
         .checked_mul(job.reward_per_fragment as u128)
         .ok_or(SiliciumError::InvalidParams)?;

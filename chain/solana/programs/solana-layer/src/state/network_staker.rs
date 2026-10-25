@@ -1,10 +1,6 @@
 use anchor_lang::prelude::*;
 
-use crate::{
-    constants::REWARD_SCALE,
-    error::SiliciumError,
-    state::staking_pool::StakingPool,
-};
+use crate::{constants::REWARD_SCALE, error::SiliciumError, state::staking_pool::StakingPool};
 
 #[account]
 pub struct NetworkStaker {
@@ -22,8 +18,7 @@ pub struct NetworkStaker {
 }
 
 impl NetworkStaker {
-    pub const SPACE: usize =
-        8 +     // discriminator
+    pub const SPACE: usize = 8 +     // discriminator
         32 +    // owner
         32 +    // mint
         8 +     // stake_amount
@@ -31,7 +26,7 @@ impl NetworkStaker {
         8 +     // pending_rewards
         8 +     // unstake_requested_amount
         8 +     // unstake_available_at
-        1;      // bump
+        1; // bump
 
     pub fn pending_reward_amount(&self, pool: &StakingPool) -> Result<u64> {
         let accumulated = (self.stake_amount as u128)

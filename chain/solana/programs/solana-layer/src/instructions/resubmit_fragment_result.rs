@@ -100,8 +100,11 @@ pub fn handler(
     f.proof_ref = proof_ref;
     f.status = FragmentStatus::Submitted;
 
-    ctx.accounts.worker_account.total_submitted =
-        ctx.accounts.worker_account.total_submitted.saturating_add(1);
+    ctx.accounts.worker_account.total_submitted = ctx
+        .accounts
+        .worker_account
+        .total_submitted
+        .saturating_add(1);
 
     emit!(FragmentSubmitted {
         job: f.job,

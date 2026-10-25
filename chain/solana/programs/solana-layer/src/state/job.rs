@@ -68,10 +68,8 @@ impl Job {
         if initial_fragments == 0 {
             return 0;
         }
-        let child_slots_per_root = self
-            .max_fragments
-            .saturating_sub(initial_fragments)
-            / initial_fragments;
+        let child_slots_per_root =
+            self.max_fragments.saturating_sub(initial_fragments) / initial_fragments;
         let leaves_per_root = 1 + child_slots_per_root / 2;
         initial_fragments
             .saturating_mul(leaves_per_root)
@@ -103,5 +101,5 @@ impl Job {
         + 32                    // split_authority
         + 1                     // status
         + 1                     // bump
-        + 1;                    // escrow_auth_bump
+        + 1; // escrow_auth_bump
 }

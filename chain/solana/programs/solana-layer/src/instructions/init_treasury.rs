@@ -1,10 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{Mint, Token, TokenAccount};
 
-use crate::{
-    events::TreasuryInitialized,
-    state::treasury::Treasury,
-};
+use crate::{events::TreasuryInitialized, state::treasury::Treasury};
 
 #[derive(Accounts)]
 pub struct InitTreasury<'info> {

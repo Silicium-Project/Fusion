@@ -44,5 +44,5 @@ impl JobStorage {
         + 32                    // encryption_ref_hash
         + 32                    // declared_by
         + 8                     // created_at_unix
-        + 1;                    // bump
+        + 1; // bump
 }

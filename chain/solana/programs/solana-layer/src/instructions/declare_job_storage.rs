@@ -39,9 +39,18 @@ pub fn handler(
     storage_ref_hash: [u8; 32],
     encryption_ref_hash: [u8; 32],
 ) -> Result<()> {
-    require!(manifest_hash != [0u8; 32], SiliciumError::InvalidStorageHash);
-    require!(input_root_hash != [0u8; 32], SiliciumError::InvalidStorageHash);
-    require!(storage_ref_hash != [0u8; 32], SiliciumError::InvalidStorageHash);
+    require!(
+        manifest_hash != [0u8; 32],
+        SiliciumError::InvalidStorageHash
+    );
+    require!(
+        input_root_hash != [0u8; 32],
+        SiliciumError::InvalidStorageHash
+    );
+    require!(
+        storage_ref_hash != [0u8; 32],
+        SiliciumError::InvalidStorageHash
+    );
 
     let now = Clock::get()?.unix_timestamp;
     let job_key = ctx.accounts.job.key();

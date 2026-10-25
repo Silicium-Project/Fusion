@@ -67,7 +67,10 @@ pub fn handler(ctx: Context<StakeWorker>, amount: u64) -> Result<()> {
         w.stake_vault = stake_vault_key;
     } else {
         require!(w.stake_mint == mint_key, SiliciumError::WrongStakeMint);
-        require!(w.stake_vault == stake_vault_key, SiliciumError::WrongStakeVault);
+        require!(
+            w.stake_vault == stake_vault_key,
+            SiliciumError::WrongStakeVault
+        );
     }
 
     let cpi_ctx = CpiContext::new(

@@ -1,5 +1,5 @@
-use anchor_lang::prelude::*;
 use crate::instructions::finalize_job::URI_MAX_LEN;
+use anchor_lang::prelude::*;
 
 #[account]
 pub struct JobResult {
@@ -11,8 +11,7 @@ pub struct JobResult {
 }
 
 impl JobResult {
-    pub const SPACE: usize =
-        8   // discr
+    pub const SPACE: usize = 8   // discr
         + 32 // job
         + 32 // final_hash
         + 2  // uri_len

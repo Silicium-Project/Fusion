@@ -4,10 +4,7 @@ use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 use crate::{
     error::SiliciumError,
     events::StakingRewardClaimed,
-    state::{
-        network_staker::NetworkStaker,
-        staking_pool::StakingPool,
-    },
+    state::{network_staker::NetworkStaker, staking_pool::StakingPool},
 };
 
 #[derive(Accounts)]

@@ -80,8 +80,7 @@ pub struct Worker {
 }
 
 impl Worker {
-    pub const SPACE: usize =
-        8 +     // discriminator
+    pub const SPACE: usize = 8 +     // discriminator
         32 +    // owner
         32 +    // stake_mint
         32 +    // stake_vault
@@ -116,7 +115,7 @@ impl Worker {
         4 +     // performance_score
         4 +     // efficiency_score
         4 +     // reliability_score
-        1;      // bump
+        1; // bump
 
     pub fn has_role(&self, role: u8) -> bool {
         self.roles & role != 0

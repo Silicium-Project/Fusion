@@ -5,10 +5,7 @@ use crate::{
     constants::MIN_NETWORK_STAKE,
     error::SiliciumError,
     events::NetworkStakeDeposited,
-    state::{
-        network_staker::NetworkStaker,
-        staking_pool::StakingPool,
-    },
+    state::{network_staker::NetworkStaker, staking_pool::StakingPool},
 };
 
 #[derive(Accounts)]

@@ -157,7 +157,10 @@ fn verify_worker_proof(
     );
 
     let data = proof.data;
-    require!(data.len() >= 112 && data[0] == 1 && data[1] == 0, SiliciumError::NotAuthorized);
+    require!(
+        data.len() >= 112 && data[0] == 1 && data[1] == 0,
+        SiliciumError::NotAuthorized
+    );
     let read_u16 = |offset: usize| -> Result<usize> {
         let bytes = data
             .get(offset..offset + 2)

@@ -16,8 +16,7 @@ pub struct StakingPool {
 }
 
 impl StakingPool {
-    pub const SPACE: usize =
-        8 +     // discriminator
+    pub const SPACE: usize = 8 +     // discriminator
         32 +    // mint
         32 +    // authority
         32 +    // stake_vault
@@ -25,5 +24,5 @@ impl StakingPool {
         8 +     // total_staked
         16 +    // acc_reward_per_share
         1 +     // bump
-        1;      // authority_bump
+        1; // authority_bump
 }

@@ -95,7 +95,8 @@ pub fn handler(
     // including internal split nodes. The escrow reserve below is based on
     // the smaller maximum payable leaf count.
     let max_fragments = MAX_FRAGMENTS_PER_JOB.max(expected_fragments);
-    let child_slots_per_root = max_fragments.saturating_sub(expected_fragments) / expected_fragments;
+    let child_slots_per_root =
+        max_fragments.saturating_sub(expected_fragments) / expected_fragments;
     let max_leaf_fragments = expected_fragments
         .saturating_mul(1 + child_slots_per_root / 2)
         .min(expected_fragments.saturating_mul(DEFAULT_MAX_FRAGMENT_MULTIPLIER))

@@ -92,10 +92,7 @@ pub fn handler(
         SiliciumError::NotAuthorized
     );
 
-    require!(
-        now <= f.claim_deadline_unix,
-        SiliciumError::ClaimExpired
-    );
+    require!(now <= f.claim_deadline_unix, SiliciumError::ClaimExpired);
 
     f.worker = ctx.accounts.worker.key();
     f.worker_token_account = ctx.accounts.worker_token.key();
@@ -108,8 +105,11 @@ pub fn handler(
     f.required_quorum = ctx.accounts.job.fragment_quorum;
     f.voting_deadline_unix = now.saturating_add(VOTING_TTL_SECS);
 
-    ctx.accounts.worker_account.total_submitted =
-        ctx.accounts.worker_account.total_submitted.saturating_add(1);
+    ctx.accounts.worker_account.total_submitted = ctx
+        .accounts
+        .worker_account
+        .total_submitted
+        .saturating_add(1);
 
     ctx.accounts.worker_account.active_claims =
         ctx.accounts.worker_account.active_claims.saturating_sub(1);

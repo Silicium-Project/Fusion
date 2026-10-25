@@ -16,7 +16,6 @@ pub struct JobCreated {
     pub fragment_quorum: u16,
 }
 
-
 #[event]
 pub struct JobStorageDeclared {
     pub job: Pubkey,

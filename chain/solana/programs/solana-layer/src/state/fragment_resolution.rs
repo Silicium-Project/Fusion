@@ -19,5 +19,5 @@ impl FragmentResolution {
         + 1                     // winning_choice
         + 2                     // eligible_rewards
         + 2                     // claimed_rewards
-        + 1;                    // bump
+        + 1; // bump
 }

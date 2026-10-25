@@ -56,15 +56,24 @@ pub fn handler(ctx: Context<ApproveFragmentSplit>, approve: bool) -> Result<()> 
     // V2.6 auto-approves an eligible split in the splitter's transaction.
     // Keep this legacy client call idempotent for older SDK flows.
     if proposal.approved
-        && matches!(parent.status, FragmentStatus::SplitApproved | FragmentStatus::SplitParent)
+        && matches!(
+            parent.status,
+            FragmentStatus::SplitApproved | FragmentStatus::SplitParent
+        )
     {
         return Ok(());
     }
 
-    require!(parent.status == FragmentStatus::SplitPending, SiliciumError::BadFragmentState);
+    require!(
+        parent.status == FragmentStatus::SplitPending,
+        SiliciumError::BadFragmentState
+    );
     require!(!proposal.approved, SiliciumError::SplitAlreadyResolved);
     require!(!proposal.rejected, SiliciumError::SplitAlreadyResolved);
-    require!(proposal.child_count >= 2, SiliciumError::SplitChildLimitExceeded);
+    require!(
+        proposal.child_count >= 2,
+        SiliciumError::SplitChildLimitExceeded
+    );
 
     if !approve {
         proposal.rejected = true;
@@ -90,7 +99,10 @@ pub fn handler(ctx: Context<ApproveFragmentSplit>, approve: bool) -> Result<()> 
         .checked_add(proposal.child_count as u32)
         .ok_or(SiliciumError::InvalidParams)?;
 
-    require!(new_expected <= job.max_fragments, SiliciumError::TooManyFragments);
+    require!(
+        new_expected <= job.max_fragments,
+        SiliciumError::TooManyFragments
+    );
 
     proposal.approved = true;
     parent.status = FragmentStatus::SplitApproved;

@@ -10,11 +10,11 @@ use crate::{
         fragment_vote::FragmentVote,
         job::{Job, JobStatus},
         reputation::{
-            update_compute_reputation, update_compute_reputation_weighted, MIN_VERIFY_REPUTATION,
-            ReputationEvent,
+            update_compute_reputation, update_compute_reputation_weighted, ReputationEvent,
+            MIN_VERIFY_REPUTATION,
         },
-        worker_payout::WorkerPayout,
         worker::{Worker, WorkerStatus, ROLE_VERIFY},
+        worker_payout::WorkerPayout,
     },
 };
 
@@ -129,15 +129,9 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
     let compute_worker = &mut ctx.accounts.compute_worker;
     let round_resolution = &mut ctx.accounts.round_resolution;
 
-    require!(
-        fragment.job == job.key(),
-        SiliciumError::InvalidParams
-    );
+    require!(fragment.job == job.key(), SiliciumError::InvalidParams);
 
-    require!(
-        fragment.is_leaf,
-        SiliciumError::BadFragmentState
-    );
+    require!(fragment.is_leaf, SiliciumError::BadFragmentState);
 
     require!(
         fragment.status == FragmentStatus::Submitted,
@@ -176,15 +170,9 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
         SiliciumError::VotingClosed
     );
 
-    require!(
-        now <= job.deadline_unix,
-        SiliciumError::JobExpired
-    );
+    require!(now <= job.deadline_unix, SiliciumError::JobExpired);
 
-    require!(
-        fragment.required_quorum > 0,
-        SiliciumError::InvalidParams
-    );
+    require!(fragment.required_quorum > 0, SiliciumError::InvalidParams);
 
     if round_resolution.fragment == Pubkey::default() {
         round_resolution.fragment = fragment.key();
@@ -206,10 +194,7 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
         );
     }
 
-    require!(
-        !round_resolution.resolved,
-        SiliciumError::BadFragmentState
-    );
+    require!(!round_resolution.resolved, SiliciumError::BadFragmentState);
 
     ctx.accounts.vote.fragment = fragment.key();
     ctx.accounts.vote.verifier = ctx.accounts.verifier.key();

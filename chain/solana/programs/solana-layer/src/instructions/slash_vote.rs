@@ -132,14 +132,14 @@ pub fn handler(ctx: Context<SlashVote>) -> Result<()> {
     );
 
     require!(
-        matches!(fragment.status, FragmentStatus::Verified | FragmentStatus::Rejected),
+        matches!(
+            fragment.status,
+            FragmentStatus::Verified | FragmentStatus::Rejected
+        ),
         SiliciumError::FragmentNotResolved
     );
 
-    require!(
-        !vote.slashed,
-        SiliciumError::VoteAlreadySlashed
-    );
+    require!(!vote.slashed, SiliciumError::VoteAlreadySlashed);
 
     let wrong = match fragment.status {
         FragmentStatus::Verified => vote.choice == false,
@@ -156,10 +156,7 @@ pub fn handler(ctx: Context<SlashVote>) -> Result<()> {
 
     let stake_amount = verifier_worker.stake_amount;
 
-    require!(
-        stake_amount > 0,
-        SiliciumError::NothingToSlash
-    );
+    require!(stake_amount > 0, SiliciumError::NothingToSlash);
 
     let mut slash_amount = stake_amount
         .saturating_mul(SLASH_BPS)
@@ -176,10 +173,7 @@ pub fn handler(ctx: Context<SlashVote>) -> Result<()> {
         slash_amount = vault_amt;
     }
 
-    require!(
-        slash_amount > 0,
-        SiliciumError::NothingToSlash
-    );
+    require!(slash_amount > 0, SiliciumError::NothingToSlash);
 
     let verifier_worker_key = verifier_worker.key();
     let bump = ctx.bumps.stake_auth;
@@ -199,8 +193,7 @@ pub fn handler(ctx: Context<SlashVote>) -> Result<()> {
 
     token::transfer(cpi_ctx, slash_amount)?;
 
-    verifier_worker.stake_amount =
-        verifier_worker.stake_amount.saturating_sub(slash_amount);
+    verifier_worker.stake_amount = verifier_worker.stake_amount.saturating_sub(slash_amount);
 
     vote.slashed = true;
 

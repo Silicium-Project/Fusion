@@ -5,10 +5,7 @@ use crate::{
     constants::UNSTAKE_COOLDOWN_SECS,
     error::SiliciumError,
     events::NetworkUnstakeRequested,
-    state::{
-        network_staker::NetworkStaker,
-        staking_pool::StakingPool,
-    },
+    state::{network_staker::NetworkStaker, staking_pool::StakingPool},
 };
 
 #[derive(Accounts)]

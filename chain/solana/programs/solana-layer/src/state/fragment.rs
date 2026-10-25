@@ -53,8 +53,7 @@ pub struct Fragment {
 }
 
 impl Fragment {
-    pub const SPACE: usize =
-        8   // discriminator
+    pub const SPACE: usize = 8   // discriminator
         + 32 // job
         + 4  // fragment_index
         + 32 // assigned_worker

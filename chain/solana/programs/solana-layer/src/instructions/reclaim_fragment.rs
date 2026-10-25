@@ -71,8 +71,11 @@ pub fn handler(ctx: Context<ReclaimFragment>, fragment_index: u32) -> Result<()>
         ReputationEvent::LateSubmission,
     );
 
-    ctx.accounts.previous_worker_account.active_claims =
-        ctx.accounts.previous_worker_account.active_claims.saturating_sub(1);
+    ctx.accounts.previous_worker_account.active_claims = ctx
+        .accounts
+        .previous_worker_account
+        .active_claims
+        .saturating_sub(1);
 
     f.assigned_worker = Pubkey::default();
     f.claim_deadline_unix = 0;

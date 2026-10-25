@@ -19,5 +19,5 @@ impl FragmentVote {
         + 2                     // round
         + 1                     // slashed
         + 1                     // reward_claimed
-        + 1;                    // bump
+        + 1; // bump
 }
