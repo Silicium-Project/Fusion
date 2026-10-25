@@ -42,6 +42,13 @@ export function executeSuite(id, { plan, output } = {}) {
     suite: id,
     source_sha: sha,
     policy_digest: currentPlan.policy_digest,
+    toolchain_policy: readJson(resolve(root, 'tools/config/toolchains.json')),
+    execution_platform: {
+      node: process.version,
+      os: process.platform,
+      arch: process.arch,
+      rustup_toolchain: process.env.RUSTUP_TOOLCHAIN ?? null,
+    },
     dirty: Boolean(git('status', '--porcelain', '--untracked-files=normal')),
     started_at: new Date().toISOString(),
     status: 'running',
@@ -77,6 +84,13 @@ export function executeSuite(id, { plan, output } = {}) {
     }
   }
   if (report.status === 'running') report.status = 'success';
+  report.dirty_after = Boolean(git('status', '--porcelain', '--untracked-files=normal'));
+  if (!report.dirty && report.dirty_after) {
+    report.status = 'failure';
+    report.failure_kind = 'source_mutation';
+    report.error =
+      'Validation modified tracked or non-ignored source files; inspect the diff and qualify the resulting commit.';
+  }
   report.duration_ms = Math.round(performance.now() - start);
   report.finished_at = new Date().toISOString();
   writeJson(output ?? resolve(root, '.artifacts/reports', `${id}.json`), report);

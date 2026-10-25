@@ -1,6 +1,9 @@
 /** Discover prerequisite failures without installing or changing a developer machine. */
 import { readJson, run, root } from './process.mjs';
 import { resolve } from 'node:path';
+export function toolVersion(actual) {
+  return actual.match(/\d+\.\d+(?:\.\d+)?/)?.[0] ?? null;
+}
 export function doctor({ profile = 'tooling' } = {}) {
   const versions = readJson(resolve(root, 'tools/config/toolchains.json'));
   const definitions = {
@@ -8,7 +11,10 @@ export function doctor({ profile = 'tooling' } = {}) {
     git: ['git', '--version'],
     gh: ['gh', '--version'],
     npm: ['npm', '--version'],
-    cargo: ['cargo', '--version'],
+    cargo:
+      profile === 'solana'
+        ? ['rustup', 'run', versions.rust_solana, 'cargo', '--version']
+        : ['cargo', '--version'],
     go: ['go', 'version'],
     docker: ['docker', 'version', '--format', '{{.Server.Version}}'],
     anchor: ['anchor', '--version'],
@@ -29,8 +35,9 @@ export function doctor({ profile = 'tooling' } = {}) {
   const checks = wanted.map((name) => {
     const r = run(definitions[name], { allowFailure: true, timeout: 15_000 });
     const actual = (r.stdout || r.stderr).split('\n')[0].trim();
-    const pinned = versions[name === 'cargo' ? 'rust' : name] ?? null;
-    const found = actual.match(/\b(\d+\.\d+(?:\.\d+)?)/)?.[1];
+    const pinned =
+      versions[name === 'cargo' ? (profile === 'solana' ? 'rust_solana' : 'rust') : name] ?? null;
+    const found = toolVersion(actual);
     const compatible =
       !pinned || found === pinned || (name === 'python' && found?.startsWith(pinned + '.'));
     return {

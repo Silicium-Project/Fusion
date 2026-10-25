@@ -9,6 +9,7 @@ const plan = {
   suites: ['unit'],
   requirements: { unit: [{ command: ['node', 'unit'], cwd: '.', kind: 'test', env: {} }] },
   dirty: false,
+  dirty_after: false,
 };
 const report = () => ({
   schema_version: 1,
@@ -16,6 +17,7 @@ const report = () => ({
   policy_digest: 'policy',
   suite: 'unit',
   dirty: false,
+  dirty_after: false,
   status: 'success',
   steps: [
     { command: ['node', 'unit'], cwd: '.', env: {}, kind: 'test', exit_code: 0, tests_executed: 3 },
@@ -56,4 +58,9 @@ test('success cannot hide a removed test, changed command or test recast as a ch
     assert.equal(validateGate(plan, [r]).status, 'failure');
   }
   assert.equal(validateGate({ ...plan, requirements: undefined }, [report()]).status, 'failure');
+});
+
+test('a clean start does not hide a lockfile modified during the suite', () => {
+  assert.equal(validateGate(plan, [{ ...report(), dirty_after: true }]).status, 'failure');
+  assert.equal(validateGate(plan, [{ ...report(), dirty_after: undefined }]).status, 'failure');
 });

@@ -48,7 +48,8 @@ export function validateGate(
       r.policy_digest !== plan.policy_digest
     )
       errors.push(`${suite}: stale or mismatched evidence`);
-    if (requireClean && r.dirty) errors.push(`${suite}: dirty build`);
+    if (requireClean && (r.dirty || r.dirty_after !== false))
+      errors.push(`${suite}: dirty build or source changed during validation`);
     if (r.status !== 'success' || !r.steps?.length || r.steps.some((s) => s.exit_code !== 0))
       errors.push(`${suite}: required execution did not succeed`);
     if (

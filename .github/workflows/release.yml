@@ -29,9 +29,8 @@ concurrency:
   cancel-in-progress: false
 jobs:
   prepare:
-    if: ${{ !github.event.repository.private && vars.SILICIUM_DELIVERY_ENABLED == '1' && (github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch
-      == 'main')) }}
+    if: ${{ !github.event.repository.private && vars.SILICIUM_DELIVERY_ENABLED == '1' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion
+      == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
@@ -86,9 +85,11 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
         QUALIFICATION_RUN: ${{ inputs.qualification_run || github.event.workflow_run.id }}
-      run: |
-        node tools/ci/qualification-evidence.mjs
+      run: 'node tools/ci/qualification-evidence.mjs
+
         node tools/ci/artifact-size.mjs .artifacts/publish/qualification.json 1048576
+
+        '
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       with:
         name: candidate-input
@@ -159,6 +160,7 @@ jobs:
       RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
       SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
       CARGO_BUILD_JOBS: '4'
+      RUSTUP_TOOLCHAIN: 1.98.0
     steps:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       with:
@@ -193,9 +195,9 @@ jobs:
     - images
     - desktop
     - windows-sign
-    if: ${{ always() && needs.prepare.result == 'success' && needs.images.result == 'success' && ((needs.prepare.outputs.node_changed
-      == 'true' && needs.desktop.result == 'success' && needs.windows-sign.result == 'success') || (needs.prepare.outputs.node_changed
-      == 'false' && needs.desktop.result == 'skipped' && needs.windows-sign.result == 'skipped')) }}
+    if: ${{ always() && needs.prepare.result == 'success' && needs.images.result == 'success' && ((needs.prepare.outputs.node_changed == 'true'
+      && needs.desktop.result == 'success' && needs.windows-sign.result == 'success') || (needs.prepare.outputs.node_changed == 'false' && needs.desktop.result
+      == 'skipped' && needs.windows-sign.result == 'skipped')) }}
     environment: ${{ needs.prepare.outputs.channel == 'dev' && 'signing-development' || 'signing-production' }}
     permissions:
       contents: write

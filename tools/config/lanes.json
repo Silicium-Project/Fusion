@@ -20,7 +20,10 @@
       "paths": [
         "network/"
       ],
-      "depends_on": []
+      "depends_on": [
+        "solana",
+        "sdk"
+      ]
     },
     "solana": {
       "paths": [
@@ -340,6 +343,36 @@
         {
           "command": [
             "cargo",
+            "fmt",
+            "--all",
+            "--manifest-path",
+            "apps/node/src-tauri/Cargo.toml",
+            "--check"
+          ],
+          "cwd": ".",
+          "kind": "check"
+        },
+        {
+          "command": [
+            "cargo",
+            "clippy",
+            "--locked",
+            "--manifest-path",
+            "apps/node/src-tauri/Cargo.toml",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "cwd": ".",
+          "kind": "check",
+          "env": {
+            "TAURI_CONFIG": "{\"bundle\":{\"resources\":[]}}"
+          }
+        },
+        {
+          "command": [
+            "cargo",
             "test",
             "--locked",
             "--manifest-path",
@@ -347,7 +380,10 @@
           ],
           "cwd": ".",
           "kind": "test",
-          "format": "rust"
+          "format": "rust",
+          "env": {
+            "TAURI_CONFIG": "{\"bundle\":{\"resources\":[]}}"
+          }
         }
       ],
       "timeout_minutes": 30,
@@ -362,6 +398,36 @@
         {
           "command": [
             "cargo",
+            "fmt",
+            "--all",
+            "--manifest-path",
+            "apps/node/src-tauri/Cargo.toml",
+            "--check"
+          ],
+          "cwd": ".",
+          "kind": "check"
+        },
+        {
+          "command": [
+            "cargo",
+            "clippy",
+            "--locked",
+            "--manifest-path",
+            "apps/node/src-tauri/Cargo.toml",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "cwd": ".",
+          "kind": "check",
+          "env": {
+            "TAURI_CONFIG": "{\"bundle\":{\"resources\":[]}}"
+          }
+        },
+        {
+          "command": [
+            "cargo",
             "test",
             "--locked",
             "--manifest-path",
@@ -369,7 +435,10 @@
           ],
           "cwd": ".",
           "kind": "test",
-          "format": "rust"
+          "format": "rust",
+          "env": {
+            "TAURI_CONFIG": "{\"bundle\":{\"resources\":[]}}"
+          }
         }
       ],
       "timeout_minutes": 30,
@@ -433,7 +502,8 @@
             "ci/e2e.sh"
           ],
           "cwd": "network",
-          "kind": "check"
+          "kind": "test",
+          "format": "node"
         },
         {
           "command": [
@@ -539,17 +609,12 @@
         },
         {
           "command": [
-            "docker",
-            "compose",
-            "--env-file",
-            "infra/env/compose.example.env",
-            "-f",
-            "infra/compose/docker-compose.yml",
-            "config",
-            "--quiet"
+            "node",
+            "tools/tasks/compose.mjs"
           ],
           "cwd": ".",
-          "kind": "check"
+          "kind": "test",
+          "format": "node"
         }
       ],
       "timeout_minutes": 30,

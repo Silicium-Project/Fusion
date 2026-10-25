@@ -42,6 +42,19 @@ est reliée depuis `docs/README.md` et `docs/ai/README.md`. Les archives gardent
 leurs anciens chemins comme trace historique et ne décrivent pas les commandes
 actuelles.
 
+Les suites natives desktop qualifient les unités Rust avec `TAURI_CONFIG`
+fixant `bundle.resources=[]`. Elles n'embarquent pas un faux runtime et ne
+recompilent pas le réseau pour tester le superviseur. Le packaging garde sa
+configuration normale et doit fournir les vrais binaires réseau ; les tests
+d'installation contrôlent leur présence. Une réussite des unités ne qualifie
+donc pas l'installateur.
+
+La suite infrastructure rend les deux canaux Compose avec des fichiers
+temporaires, des digests factices et des valeurs de test. Les variables
+obligatoires de production restent obligatoires. Aucun conteneur n'est démarré
+par ce contrôle. Un Compose autonome vérifié peut être indiqué localement avec
+`SILICIUM_COMPOSE_BINARY=/chemin/docker-compose` lorsque le plugin manque.
+
 ## Python de CI
 
 La version est épinglée à 3.11.17 ; `network/requirements-dev.txt` verrouille
