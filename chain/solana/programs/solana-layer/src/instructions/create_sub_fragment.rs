@@ -82,12 +82,22 @@ pub fn handler(
         SiliciumError::InvalidChildFragmentIndex
     );
     require!(
-        is_child_index(&ctx.accounts.job, parent.fragment_index, child_fragment_index),
+        is_child_index(
+            &ctx.accounts.job,
+            parent.fragment_index,
+            child_fragment_index
+        ),
         SiliciumError::InvalidChildFragmentIndex
     );
-    require!(parent.status == FragmentStatus::SplitApproved, SiliciumError::ParentNotSplitApproved);
-    require!(proposal.created_children < proposal.child_count, SiliciumError::SplitChildLimitExceeded);
-    require!(required_compute_reputation >= 0, SiliciumError::InvalidParams);
+    ensure_child_capacity(
+        &parent.status,
+        proposal.created_children,
+        proposal.child_count,
+    )?;
+    require!(
+        required_compute_reputation >= 0,
+        SiliciumError::InvalidParams
+    );
     require!(input_hash != [0u8; 32], SiliciumError::InvalidParams);
 
     child.job = ctx.accounts.job.key();
@@ -177,4 +187,32 @@ fn is_child_index(job: &Job, parent_index: u32, child_index: u32) -> bool {
     let first = roots + root * per_root + first_local - 1;
     let second = roots + root * per_root + second_local - 1;
     child_index == first || child_index == second
+}
+
+/// Keep the existing rejection order independently testable from PDA allocation.
+fn ensure_child_capacity(status: &FragmentStatus, created: u16, declared: u16) -> Result<()> {
+    require!(
+        *status == FragmentStatus::SplitApproved,
+        SiliciumError::ParentNotSplitApproved
+    );
+    require!(created < declared, SiliciumError::SplitChildLimitExceeded);
+    Ok(())
+}
+
+#[cfg(test)]
+mod capacity_tests {
+    use super::*;
+
+    #[test]
+    fn accepted_children_stop_at_the_declared_count() {
+        assert!(ensure_child_capacity(&FragmentStatus::SplitApproved, 1, 2).is_ok());
+        let error = ensure_child_capacity(&FragmentStatus::SplitApproved, 2, 2).unwrap_err();
+        assert!(error.to_string().contains("SplitChildLimitExceeded"));
+    }
+
+    #[test]
+    fn a_sealed_parent_keeps_its_specific_rejection() {
+        let error = ensure_child_capacity(&FragmentStatus::SplitParent, 2, 2).unwrap_err();
+        assert!(error.to_string().contains("ParentNotSplitApproved"));
+    }
 }
