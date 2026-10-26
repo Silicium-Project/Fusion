@@ -191,6 +191,7 @@ export function makePlan({
         suite,
         runner: config.suites[suite].runner,
         timeout: config.suites[suite].timeout_minutes,
+        sources: [...(config.suites[suite].sources ?? [])],
       })),
     },
   };

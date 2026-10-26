@@ -51,19 +51,30 @@ sources privées dans des workflows publics ou ouvrir un budget facturable.
 
 ## Accès aux sources
 
-Integration possède une clé de déploiement **en lecture seule par composant**,
-sous les secrets `SOURCE_KEY_API`, `SOURCE_KEY_WEB`, `SOURCE_KEY_NODE`,
-`SOURCE_KEY_NETWORK` et `SOURCE_KEY_SOLANA`. Aucune clé de wallet, de signature
-ou d'upgrade Solana n'est utilisée. Aucune de ces clés n'est configurée dans
-Workbench ni dans la CI native.
+L'organisation interdit la création de clés SSH de déploiement ; cette politique
+reste conservée. Une App dédiée **Silicium Source Reader** doit être créée avec
+[le manifeste minimal](../../tools/config/source-app-manifest.json), puis installée
+uniquement sur BackEnd, FrontEnd, DesktopApp, Network et Solana. Son unique droit
+explicite est `contents: read` ; métadonnées en lecture implicites. Aucun droit
+Project, Actions, secrets ou déploiement, aucune écriture de code.
 
-`materialize.mjs` n'accepte que Integration privé sur `main`. Il vérifie URL,
-gitlink et lock, utilise les clés SSH GitHub épinglées, récupère les commits,
-puis supprime clés temporaires et variables avant toute commande applicative.
-Les clés publiques et leurs identifiants sont inventoriés dans l'espace privé
-d'exploitation. Rotation : ajouter une nouvelle clé de lecture au seul dépôt
-concerné, remplacer le secret chiffré, vérifier un fetch exact dans le contexte
-privé puis révoquer l'ancienne clé. Ne jamais imprimer la clé privée.
+Dans Integration, configurer `SOURCE_APP_CLIENT_ID` et `SOURCE_APP_PRIVATE_KEY`
+comme secrets chiffrés. Ces secrets **ne sont pas encore provisionnés** pendant
+la préparation de migration. Ne pas réutiliser le jeton personnel du propriétaire
+ni la clé de l'App du Project. Aucune clé de wallet, de signature ou d'upgrade
+Solana n'est utilisée. Workbench et les CI natives ne reçoivent pas cette clé.
+
+Chaque suite privée crée un jeton d'installation de courte durée, limité aux
+dépôts déclarés comme sources de cette suite ; le contrôle des contrats demande
+les cinq dépôts. Le workflow vérifie que le SHA Workbench est sur `main`.
+`materialize.mjs` n'accepte que Integration privé sur `main`, vérifie le manifeste,
+le gitlink et le lock, puis utilise une récupération peu profonde à ce SHA.
+L'authentification Git HTTPS est limitée aux
+processus de récupération et n'est pas persistée dans Git. Le jeton n'est pas
+placé dans l'environnement des commandes applicatives ni dans un artefact. L'action
+révoque son jeton à la fin du job. Une absence d'App bloque la récupération ;
+aucun accès du propriétaire n'est utilisé en secours. La création/installation
+initiale de l'App exige une session propriétaire GitHub et reste une étape humaine.
 
 GitHub Free ne fournit pas les mêmes protections sur les dépôts privés que sur
 Workbench public. Les conventions PR/CODEOWNERS ne sont pas présentées comme

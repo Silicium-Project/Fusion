@@ -6,6 +6,7 @@ import {
   registry,
   combinePlans,
   splitMatrix,
+  makePlan,
 } from '../../tools/lib/planner.mjs';
 
 test('rename and copy include old and new paths, with spaces preserved', () => {
@@ -57,6 +58,15 @@ test('quick feedback uses separate lanes and docs needs no integration build', (
   });
   assert.equal(phases.integration_count, 0);
   assert.equal(phases.quick.include.length, suites.length);
+});
+
+test('qualification plans carry each suite source list for least-privilege private fetches', () => {
+  const plan = makePlan({ paths: [], scope: 'integration' });
+  const suites = Object.fromEntries(plan.matrix.include.map((row) => [row.suite, row.sources]));
+  assert.deepEqual(suites['workspace-sources'], ['api', 'web', 'node', 'network', 'solana']);
+  assert.deepEqual(suites.network, ['network']);
+  assert.deepEqual(suites['network-integration'], ['network']);
+  assert.deepEqual(suites.tooling, []);
 });
 
 test('a PR cannot silently remove the test command from an unchanged suite', () => {
