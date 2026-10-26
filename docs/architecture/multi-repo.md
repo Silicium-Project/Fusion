@@ -49,6 +49,24 @@ les URL et les gitlinks Git portent exactement ces SHA.
 - Les développements du composant se font dans sa branche native ; ne pas
   commiter ses sources directement dans Workbench.
 
+## Sources propres à DesktopApp
+
+Le runtime d'inférence local utilisé par l'application de bureau est versionné
+dans le dépôt privé `DesktopApp/silicium-ai-runtime`. Ses ressources Python,
+manifestes et verrous de dépendances font partie de ce composant et sont
+embarqués par DesktopApp au moment de la compilation. Workbench ne conserve
+aucune copie active de ces sources : seul le gitlink `apps/node` identifie la
+révision qui les contient.
+
+Une modification du runtime suit donc le même flux que le reste de DesktopApp :
+PR native, qualification disponible, mise à jour du gitlink et de
+`components.lock.json` dans une PR Workbench. La révision de migration actuelle
+`6a233f1c421358143238c25562c45ad607b85721` est encore la tête de la PR native
+DesktopApp #1 ; elle n'est pas intégrée à `main` et les Actions privées sont
+désactivées par le budget. Ce pin de travail ne constitue ni une qualification
+privée ni une livraison. L'ancien chemin public reste visible dans l'historique
+de Workbench, qui n'a pas été réécrit.
+
 ## Qualification et coût
 
 Le registre commun conserve les suites applicatives. Les scopes sont :

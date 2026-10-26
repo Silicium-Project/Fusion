@@ -114,3 +114,36 @@ unitaires de scripts ne remplacent pas ces preuves.
 
 Voir [l'activation détaillée](bootstrap.md), [la livraison](delivery.md),
 [la revue d'exposition](exposure-review.md) et [les parcours IA](../ai/README.md).
+
+## Mise à jour vérifiée — 26 octobre 2026
+
+Le dépôt public Workbench contient désormais les cinq sous-modules privés
+Network, BackEnd, FrontEnd, DesktopApp et Solana. Le runtime d'inférence Python
+local de DesktopApp était toutefois encore une copie ordinaire dans
+`apps/silicium-ai-runtime`, donc présent dans l'arbre courant public. Une
+correction séparée est préparée sur `lf-fix-210-ai-runtime-private` : les sources
+ont été déplacées dans le dépôt privé DesktopApp, les chemins `include_str!` de
+l'application ont été adaptés et le gitlink `apps/node` est repinné à
+`6a233f1c421358143238c25562c45ad607b85721`.
+
+Cette révision DesktopApp est la tête de la PR native #1, encore ouverte. Son
+checkout Python isolé a passé 7 tests ; aucun check GitHub privé n'est rapporté,
+car les Actions privées restent désactivées. L'accès aux composants et la
+cohérence matérielle des cinq pins ont été vérifiés avant ce changement. Les
+guides du composant Network ont été corrigés dans sa PR #355 aux commits
+`012d7382` et `a7fdf8cc` ; le guide BackEnd a été corrigé dans la PR #39 au
+commit `8bea9a87`. Les deux PR restent ouvertes et les Actions privées restent
+désactivées. Cette branche Workbench aligne ses gitlinks et son verrou sur les
+têtes de ces PR ; aucune CI privée, livraison, fusion ou activation de budget
+n'est présumée. Les tests Rust et la compilation Tauri n'ont pas pu être exécutés
+dans l'environnement local faute de toolchain Cargo/Rust.
+
+La suppression du chemin dans un commit futur ne retire pas le code de
+l'historique public déjà publié. Elle évite seulement que la révision courante
+de Workbench continue de le distribuer. Les contrôles locaux disponibles
+(`dev test --suite docs`, `git diff --check` et les 7 tests Python du runtime)
+sont passés ; les tests Rust/Tauri restent impossibles localement sans Cargo.
+La PR Workbench doit encore être publiée et ses checks publics vérifiés. La PR
+DesktopApp devra ensuite être intégrée séparément et recevoir sa qualification
+lorsque le budget privé le permettra. D'ici là, le pin reste un candidat de
+migration, pas une version acceptée ou déployée.
