@@ -263,4 +263,24 @@ test('public CI has no application lanes; integration retains every application 
       combinePlans({ ...publicPlan, head_sha: 'e'.repeat(40) }, { ...legacy, requirements: {} }),
     /administrator SHA/,
   );
+  const migrationPlan = { ...publicPlan, head_sha: 'e'.repeat(40) };
+  const previousPolicy = { ...legacy, requirements: {} };
+  const trustedMainPush = {
+    GITHUB_EVENT_NAME: 'push',
+    GITHUB_REF: 'refs/heads/main',
+    GITHUB_REPOSITORY: 'Silicium-Project/Workbench',
+    SILICIUM_TRUSTED_MAIN_PUSH: 'true',
+  };
+  assert.deepEqual(
+    combinePlans(migrationPlan, previousPolicy, trustedMainPush).suites,
+    publicPlan.suites,
+  );
+  assert.throws(
+    () =>
+      combinePlans(migrationPlan, previousPolicy, {
+        ...trustedMainPush,
+        GITHUB_EVENT_NAME: 'pull_request',
+      }),
+    /administrator SHA/,
+  );
 });

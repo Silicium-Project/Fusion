@@ -80,6 +80,7 @@ jobs:
         BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
         SILICIUM_PR_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         SILICIUM_POLICY_MIGRATION_SHA: ${{ vars.SILICIUM_POLICY_MIGRATION_SHA }}
+        SILICIUM_TRUSTED_MAIN_PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'Silicium-Project/Workbench' }}
       run: 'node tools/dev.mjs ci plan --scope public --base "${BASE_SHA:-origin/main}" --head HEAD --output .artifacts/plan.json
 
         node --input-type=module <<''JS''
