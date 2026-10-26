@@ -36,6 +36,12 @@ opérationnelle après la séparation de Workbench et des cinq dépôts privés.
   déploiement dev ou prod n'est autorisé par cet état. Le budget privé Actions
   avait été épuisé lors de la dernière vérification du 26 octobre ; il doit être
   vérifié de nouveau avant tout run, sans dépassement facturé ni runner VPS.
+- Les environnements Workbench de signature et de déploiement n'ont aucun
+  secret ni variable d'environnement configuré. Les workflows attendent entre
+  autres des clés de signature et `DEPLOY_SSH_HOST` / `DEPLOY_SSH_KNOWN_HOSTS` /
+  `DEPLOY_SSH_KEY`; ils ne sont pas configurés. Les environnements Windows de
+  signature sont également vides. Ne pas remplacer ces identités dédiées par
+  les secrets `VPS_*` d'autres automatismes.
 - L'environnement de production possède une règle de réviseurs, mais cela ne
   prouve pas que la chaîne privée de qualification appelle cet environnement.
 
@@ -98,7 +104,9 @@ rebasés en HTTP interne ; les métadonnées signées, clés et paquets sont ide
 ```
 
 La commande de plan est disponible. Aujourd'hui, `--apply` peut encore envoyer
-un dispatch que les garde-fous désactivés feront ignorer ; ne l'utilise pas.
+un dispatch que les garde-fous désactivés feront ignorer ; même réactiver le
+flag ne suffit pas, car les secrets et variables de signature/déploiement sont
+absents. Ne l'utilise pas.
 Le chemin sera considéré actif après CI-10, la qualification privée complète et
 l'activation contrôlée des workflows. La requête devra alors viser un candidat
 signé exact ; aucune construction ne sera faite sur le VPS. Les signatures et
