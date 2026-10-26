@@ -1,7 +1,9 @@
 /** GitHub API boundary: structured stdin, no shell interpolation or token persistence. */
 import { run, Failure } from './process.mjs';
 export const organization = 'Silicium-Project';
-export const repository = 'Silicium-Project/Fusion';
+export const repository = 'Silicium-Project/Workbench';
+export const canonicalRepository = (value) =>
+  value === 'Silicium-Project/Fusion' ? repository : value;
 export function api(path, { method = 'GET', body } = {}) {
   const args = ['gh', 'api', path, '--method', method];
   if (body !== undefined) args.push('--input', '-');
@@ -34,11 +36,12 @@ export function pages(path) {
 export function issueRef(value) {
   const url = new URL(value);
   const match = url.pathname.match(
-    /^\/Silicium-Project\/(Fusion|planning-private)\/issues\/([1-9][0-9]*)$/,
+    /^\/Silicium-Project\/(Workbench|Fusion|planning-private)\/issues\/([1-9][0-9]*)$/,
   );
   if (url.protocol !== 'https:' || url.host !== 'github.com' || !match || url.search || url.hash)
-    throw new Failure('Expected a Silicium Fusion/planning-private issue URL', 2);
-  return { repo: `${organization}/${match[1]}`, number: Number(match[2]), url: url.href };
+    throw new Failure('Expected a Silicium Workbench/planning-private issue URL', 2);
+  const repo = canonicalRepository(`${organization}/${match[1]}`);
+  return { repo, number: Number(match[2]), url: `https://github.com/${repo}/issues/${match[2]}` };
 }
 export function requireWriter(repo = repository) {
   const viewer = api('user');
@@ -56,7 +59,7 @@ export function verifiedRun(id, { sha, workflow = '.github/workflows/ci.yml' } =
     r.conclusion !== 'success' ||
     r.event !== 'push' ||
     r.head_branch !== 'main' ||
-    r.head_repository?.full_name !== repository ||
+    canonicalRepository(r.head_repository?.full_name) !== repository ||
     (sha && r.head_sha !== sha) ||
     r.path?.split('@')[0] !== workflow
   )

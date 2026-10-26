@@ -6,6 +6,7 @@ import {
   registry,
   combinePlans,
   splitMatrix,
+  makePlan,
 } from '../../tools/lib/planner.mjs';
 
 test('rename and copy include old and new paths, with spaces preserved', () => {
@@ -59,6 +60,15 @@ test('quick feedback uses separate lanes and docs needs no integration build', (
   assert.equal(phases.quick.include.length, suites.length);
 });
 
+test('qualification plans carry each suite source list for least-privilege private fetches', () => {
+  const plan = makePlan({ paths: [], scope: 'integration' });
+  const suites = Object.fromEntries(plan.matrix.include.map((row) => [row.suite, row.sources]));
+  assert.deepEqual(suites['workspace-sources'], ['api', 'web', 'node', 'network', 'solana']);
+  assert.deepEqual(suites.network, ['network']);
+  assert.deepEqual(suites['network-integration'], ['network']);
+  assert.deepEqual(suites.tooling, []);
+});
+
 test('a PR cannot silently remove the test command from an unchanged suite', () => {
   const step = { command: ['node', 'unit'], cwd: '.', kind: 'test', env: {} };
   assert.throws(
@@ -72,10 +82,7 @@ test('a PR cannot silently remove the test command from an unchanged suite', () 
 });
 
 test('Solana program and SDK changes qualify the runtime payment consumers', () => {
-  for (const path of [
-    'chain/solana/programs/solana-layer/src/lib.rs',
-    'packages/solana-sdk/src/index.ts',
-  ]) {
+  for (const path of ['chain/solana/programs/solana-layer/src/lib.rs', 'chain/sdk/src/index.ts']) {
     const plan = route([path]);
     for (const suite of [
       'network',

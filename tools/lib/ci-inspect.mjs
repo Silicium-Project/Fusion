@@ -1,6 +1,7 @@
 /** Explain infrastructure refusals even when GitHub never allocates a runner or produces logs. */
 import { api, repository, publicMetadata } from './github.mjs';
 import { Failure } from './process.mjs';
+import { workspaceConfig } from './workspace.mjs';
 export function allocationDiagnostic(job, annotations) {
   if (job.conclusion !== 'failure' || job.steps?.length) return null;
   const messages = annotations
@@ -23,20 +24,27 @@ export function allocationDiagnostic(job, annotations) {
       : 'Inspect the GitHub allocation annotations; no test ran in this job.',
   };
 }
-export function inspectRun(id, { request = api } = {}) {
+export function inspectRun(id, { request = api, repo = repository } = {}) {
   if (!/^[1-9][0-9]*$/.test(String(id))) throw new Failure('Provide --run ID', 2);
-  const record = request(`repos/${repository}/actions/runs/${id}`);
+  const config = workspaceConfig();
+  if (
+    ![
+      repository,
+      config.integration_repository,
+      ...Object.values(config.components).map((component) => component.repository),
+    ].includes(repo)
+  )
+    throw new Failure('Choose a declared Workbench, component or Integration repository', 2);
+  const record = request(`repos/${repo}/actions/runs/${id}`);
   const jobs = [];
   for (let page = 1; ; page++) {
-    const result = request(`repos/${repository}/actions/runs/${id}/jobs?per_page=100&page=${page}`);
+    const result = request(`repos/${repo}/actions/runs/${id}/jobs?per_page=100&page=${page}`);
     jobs.push(...result.jobs);
     if (result.jobs.length < 100) break;
   }
   const diagnostics = [];
   for (const job of jobs.filter((job) => job.conclusion === 'failure' && !job.steps?.length)) {
-    const annotations = request(
-      `repos/${repository}/check-runs/${job.id}/annotations?per_page=100`,
-    );
+    const annotations = request(`repos/${repo}/check-runs/${job.id}/annotations?per_page=100`);
     const diagnostic = allocationDiagnostic(job, annotations);
     if (diagnostic) diagnostics.push(diagnostic);
   }

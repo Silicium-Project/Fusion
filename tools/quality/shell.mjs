@@ -2,7 +2,8 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
-import { readJson, root, run, git, Failure } from '../lib/process.mjs';
+import { readJson, root, run, Failure } from '../lib/process.mjs';
+import { trackedSources } from '../lib/workspace.mjs';
 if (process.platform !== 'linux' || process.arch !== 'x64')
   throw new Failure('Shell qualification requires Linux x86-64', 2);
 const pin = readJson(resolve(root, 'tools/config/shellcheck.json'));
@@ -26,9 +27,11 @@ if (digest(readFileSync(binary)) !== pin.binary_sha256)
     'ShellCheck tool cache is corrupt; remove only .artifacts/tools/shellcheck and retry',
     3,
   );
-const paths = git('ls-files', '-z')
-  .split('\0')
-  .filter((path) => path.endsWith('.sh') && !path.startsWith('docs/archive/'));
+const paths = trackedSources().filter(
+  (path) =>
+    (path.endsWith('.sh') || path === 'dev' || path.endsWith('/dev')) &&
+    !path.startsWith('docs/archive/'),
+);
 for (const path of paths) run(['bash', '-n', path]);
 const result = run(
   [binary, '--external-sources', '--source-path=SCRIPTDIR', '--severity=warning', ...paths],

@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "repository": "Silicium-Project/Workbench",
+  "components": {
+    "network": {
+      "repository": "Silicium-Project/Network",
+      "path": "network",
+      "commit": "3bc1e3493842ba00adda83650d3ccf762e471421"
+    },
+    "api": {
+      "repository": "Silicium-Project/BackEnd",
+      "path": "apps/api",
+      "commit": "a24bab6d1f7607fcdca85b52b690de2b53578558"
+    },
+    "web": {
+      "repository": "Silicium-Project/FrontEnd",
+      "path": "apps/web",
+      "commit": "3b5f0975ca0cdbdcff430023214e718401e3e266"
+    },
+    "node": {
+      "repository": "Silicium-Project/DesktopApp",
+      "path": "apps/node",
+      "commit": "ef12c73350bc630579a9d2c3a56d985a64a871cf"
+    },
+    "solana": {
+      "repository": "Silicium-Project/Solana",
+      "path": "chain",
+      "commit": "ef8f07d4fbedf28db01ce258a1988e19e3f13f73"
+    }
+  }
+}

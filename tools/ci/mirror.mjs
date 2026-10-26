@@ -34,7 +34,7 @@ export function updateSnapshot(source, destination, sha, qualificationRun) {
   git('read-tree', '--prefix=fusion/', '-u', sha);
   const value = {
     schema_version: 1,
-    source_repository: 'Silicium-Project/Fusion',
+    source_repository: 'Silicium-Project/Workbench',
     source_sha: sha,
     source_tree: tree,
     qualification_run: Number(qualificationRun),
@@ -42,7 +42,7 @@ export function updateSnapshot(source, destination, sha, qualificationRun) {
   writeJson(metadataPath, value);
   git('add', '--', '.silicium-mirror.json');
   if (git('rev-parse', `${git('write-tree')}:fusion`) !== tree)
-    throw new Failure('Mirror tree differs from the exact Fusion commit');
+    throw new Failure('Mirror tree differs from the exact Workbench commit');
   git(
     '-c',
     'user.name=Silicium Mirror',
@@ -50,7 +50,7 @@ export function updateSnapshot(source, destination, sha, qualificationRun) {
     'user.email=mirror@silicium.network',
     'commit',
     '-m',
-    `mirror: Fusion ${sha}`,
+    `mirror: Workbench ${sha}`,
   );
   return { status: 'updated', ...value, mirror_sha: git('rev-parse', 'HEAD') };
 }

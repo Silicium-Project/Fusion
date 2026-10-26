@@ -33,7 +33,7 @@
     },
     "sdk": {
       "paths": [
-        "packages/solana-sdk/"
+        "chain/sdk/"
       ],
       "depends_on": [
         "solana"
@@ -240,7 +240,10 @@
       "timeout_minutes": 30,
       "runner": "ubuntu-24.04",
       "tier": "pr",
-      "phase": "quick"
+      "phase": "quick",
+      "sources": [
+        "api"
+      ]
     },
     "web": {
       "components": [
@@ -305,7 +308,10 @@
       ],
       "timeout_minutes": 30,
       "runner": "ubuntu-24.04",
-      "tier": "pr"
+      "tier": "pr",
+      "sources": [
+        "web"
+      ]
     },
     "node-ui": {
       "components": [
@@ -342,7 +348,10 @@
       "timeout_minutes": 30,
       "runner": "ubuntu-24.04",
       "tier": "pr",
-      "phase": "quick"
+      "phase": "quick",
+      "sources": [
+        "node"
+      ]
     },
     "node-native": {
       "components": [
@@ -397,7 +406,10 @@
       ],
       "timeout_minutes": 30,
       "runner": "ubuntu-24.04",
-      "tier": "pr"
+      "tier": "pr",
+      "sources": [
+        "node"
+      ]
     },
     "node-windows": {
       "components": [
@@ -452,7 +464,10 @@
       ],
       "timeout_minutes": 30,
       "runner": "windows-2022",
-      "tier": "pr"
+      "tier": "pr",
+      "sources": [
+        "node"
+      ]
     },
     "network": {
       "components": [
@@ -497,7 +512,10 @@
       ],
       "timeout_minutes": 30,
       "runner": "ubuntu-24.04",
-      "tier": "pr"
+      "tier": "pr",
+      "sources": [
+        "network"
+      ]
     },
     "network-integration": {
       "components": [
@@ -536,7 +554,10 @@
       ],
       "timeout_minutes": 30,
       "runner": "ubuntu-24.04",
-      "tier": "pr"
+      "tier": "pr",
+      "sources": [
+        "network"
+      ]
     },
     "solana": {
       "components": [
@@ -544,6 +565,17 @@
         "sdk"
       ],
       "steps": [
+        {
+          "command": [
+            "node",
+            "--test",
+            "--test-reporter=tap",
+            "tests/solana/*.test.mjs"
+          ],
+          "cwd": ".",
+          "kind": "test",
+          "format": "node"
+        },
         {
           "command": [
             "cargo",
@@ -592,7 +624,7 @@
             "npm",
             "ci"
           ],
-          "cwd": "packages/solana-sdk",
+          "cwd": "chain/sdk",
           "kind": "check"
         },
         {
@@ -601,7 +633,7 @@
             "run",
             "build"
           ],
-          "cwd": "packages/solana-sdk",
+          "cwd": "chain/sdk",
           "kind": "build"
         },
         {
@@ -616,7 +648,10 @@
       ],
       "timeout_minutes": 45,
       "runner": "ubuntu-24.04",
-      "tier": "pr"
+      "tier": "pr",
+      "sources": [
+        "solana"
+      ]
     },
     "infrastructure": {
       "components": [
@@ -651,7 +686,10 @@
       ],
       "timeout_minutes": 30,
       "runner": "ubuntu-24.04",
-      "tier": "pr"
+      "tier": "pr",
+      "sources": [
+        "network"
+      ]
     },
     "security": {
       "components": [
@@ -694,6 +732,9 @@
           "kind": "test",
           "format": "rust"
         }
+      ],
+      "sources": [
+        "network"
       ]
     },
     "powershell": {
@@ -737,7 +778,72 @@
           "kind": "test",
           "format": "node"
         }
+      ],
+      "sources": [
+        "node",
+        "web",
+        "network",
+        "api",
+        "solana"
+      ]
+    },
+    "workspace-sources": {
+      "components": [
+        "contracts"
+      ],
+      "sources": [
+        "api",
+        "web",
+        "node",
+        "network",
+        "solana"
+      ],
+      "runner": "ubuntu-24.04",
+      "timeout_minutes": 10,
+      "tier": "pr",
+      "phase": "integration",
+      "steps": [
+        {
+          "command": [
+            "node",
+            "--test",
+            "--test-reporter=tap",
+            "tests/components/*.test.mjs"
+          ],
+          "cwd": ".",
+          "kind": "test",
+          "format": "node"
+        },
+        {
+          "command": [
+            "npm",
+            "ci",
+            "--ignore-scripts",
+            "--no-audit",
+            "--no-fund"
+          ],
+          "cwd": "tools/quality",
+          "kind": "check"
+        },
+        {
+          "command": [
+            "node",
+            "tools/quality/run.mjs",
+            "check"
+          ],
+          "cwd": ".",
+          "kind": "check"
+        },
+        {
+          "command": [
+            "node",
+            "tools/quality/shell.mjs"
+          ],
+          "cwd": ".",
+          "kind": "check"
+        }
       ]
     }
-  }
+  },
+  "workspace_mode": "multi-repo"
 }

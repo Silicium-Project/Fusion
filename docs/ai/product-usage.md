@@ -23,8 +23,12 @@ machine au titre d'un diagnostic en lecture seule.
 
 ## Développement depuis le clone
 
-Depuis la racine, commencer par `./dev doctor --profile api` et les instructions
-du [backend](../../apps/api/AGENTS.md). L'API sait utiliser SQLite sans serveur
+Depuis Workbench, commencer par `./dev workspace status`, puis exécuter
+`./dev workspace init --component api --apply` selon la
+[procédure multi-dépôts](../architecture/multi-repo.md). Il faut avoir accès au
+dépôt privé BackEnd. Après cette initialisation, lire `apps/api/AGENTS.md`, puis
+lancer `./dev doctor --profile api`. Le fichier du composant n'est pas présent
+dans un clone public non initialisé. L'API sait utiliser SQLite sans serveur
 PostgreSQL ; réserver ce mode au développement local. Exemple Bash :
 
 ```sh
@@ -74,7 +78,7 @@ silicium-vpn on
 silicium-vpn off
 ```
 
-Ce helper préexistant n'est pas distribué par le monorepo actuel. Ne pas
+Ce helper préexistant n'est pas distribué par Workbench. Ne pas
 annoncer son installation par `dev`. Sans helper, une configuration système
 déjà installée dans `/etc/wireguard/wg-dev.conf` peut être activée avec
 `sudo wg-quick up wg-dev`, puis désactivée avec `sudo wg-quick down wg-dev`.

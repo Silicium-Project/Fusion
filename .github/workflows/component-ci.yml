@@ -1,0 +1,182 @@
+name: Private component qualification
+'on':
+  workflow_call:
+    inputs:
+      component:
+        type: string
+        required: true
+      policy_sha:
+        type: string
+        required: true
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+env:
+  SILICIUM_SOURCE_VISIBILITY: private
+  SILICIUM_CACHE_ENABLED: 'false'
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      source_sha: ${{ steps.plan.outputs.source_sha }}
+    steps:
+    - name: Authorize private team context before source checkout
+      env:
+        GH_TOKEN: ${{ github.token }}
+        COMPONENT: ${{ inputs.component }}
+        POLICY_SHA: ${{ inputs.policy_sha }}
+        PULL_NUMBER: ${{ github.event.number }}
+        IS_PR: ${{ github.event_name == 'pull_request' }}
+      run: "node --input-type=module <<'JS'\nconst repo=process.env.GITHUB_REPOSITORY,component=process.env.COMPONENT,sha=process.env.POLICY_SHA;\n\
+        const expected={api:'Silicium-Project/BackEnd',web:'Silicium-Project/FrontEnd',node:'Silicium-Project/DesktopApp',network:'Silicium-Project/Network',solana:'Silicium-Project/Solana'};\n\
+        if(expected[component]!==repo||!/^[a-f0-9]{40}$/.test(sha??''))throw new Error('Invalid component or immutable policy');\n\
+        const get=async path=>{const r=await fetch(`https://api.github.com/${path}`,{headers:{authorization:`Bearer ${process.env.GH_TOKEN}`,accept:'application/vnd.github+json'},signal:AbortSignal.timeout(15000)});if(!r.ok)throw\
+        \ new Error(`Authorization refused: HTTP ${r.status}`);return r.json()};\nif(!(await get(`repos/${repo}`)).private)throw\
+        \ new Error('Application CI must remain private');\nif(process.env.IS_PR==='true'){\n const number=process.env.PULL_NUMBER;if(!/^[1-9][0-9]*$/.test(number??''))throw\
+        \ new Error('Missing PR number');\n const pr=await get(`repos/${repo}/pulls/${number}`);\n if(pr.head.repo?.id!==pr.base.repo?.id)throw\
+        \ new Error('External workflows are not approved during stabilization');\n const permission=await get(`repos/${repo}/collaborators/${encodeURIComponent(pr.user.login)}/permission`);\n\
+        \ if(!['admin','maintain','write'].includes(permission.permission))throw new Error('Team write permission required');\n\
+        }\nconst compare=await get(`repos/Silicium-Project/Workbench/compare/${sha}...main`);\nif(!['ahead','identical'].includes(compare.status))throw\
+        \ new Error('Policy must be included in Workbench main');\nconsole.log(JSON.stringify({component,repository:repo,private:true,policy_sha:sha}));\n\
+        JS"
+    - &id001
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      with:
+        repository: Silicium-Project/Workbench
+        ref: ${{ inputs.policy_sha }}
+        path: policy
+        fetch-depth: 0
+        persist-credentials: false
+    - &id002
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      with:
+        node-version: 22.23.4
+    - name: Require a fresh organization storage observation
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: node policy/tools/ci/private-budget.mjs
+    - &id003
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      with:
+        ref: ${{ github.sha }}
+        path: component
+        fetch-depth: 0
+        persist-credentials: false
+    - &id004
+      name: Compose exact source with pinned common policy
+      env:
+        COMPONENT: ${{ inputs.component }}
+        SOURCE_SHA: ${{ github.sha }}
+      run: node policy/tools/dev.mjs component prepare --component "$COMPONENT" --source "$GITHUB_WORKSPACE/component" --revision
+        "$SOURCE_SHA" --destination "$GITHUB_WORKSPACE/workspace" --apply
+    - id: plan
+      env:
+        COMPONENT: ${{ inputs.component }}
+      run: 'node workspace/tools/dev.mjs ci plan --scope "component:$COMPONENT" --output workspace/.artifacts/plan.json
+
+        node --input-type=module <<''JS''
+
+        import fs from ''node:fs'';
+
+        const plan=JSON.parse(fs.readFileSync(''workspace/.artifacts/plan.json''));
+
+        fs.appendFileSync(process.env.GITHUB_OUTPUT,`matrix=${JSON.stringify(plan.matrix)}
+
+        source_sha=${plan.source_sha}
+
+        `);
+
+        JS'
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: qualification-plan
+        path: workspace/.artifacts/plan.json
+        include-hidden-files: true
+        retention-days: 1
+        if-no-files-found: error
+  validate:
+    needs:
+    - plan
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.timeout }}
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.suite == 'solana' && '1.89.0' || '1.98.0' }}
+      CARGO_BUILD_JOBS: '4'
+    steps:
+    - *id001
+    - *id002
+    - *id003
+    - *id004
+    - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+      if: ${{ matrix.suite == 'api' }}
+      with:
+        go-version: 1.27.3
+        cache: false
+    - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      if: ${{ matrix.suite == 'network-integration' }}
+      with:
+        python-version: 3.11.17
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: qualification-plan
+        path: workspace/.artifacts
+    - name: Prepare runner
+      working-directory: workspace
+      run: node tools/ci/bootstrap.mjs "${{ matrix.suite }}"
+    - name: Execute registered component suite
+      working-directory: workspace
+      run: node tools/dev.mjs test --suite "${{ matrix.suite }}" --plan .artifacts/plan.json
+    - name: Bound report transfer
+      if: ${{ always() }}
+      working-directory: workspace
+      run: node tools/ci/artifact-size.mjs ".artifacts/reports/${{ matrix.suite }}.json" 1048576
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      if: ${{ always() }}
+      with:
+        name: report-${{ matrix.suite }}
+        path: workspace/.artifacts/reports/${{ matrix.suite }}.json
+        include-hidden-files: true
+        retention-days: 1
+        if-no-files-found: error
+  required:
+    name: ci/required
+    if: ${{ always() }}
+    needs:
+    - plan
+    - validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+    - name: Require every component execution
+      env:
+        PLAN_RESULT: ${{ needs.plan.result }}
+        EXECUTION_RESULT: ${{ needs.validate.result }}
+      run: 'test "$PLAN_RESULT" = success
+
+        test "$EXECUTION_RESULT" = success'
+    - *id001
+    - *id002
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: qualification-plan
+        path: reports
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        pattern: report-*
+        path: reports/results
+        merge-multiple: true
+    - env:
+        COMPOSITION_SHA: ${{ needs.plan.outputs.source_sha }}
+      run: node policy/tools/dev.mjs ci gate --plan reports/plan.json --reports reports/results --sha "$COMPOSITION_SHA"

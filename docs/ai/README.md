@@ -4,6 +4,24 @@ Commencer par [AGENTS.md](../../AGENTS.md), puis consulter le fichier homonyme
 du composant. `./dev capabilities --json` est l'interface de découverte ;
 `./dev doctor` vérifie les prérequis. Aucun plugin ni serveur MCP n'est requis.
 
+## Choisir le bon dépôt
+
+Lire [la composition Workbench](../architecture/multi-repo.md). Les applications
+sont des sous-modules de dépôts privés, pas des dossiers publics à réintroduire
+dans Git. `dev workspace status --json` décrit les pins et checkouts ;
+`dev workspace init --component ID --apply` récupère une source autorisée.
+Dans un clone natif, définir `SILICIUM_WORKBENCH` vers un checkout propre de la
+politique et utiliser son lanceur `dev`. Sa qualification crée une composition
+temporaire dont les rapports enregistrent le SHA source et celui de la politique.
+Ne jamais pousser ce commit synthétique de qualification.
+
+La CI publique `--scope public` ne qualifie pas les applications. La qualification
+privée `--scope integration` doit couvrir les cinq pins avant livraison. Un
+quota privé épuisé reste un blocage. Lire `deferred_suites` et rapporter toutes
+les validations manquantes. Mettre à jour les deux pins ensemble avec
+`dev workspace pin --component ID --revision SHA --apply`, puis créer une PR
+Workbench liée aux PR natives.
+
 ## Implémenter une tranche
 
 1. Lire l'issue, son parent, ses dépendances et la cible de validation du Project.
@@ -60,6 +78,15 @@ Identifier producteur, consommateurs, version et fixtures dans `contracts`.
 Qualifier les deux côtés et la compatibilité avec les données existantes.
 Pour Solana : garder ID de programme, autorités et clés hors du changement
 sauf demande explicite distincte ; localnet est l'oracle de CI.
+
+## Qualification privée
+
+Lire [le runbook multi-dépôts](../operations/multi-repo-ci.md). Les workflows
+natifs et Integration restent suspendus tant que leurs PR, flags et quota ne
+sont pas prêts. Ne pas contourner ce blocage. Les protections privées Free
+ne doivent pas être décrites comme équivalentes aux protections publiques.
+Les preuves d’acceptation inter-dépôts et le transport privé des artefacts
+restent à qualifier ; ne pas accepter une fonctionnalité sur le seul gate public.
 
 ## Publier et déployer
 

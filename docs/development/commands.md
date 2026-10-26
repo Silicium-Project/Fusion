@@ -1,5 +1,34 @@
 # Développement et commandes communes
 
+## Sources et scopes
+
+`./dev workspace status --json` vérifie pins et checkouts sans réseau.
+`./dev workspace init --component web` prépare un aperçu ; `--apply` récupère
+le commit exact avec les droits Git locaux. `workspace verify --materialized`
+exige les cinq sources propres. `workspace pin --component web --revision SHA
+--apply` prépare ensemble gitlink et lock, sans écraser de travail divergent.
+
+Le plan accepte `--scope public` pour Workbench, `--scope component:web` pour
+une qualification native et `--scope integration` pour tous les composants.
+Le scope `local` conserve le routage par changements. Les suites différées
+restent obligatoires avant livraison ; une réussite publique ne les remplace pas.
+Voir [les frontières et limites](../architecture/multi-repo.md).
+
+Dans un clone natif :
+
+```sh
+export SILICIUM_WORKBENCH=/chemin/vers/Workbench
+./dev doctor
+./dev prepare                   # aperçu
+./dev test --suite web          # composition temporaire, suite commune
+```
+
+Le checkout Workbench et le composant doivent être propres et committés. Le
+rapport conserve leurs deux SHA. `--destination` choisit un dossier inexistant ;
+aucun dossier existant n’est remplacé. Les compositions temporaires ne sont pas
+poussées. Pour développer dans les sous-modules, créer une branche native avant
+les modifications ; `workspace init` refusera ensuite d’écraser cette divergence.
+
 ## Prérequis
 
 Les versions sont déclarées dans `tools/config/toolchains.json`. L'outillage
@@ -56,7 +85,9 @@ localnet et des clés jetables ; Devnet est une opération explicite distincte.
 
 ## GitHub
 
-`dev ci inspect --run ID` lit les preuves d'une exécution. `dev issue start URL`
+`dev ci inspect --run ID` lit les preuves Workbench ; ajouter
+`--repository Silicium-Project/Integration` (ou le dépôt natif déclaré) pour
+une exécution privée avec les droits du compte GitHub courant. `dev issue start URL`
 prépare une transition du Project ; `--apply` la réalise après contrôle du WIP.
 `dev release plan` prépare un candidat ; `dev deploy request` prépare ou lance
 un workflow GitHub. Les étapes de production et d'acceptation sont humaines.
@@ -67,7 +98,7 @@ cache disponibles. La commande lit les métadonnées GitHub et télécharge les
 petits rapports dans un répertoire temporaire supprimé après lecture. Elle ne
 relance aucun job. Les échantillons manquants et les caches désactivés restent
 distincts des valeurs nulles ou des échecs de cache ; le volume d'artefacts
-affiché porte sur Fusion, avec une indication de pagination incomplète.
+affiché porte sur Workbench, avec une indication de pagination incomplète.
 
 L'attente part de `job.created_at` jusqu'à la première étape exécutée : elle
 inclut la file, la limitation de matrice et le provisionnement. `started_at`

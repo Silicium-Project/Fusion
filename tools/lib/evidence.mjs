@@ -1,5 +1,5 @@
 /** Acceptance requires a human maintainer's merge and qualification evidence, not a URL-shaped string. */
-import { api, repository } from './github.mjs';
+import { api, repository, canonicalRepository, issueRef } from './github.mjs';
 import { Failure } from './process.mjs';
 import { referencesIssue } from './issue-links.mjs';
 export function acceptanceChecklistComplete(body) {
@@ -12,7 +12,9 @@ export function inspectEvidence(url, target, issueUrl, { request = api } = {}) {
   if (!['Documentation', 'CI', 'Dev', 'Prod'].includes(target))
     throw new Failure('Set an explicit validation target', 3);
   const parsed = new URL(url),
-    match = parsed.pathname.match(/^\/Silicium-Project\/Fusion\/actions\/runs\/([1-9][0-9]*)$/);
+    match = parsed.pathname.match(
+      /^\/Silicium-Project\/(?:Workbench|Fusion)\/actions\/runs\/([1-9][0-9]*)$/,
+    );
   if (
     parsed.protocol !== 'https:' ||
     parsed.host !== 'github.com' ||
@@ -20,7 +22,7 @@ export function inspectEvidence(url, target, issueUrl, { request = api } = {}) {
     parsed.search ||
     parsed.hash
   )
-    throw new Failure('Evidence must be a permanent Fusion Actions run URL', 2);
+    throw new Failure('Evidence must be a permanent Workbench Actions run URL', 2);
   const run = request(`repos/${repository}/actions/runs/${match[1]}`);
   const expected = ['Dev', 'Prod'].includes(target)
     ? '.github/workflows/deploy.yml'
@@ -28,7 +30,7 @@ export function inspectEvidence(url, target, issueUrl, { request = api } = {}) {
   if (
     run.conclusion !== 'success' ||
     run.head_branch !== 'main' ||
-    run.head_repository?.full_name !== repository ||
+    canonicalRepository(run.head_repository?.full_name) !== repository ||
     run.path?.split('@')[0] !== expected
   )
     throw new Failure(
@@ -62,13 +64,22 @@ export function inspectEvidence(url, target, issueUrl, { request = api } = {}) {
       throw new Failure('Deployment is not currently successful', 3);
     sourceSha = deployment.sha;
   }
-  const query = `repo:${repository} is:pr in:body "${issueUrl}"`;
-  const search = request(`search/issues?q=${encodeURIComponent(query)}&per_page=100`);
-  if (search.total_count < 1 || search.total_count > 100)
-    throw new Failure('Link all contributing PRs to the issue by canonical URL', 3);
+  const canonical = issueRef(issueUrl).url;
+  const aliases = canonical.includes('/Workbench/')
+    ? [canonical, canonical.replace('/Workbench/', '/Fusion/')]
+    : [canonical];
+  const items = new Map();
+  for (const alias of aliases) {
+    const query = `repo:${repository} is:pr in:body "${alias}"`;
+    const search = request(`search/issues?q=${encodeURIComponent(query)}&per_page=100`);
+    if (search.incomplete_results || search.total_count > 100)
+      throw new Failure('Contributing PR search is incomplete; acceptance remains blocked', 3);
+    for (const item of search.items) items.set(item.number, item);
+  }
+  if (!items.size) throw new Failure('Link all contributing PRs to the issue by canonical URL', 3);
   const prs = [];
   const merges = [];
-  for (const item of search.items) {
+  for (const item of items.values()) {
     const pr = request(`repos/${repository}/pulls/${item.number}`);
     if (!referencesIssue(pr.body, issueUrl)) continue;
     if (!pr.merged_at || pr.base.ref !== 'main')

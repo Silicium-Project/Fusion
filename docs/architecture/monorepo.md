@@ -1,3 +1,5 @@
+> Décision historique, remplacée par [Workbench et composants indépendants](multi-repo.md).
+
 # ADR — Monorepo Fusion et séparation des responsabilités
 
 Décision du 25 octobre 2026 : réunir le code des quatre dépôts dans Fusion,

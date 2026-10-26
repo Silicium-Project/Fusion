@@ -1,0 +1,10 @@
+{
+  "name": "Silicium Source Reader",
+  "url": "https://github.com/Silicium-Project/Workbench",
+  "description": "Lecture seule des cinq composants privés pour qualifier une composition exacte dans Integration ; aucun Project, déploiement ou contenu en écriture.",
+  "public": false,
+  "default_permissions": {
+    "contents": "read"
+  },
+  "default_events": []
+}

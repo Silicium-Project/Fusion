@@ -15,3 +15,8 @@ par sous-modules. Leurs commandes ne sont pas les procédures actuelles.
 
 - [Workflow des issues](development/issue-workflow.md)
 - [Roadmap active](roadmap/README.md)
+
+## Dépôts séparés
+
+- [Workbench et composants](architecture/multi-repo.md)
+- [CI privée, activation et limites](operations/multi-repo-ci.md)

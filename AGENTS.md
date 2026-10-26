@@ -4,13 +4,29 @@ Lire [la carte et les procédures IA](docs/ai/README.md) avant une modification.
 Les instructions d'un sous-dossier précisent ses invariants ; les commandes
 communes ci-dessous restent la référence locale et GitHub.
 
+## Organisation multi-dépôts
+
+Workbench est public ; les cinq composants sont des sous-modules privés. Lire
+[la décision](docs/architecture/multi-repo.md). Commencer par `dev workspace status`.
+Récupérer seulement les sources autorisées avec
+`dev workspace init --component ID --apply`. Préserver les checkouts divergents.
+Ne pas commiter les sources applicatives dans ce dépôt : une PR native, puis
+une PR mettant à jour gitlink et `components.lock.json`. Les anciennes versions
+publiques restent publiques ; ne pas promettre de les rendre confidentielles.
+
+La CI publique utilise `dev ci plan --scope public`. Les suites applicatives
+restent obligatoires dans la qualification privée `--scope integration`. Un
+gate public vert ne qualifie aucune application ni livraison. Ne pas copier de
+clé de lecture des composants dans Workbench. Quota privé épuisé : blocage
+explicite, budget à zéro, aucun runner VPS de secours.
+
 ## Carte
 
 - `apps/web` : Nuxt/Vue/TypeScript ; `apps/api` : comptes et accès au réseau, Go.
 - `apps/node` : application Tauri/Vue et supervision locale, Rust/TypeScript.
 - `network` : workspace Rust du réseau P2P et des workloads.
 - `chain/solana` : programme Anchor, toolchain isolée et tests localnet.
-- `packages/solana-sdk` : SDK TypeScript.
+- `chain/sdk` : SDK TypeScript.
 - `contracts` : contrats partagés ; `infra` : exploitation et livraison.
 - `tools` : commandes communes ; `docs` : procédures normatives et archives.
 
@@ -18,9 +34,9 @@ communes ci-dessous restent la référence locale et GitHub.
 
 1. `./dev doctor --profile <composant>` (`.\dev.ps1` sous Windows).
 2. Consulter le Project 12 ; respecter dépendances, préparation et WIP.
-3. Utiliser une branche courte `<type>/<issue>-<objet>` et une PR brouillon.
+3. Utiliser une branche courte `lf-<type>-<issue>-<objet>` et une PR brouillon.
 4. Lire l'`AGENTS.md` du composant ; préserver tout changement local existant.
-5. `./dev ci plan --base origin/main --head HEAD --json` décrit les validations.
+5. `./dev ci plan --scope public --base origin/main --head HEAD --json` décrit les validations.
 6. Exécuter les suites applicables avec `./dev test --suite <id>` ; la CI
    utilise exactement les mêmes commandes. Un prérequis absent reste bloquant.
 7. Documenter contrats, exemples, erreurs et preuves dans la même PR.
@@ -58,8 +74,8 @@ propre PR. Une analyse automatisée ne constitue pas une approbation humaine.
 Les approbations des environnements de production restent indépendantes.
 
 Les imports et rattachements d'historiques utilisent **Merge commit** ; aucun
-squash ou rebase. Vérifier l'ascendance Git après fusion. Pendant la réparation
-de #317, seul ce mode de fusion est activé ; voir
+squash ou rebase. Vérifier l'ascendance Git après fusion. Pendant la migration
+des historiques, seul ce mode de fusion est activé ; voir
 [la procédure et ses preuves](docs/operations/git-history-recovery.md).
 
 Privilégier des modules courts, des responsabilités explicites et les contrats

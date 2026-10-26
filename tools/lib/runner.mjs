@@ -4,6 +4,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { registry, makePlan } from './planner.mjs';
 import { run, git, inside, root, Failure, readJson, writeJson } from './process.mjs';
+import { requireSources, sourceIdentity, guardPrivateSources } from './workspace.mjs';
 
 export function countTests(text, format) {
   if (format === 'node') return Number([...text.matchAll(/# tests (\d+)/g)].at(-1)?.[1] ?? 0);
@@ -31,6 +32,8 @@ export function executeSuite(id, { plan, output } = {}) {
   const config = registry(),
     suite = config.suites[id];
   if (!suite) throw new Failure(`Unknown suite ${id}`, 2);
+  guardPrivateSources(suite.sources ?? []);
+  if (suite.sources?.length) requireSources(suite.sources);
   if (suite.runner.startsWith('windows') && process.platform !== 'win32')
     throw new Failure(`${id} requires Windows`, 2);
   const currentPlan = plan ?? makePlan({ paths: [] });
@@ -42,6 +45,8 @@ export function executeSuite(id, { plan, output } = {}) {
     suite: id,
     source_sha: sha,
     policy_digest: currentPlan.policy_digest,
+    scope: currentPlan.scope,
+    source_components: sourceIdentity(),
     toolchain_policy: readJson(resolve(root, 'tools/config/toolchains.json')),
     execution_platform: {
       node: process.version,
