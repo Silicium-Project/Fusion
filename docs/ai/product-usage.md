@@ -23,12 +23,13 @@ machine au titre d'un diagnostic en lecture seule.
 
 ## Développement depuis le clone
 
-Depuis Workbench, commencer par `./dev workspace status`, puis initialiser le
-composant privé selon la [procédure multi-dépôts](../architecture/multi-repo.md).
-Dans ce checkout autorisé, lire `apps/api/AGENTS.md` avant d'utiliser son profil
-`./dev doctor --profile api`. Le fichier du composant n'est pas présent dans un
-clone public non initialisé. L'API sait utiliser SQLite sans serveur PostgreSQL ;
-réserver ce mode au développement local. Exemple Bash :
+Depuis Workbench, commencer par `./dev workspace status`, puis exécuter
+`./dev workspace init --component api --apply` selon la
+[procédure multi-dépôts](../architecture/multi-repo.md). Il faut avoir accès au
+dépôt privé BackEnd. Après cette initialisation, lire `apps/api/AGENTS.md`, puis
+lancer `./dev doctor --profile api`. Le fichier du composant n'est pas présent
+dans un clone public non initialisé. L'API sait utiliser SQLite sans serveur
+PostgreSQL ; réserver ce mode au développement local. Exemple Bash :
 
 ```sh
 mkdir -p .artifacts/local-api
