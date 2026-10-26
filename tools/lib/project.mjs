@@ -319,8 +319,22 @@ export function fieldValues(item) {
     item.fieldValues.nodes.filter((x) => x.field).map((x) => [x.field.name, x.name ?? x.text]),
   );
 }
-export function projectSyncOutput({ apply, items, statusUpdates = 0, blockageUpdates = 0 }) {
-  if (!apply) return { schema_version: 1, apply, items };
+export function projectSyncOutput({
+  apply,
+  items,
+  statusUpdates = 0,
+  blockageUpdates = 0,
+  publicWorkflow = process.env.GITHUB_ACTIONS === 'true',
+}) {
+  if (!apply && !publicWorkflow) return { schema_version: 1, apply, items };
+  if (!apply)
+    return {
+      schema_version: 1,
+      apply,
+      processed_items: items.length,
+      predicted_status_updates: items.filter((item) => item.status_changed).length,
+      predicted_blockage_updates: items.filter((item) => item.blockage_changed).length,
+    };
   return {
     schema_version: 1,
     apply,
@@ -330,6 +344,7 @@ export function projectSyncOutput({ apply, items, statusUpdates = 0, blockageUpd
   };
 }
 export function projectSyncFailureOutput({
+  apply = true,
   error,
   processedItems,
   statusUpdates,
@@ -338,7 +353,7 @@ export function projectSyncFailureOutput({
   const failureCode = Number.isInteger(error?.exitCode) ? error.exitCode : 1;
   return {
     schema_version: 1,
-    apply: true,
+    apply,
     status: 'failed',
     failure_kind: failureCode === 4 ? 'rate_limit' : 'reconciliation',
     processed_items: processedItems,

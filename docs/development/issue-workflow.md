@@ -94,6 +94,12 @@ des compteurs agrégés lors d'une écriture ou d'un échec ; les diagnostics pa
 issue et les détails d'API restent masqués. Le Project 12 reste privé. Voir
 [l'activation](../operations/bootstrap.md).
 
+Le déclenchement manuel `workflow_dispatch` utilise `mode=dry-run` par défaut,
+uniquement depuis `main`. Il utilise un jeton App limité à la lecture et ne
+publie que le nombre d'items et les changements prévus, sans issue ni blocage
+détaillé. Ce mode reste disponible quand le flag vaut `0`. Le mode `apply` et
+les déclencheurs automatiques exigent tous deux le flag à `1`.
+
 Les lectures REST et les requêtes GraphQL réessaient au plus deux fois après
 une erreur réseau transitoire identifiée, avec une attente bornée. Les mutations
 ne sont jamais rejouées automatiquement ; les réponses de limitation GitHub

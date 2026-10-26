@@ -178,8 +178,31 @@ test('applied Project sync output contains only aggregate data', () => {
   });
   assert.doesNotMatch(JSON.stringify(output), /github\.com|issues\/1/);
 });
+test('public Project sync dry-run uses aggregate output and hides private issue data', () => {
+  const output = projectSyncOutput({
+    apply: false,
+    publicWorkflow: true,
+    items: [
+      {
+        issue: 'https://github.com/Silicium-Project/planning-private/issues/4',
+        status_changed: true,
+        blockage_changed: true,
+        blockage: 'private issue title and dependency',
+      },
+    ],
+  });
+  assert.deepEqual(output, {
+    schema_version: 1,
+    apply: false,
+    processed_items: 1,
+    predicted_status_updates: 1,
+    predicted_blockage_updates: 1,
+  });
+  assert.doesNotMatch(JSON.stringify(output), /planning-private|private issue title|issues\/4/);
+});
 test('failed public Project sync hides private issue and API diagnostics', () => {
   const output = projectSyncFailureOutput({
+    apply: true,
     error: Object.assign(
       new Error(
         'private issue title https://github.com/Silicium-Project/planning-private/issues/4 token',
@@ -201,6 +224,18 @@ test('failed public Project sync hides private issue and API diagnostics', () =>
   );
   assert.doesNotMatch(JSON.stringify(output), /private issue title|planning-private|token/);
 });
+test('failed public Project dry-run identifies read-only mode and hides private diagnostics', () => {
+  const output = projectSyncFailureOutput({
+    apply: false,
+    error: Object.assign(new Error('private issue title and token'), { exitCode: 3 }),
+    processedItems: 2,
+    statusUpdates: 0,
+    blockageUpdates: 0,
+  });
+  assert.equal(output.apply, false);
+  assert.equal(output.status, 'failed');
+  assert.doesNotMatch(JSON.stringify(output), /private issue title|token/);
+});
 test('public Project sync gates untrusted workflow sources and checks out only main', () => {
   const workflow = readFileSync(
     new URL('../../.github/workflows/project-sync.yml', import.meta.url),
@@ -217,6 +252,27 @@ test('public Project sync gates untrusted workflow sources and checks out only m
   assert.match(workflow, /ref: main/);
   assert.match(workflow, /persist-credentials: 'false'/);
   assert.match(workflow, /repositories: Workbench,planning-private/);
+  for (const permission of [
+    'permission-actions: read',
+    'permission-checks: read',
+    'permission-contents: read',
+    'permission-deployments: read',
+    'permission-issues: read',
+    'permission-pull-requests: read',
+  ])
+    assert.ok(workflow.includes(permission), `missing least-privilege token scope: ${permission}`);
+  assert.match(workflow, /default: dry-run/);
+  assert.match(
+    workflow,
+    /event_name != 'workflow_dispatch' \|\| github\.ref == 'refs\/heads\/main'/,
+  );
+  assert.match(workflow, /inputs\.mode == 'dry-run' && 'read' \|\| 'write'/);
+  assert.match(
+    workflow,
+    /SILICIUM_PROJECT_AUTOMATION_ENABLED == '1'[\s\S]*inputs\.mode == 'dry-run'/,
+  );
+  assert.match(workflow, /node tools\/ci\/project-sync\.mjs --apply/);
+  assert.match(workflow, /node tools\/ci\/project-sync\.mjs\n/);
 });
 test('abandoned work is not counted as delivered', () =>
   assert.equal(nextStatus({ abandoned: true }), 'Abandonné'));

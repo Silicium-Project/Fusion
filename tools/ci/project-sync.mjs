@@ -135,6 +135,7 @@ try {
     console.error(
       JSON.stringify(
         projectSyncFailureOutput({
+          apply,
           error,
           processedItems: summaries.length,
           statusUpdates,
