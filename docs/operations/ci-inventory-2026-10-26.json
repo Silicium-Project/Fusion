@@ -1,0 +1,2557 @@
+{
+  "schema_version": 1,
+  "snapshot": {
+    "captured_at": "2026-10-26T19:09:09+01:00",
+    "scope": "Workbench, five private component repositories, and private Integration after the return to a multi-repository layout.",
+    "method": "Read-only GitHub REST API snapshot of default branches, registered Actions workflows, their source files where present, and recent workflow runs/jobs. Public Workbench CI history is sampled by its CI workflow; component repositories use their recent repository run list filtered to the primary qualification workflow. At most 20 runs are retained for each repository.",
+    "timing_definitions": {
+      "workflow_elapsed_seconds": "run updated_at minus created_at; includes queue time",
+      "queue_seconds": "run_started_at minus created_at",
+      "job_seconds_sum": "sum of started_at to completed_at across observed jobs; parallel jobs overlap and this is not wall time"
+    },
+    "limitations": [
+      "A GitHub Actions workflow record can outlive its source file; such entries are marked source_missing_at_snapshot.",
+      "No Actions secrets, logs, branch names, actor identities, tokens, or runner names were saved.",
+      "The organization runner inventory endpoint returned HTTP 403 without admin:org permission; runner registration on VPS hosts is therefore unverified.",
+      "Private repositories are inspected through authorized GitHub access; their code and raw logs are not copied into this report.",
+      "A skipped workflow is not a successful qualification.",
+      "The GitHub billing page supplied by the owner showed the private Actions included quota exhausted and overage blocked; billing state is not queried through this snapshot.",
+      "Exact internal labels of private self-hosted runners are omitted from this public evidence copy."
+    ]
+  },
+  "repositories": [
+    {
+      "name": "Workbench",
+      "visibility": "public",
+      "default_branch": "main",
+      "default_sha": "90bec77675ca7a67c7202126386ef5dd9033b761",
+      "workbench_pin_sha": null,
+      "workflow_inventory": [
+        {
+          "id": 395760310,
+          "name": "CI",
+          "path": ".github/workflows/ci.yml",
+          "state": "active",
+          "runs_on": [
+            "ubuntu-24.04",
+            "${{ matrix.runner }}"
+          ],
+          "source_missing_at_snapshot": false
+        },
+        {
+          "id": 396395447,
+          "name": "Complementary qualification",
+          "path": ".github/workflows/campaigns.yml",
+          "state": "active",
+          "runs_on": [
+            "ubuntu-24.04"
+          ],
+          "source_missing_at_snapshot": false
+        },
+        {
+          "id": 396395449,
+          "name": "Deploy",
+          "path": ".github/workflows/deploy.yml",
+          "state": "active",
+          "runs_on": [
+            "ubuntu-24.04"
+          ],
+          "source_missing_at_snapshot": false
+        },
+        {
+          "id": 396395450,
+          "name": "Host diagnostics",
+          "path": ".github/workflows/diagnostics.yml",
+          "state": "active",
+          "runs_on": [
+            "ubuntu-24.04"
+          ],
+          "source_missing_at_snapshot": false
+        },
+        {
+          "id": 396395452,
+          "name": "Project sync",
+          "path": ".github/workflows/project-sync.yml",
+          "state": "active",
+          "runs_on": [
+            "ubuntu-24.04"
+          ],
+          "source_missing_at_snapshot": false
+        },
+        {
+          "id": 396395453,
+          "name": "Release",
+          "path": ".github/workflows/release.yml",
+          "state": "active",
+          "runs_on": [
+            "ubuntu-24.04",
+            "${{ matrix.os }}",
+            "windows-2022"
+          ],
+          "source_missing_at_snapshot": false
+        },
+        {
+          "id": 397274546,
+          "name": "Private component qualification",
+          "path": ".github/workflows/component-ci.yml",
+          "state": "active",
+          "runs_on": [
+            "ubuntu-24.04",
+            "${{ matrix.runner }}"
+          ],
+          "source_missing_at_snapshot": false
+        },
+        {
+          "id": 322996833,
+          "name": "Full repository audit",
+          "path": ".github/workflows/full-repository-audit.yml",
+          "state": "disabled_manually",
+          "runs_on": [],
+          "source_missing_at_snapshot": true
+        },
+        {
+          "id": 323001213,
+          "name": "Repository audit fast evidence",
+          "path": ".github/workflows/repository-audit-fast.yml",
+          "state": "disabled_manually",
+          "runs_on": [],
+          "source_missing_at_snapshot": true
+        },
+        {
+          "id": 323006168,
+          "name": ".github/workflows/apply-refactor-issue-plan.yml",
+          "path": ".github/workflows/apply-refactor-issue-plan.yml",
+          "state": "disabled_manually",
+          "runs_on": [],
+          "source_missing_at_snapshot": true
+        },
+        {
+          "id": 323009320,
+          "name": "Apply refactor issues from audit PR",
+          "path": ".github/workflows/apply-refactor-issues-pr.yml",
+          "state": "disabled_manually",
+          "runs_on": [],
+          "source_missing_at_snapshot": true
+        },
+        {
+          "id": 328553570,
+          "name": "Mirror Epitech",
+          "path": ".github/workflows/mirror-epitech.yml",
+          "state": "disabled_manually",
+          "runs_on": [
+            "ubuntu-24.04"
+          ],
+          "source_missing_at_snapshot": false
+        }
+      ],
+      "qualification_workflow": "CI",
+      "qualification_runs": [
+        {
+          "id": 40370826132,
+          "event": "pull_request",
+          "head_sha": "006e40747d0383d9ba4714aae0c9c20feab00dd8",
+          "created_at": "2026-10-26T17:40:31Z",
+          "started_at": "2026-10-26T17:40:31Z",
+          "updated_at": "2026-10-26T17:42:42Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40370826132",
+          "duration_seconds": 131,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-24.04",
+            "windows-2022"
+          ],
+          "job_seconds": [
+            4,
+            18,
+            31,
+            31,
+            21,
+            78,
+            0,
+            16
+          ],
+          "workflow": "CI",
+          "job_seconds_sum": 199
+        },
+        {
+          "id": 40367808786,
+          "event": "pull_request",
+          "head_sha": "5b8e43c56cab6c93811433fadcf4ba9b674297ac",
+          "created_at": "2026-10-26T17:21:14Z",
+          "started_at": "2026-10-26T17:21:14Z",
+          "updated_at": "2026-10-26T17:23:20Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40367808786",
+          "duration_seconds": 126,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-24.04",
+            "windows-2022"
+          ],
+          "job_seconds": [
+            3,
+            22,
+            21,
+            70,
+            31,
+            31,
+            0,
+            16
+          ],
+          "workflow": "CI",
+          "job_seconds_sum": 194
+        },
+        {
+          "id": 40359090517,
+          "event": "push",
+          "head_sha": "90bec77675ca7a67c7202126386ef5dd9033b761",
+          "created_at": "2026-10-26T16:26:10Z",
+          "started_at": "2026-10-26T16:26:10Z",
+          "updated_at": "2026-10-26T16:28:26Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40359090517",
+          "duration_seconds": 136,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-24.04",
+            "windows-2022"
+          ],
+          "job_seconds": [
+            20,
+            16,
+            15,
+            24,
+            28,
+            64,
+            0,
+            17
+          ],
+          "workflow": "CI",
+          "job_seconds_sum": 184
+        },
+        {
+          "id": 40358697680,
+          "event": "pull_request",
+          "head_sha": "434da6c83aeb198ac51bc5a047f60542ab4586ef",
+          "created_at": "2026-10-26T16:23:46Z",
+          "started_at": "2026-10-26T16:23:46Z",
+          "updated_at": "2026-10-26T16:25:38Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40358697680",
+          "duration_seconds": 112,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-24.04",
+            "windows-2022"
+          ],
+          "job_seconds": [
+            4,
+            21,
+            31,
+            15,
+            27,
+            60,
+            0,
+            13
+          ],
+          "workflow": "CI",
+          "job_seconds_sum": 171
+        },
+        {
+          "id": 40357338511,
+          "event": "push",
+          "head_sha": "78b69feea6f32835eef511542afa135d967a5769",
+          "created_at": "2026-10-26T16:15:23Z",
+          "started_at": "2026-10-26T16:15:23Z",
+          "updated_at": "2026-10-26T16:21:17Z",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40357338511",
+          "duration_seconds": 354,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-24.04"
+          ],
+          "job_seconds": [
+            19,
+            15,
+            0,
+            0,
+            5
+          ],
+          "workflow": "CI",
+          "job_seconds_sum": 39
+        },
+        {
+          "id": 40356907373,
+          "event": "pull_request",
+          "head_sha": "cc3c98e7c00784e6dd1c85a96aeda7e64372d3ef",
+          "created_at": "2026-10-26T16:12:47Z",
+          "started_at": "2026-10-26T16:12:47Z",
+          "updated_at": "2026-10-26T16:14:47Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40356907373",
+          "duration_seconds": 120,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-24.04",
+            "windows-2022"
+          ],
+          "job_seconds": [
+            5,
+            19,
+            24,
+            27,
+            16,
+            68,
+            0,
+            13
+          ],
+          "workflow": "CI",
+          "job_seconds_sum": 172
+        },
+        {
+          "id": 40356369757,
+          "event": "workflow_dispatch",
+          "head_sha": "0614e41cd73d8635a5c344da35b537573836bcd7",
+          "created_at": "2026-10-26T16:09:29Z",
+          "started_at": "2026-10-26T16:09:29Z",
+          "updated_at": "2026-10-26T16:11:27Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40356369757",
+          "duration_seconds": 118,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-24.04",
+            "windows-2022"
+          ],
+          "job_seconds": [
+            4,
+            17,
+            28,
+            66,
+            41,
+            15,
+            0,
+            16
+          ],
+          "workflow": "CI",
+          "job_seconds_sum": 187
+        },
+        {
+          "id": 40355853257,
+          "event": "pull_request",
+          "head_sha": "0614e41cd73d8635a5c344da35b537573836bcd7",
+          "created_at": "2026-10-26T16:06:18Z",
+          "started_at": "2026-10-26T16:07:32Z",
+          "updated_at": "2026-10-26T16:08:14Z",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40355853257",
+          "duration_seconds": 116,
+          "queue_seconds": 74,
+          "runners": [
+            "ubuntu-24.04"
+          ],
+          "job_seconds": [
+            5,
+            19,
+            4,
+            0,
+            0
+          ],
+          "workflow": "CI",
+          "job_seconds_sum": 28
+        },
+        {
+          "id": 40284157049,
+          "event": "pull_request",
+          "head_sha": "fe24e51b643d879efb4ccc18516293d9c8e0d287",
+          "created_at": "2026-10-26T07:10:24Z",
+          "started_at": "2026-10-26T16:01:55Z",
+          "updated_at": "2026-10-26T16:03:40Z",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40284157049",
+          "duration_seconds": 31996,
+          "queue_seconds": 31891,
+          "runners": [
+            "ubuntu-24.04",
+            "windows-2022"
+          ],
+          "job_seconds": [
+            3,
+            16,
+            62,
+            22,
+            21,
+            34,
+            0,
+            5
+          ],
+          "workflow": "CI",
+          "job_seconds_sum": 163
+        },
+        {
+          "id": 40283233161,
+          "event": "pull_request",
+          "head_sha": "2f3e6c8792ea80d717ece0a6eb9165f0a261d0c3",
+          "created_at": "2026-10-26T07:01:12Z",
+          "started_at": "2026-10-26T07:01:12Z",
+          "updated_at": "2026-10-26T07:01:51Z",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40283233161",
+          "duration_seconds": 39,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-24.04"
+          ],
+          "job_seconds": [
+            5,
+            17,
+            5,
+            0,
+            0
+          ],
+          "workflow": "CI",
+          "job_seconds_sum": 27
+        },
+        {
+          "id": 40235140866,
+          "event": "push",
+          "head_sha": "ff14db3c666eb9f355f59bfa908a48f0e7a44e6c",
+          "created_at": "2026-10-25T21:21:52Z",
+          "started_at": "2026-10-25T21:21:52Z",
+          "updated_at": "2026-10-25T21:24:04Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40235140866",
+          "duration_seconds": 132,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-24.04",
+            "windows-2022"
+          ],
+          "job_seconds": [
+            20,
+            15,
+            30,
+            64,
+            28,
+            20,
+            0,
+            18
+          ],
+          "workflow": "CI",
+          "job_seconds_sum": 195
+        },
+        {
+          "id": 40234928850,
+          "event": "pull_request",
+          "head_sha": "873ed2f2156abddb6d633e42ce615eed967d43a2",
+          "created_at": "2026-10-25T21:19:12Z",
+          "started_at": "2026-10-25T21:19:12Z",
+          "updated_at": "2026-10-25T21:20:57Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40234928850",
+          "duration_seconds": 105,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-24.04",
+            "windows-2022"
+          ],
+          "job_seconds": [
+            2,
+            18,
+            55,
+            36,
+            17,
+            26,
+            0,
+            17
+          ],
+          "workflow": "CI",
+          "job_seconds_sum": 171
+        },
+        {
+          "id": 40232356923,
+          "event": "pull_request",
+          "head_sha": "24c7590c02eeeebcb0fb1ef8c0aa01aa576fd039",
+          "created_at": "2026-10-25T20:46:39Z",
+          "started_at": "2026-10-25T20:46:39Z",
+          "updated_at": "2026-10-25T21:02:09Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40232356923",
+          "duration_seconds": 930,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-24.04",
+            "windows-2022"
+          ],
+          "job_seconds": [
+            3,
+            19,
+            28,
+            152,
+            14,
+            231,
+            42,
+            95,
+            793,
+            83,
+            26,
+            29,
+            71,
+            21,
+            69,
+            48,
+            16
+          ],
+          "workflow": "CI",
+          "job_seconds_sum": 1740
+        },
+        {
+          "id": 40223122663,
+          "event": "pull_request",
+          "head_sha": "03e62285bb7c3cc95f1c375416667f148a505cc3",
+          "created_at": "2026-10-25T18:50:05Z",
+          "started_at": "2026-10-25T18:50:05Z",
+          "updated_at": "2026-10-25T19:07:09Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40223122663",
+          "duration_seconds": 1024,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-24.04",
+            "windows-2022"
+          ],
+          "job_seconds": [
+            5,
+            15,
+            15,
+            19,
+            64,
+            34,
+            90,
+            207,
+            29,
+            27,
+            67,
+            46,
+            99,
+            28,
+            790,
+            162,
+            11
+          ],
+          "workflow": "CI",
+          "job_seconds_sum": 1708
+        },
+        {
+          "id": 40222030783,
+          "event": "pull_request",
+          "head_sha": "7a57610c148b8e13c661fced6a455e2807ff1515",
+          "created_at": "2026-10-25T18:36:12Z",
+          "started_at": "2026-10-25T18:36:12Z",
+          "updated_at": "2026-10-25T18:51:45Z",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40222030783",
+          "duration_seconds": 933,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-24.04",
+            "windows-2022"
+          ],
+          "job_seconds": [
+            5,
+            20,
+            23,
+            17,
+            42,
+            29,
+            363,
+            230,
+            29,
+            134,
+            694,
+            195,
+            397,
+            174,
+            386,
+            69,
+            3
+          ],
+          "workflow": "CI",
+          "job_seconds_sum": 2810
+        },
+        {
+          "id": 40199389136,
+          "event": "pull_request",
+          "head_sha": "c04445eb356eb0e039e264f3e04abe78753ff549",
+          "created_at": "2026-10-25T13:49:37Z",
+          "started_at": "2026-10-25T13:49:37Z",
+          "updated_at": "2026-10-25T13:49:47Z",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40199389136",
+          "duration_seconds": 10,
+          "queue_seconds": 0,
+          "runners": [],
+          "job_seconds": [
+            4,
+            3,
+            2,
+            0,
+            0
+          ],
+          "workflow": "CI",
+          "job_seconds_sum": 9
+        },
+        {
+          "id": 40197099773,
+          "event": "pull_request",
+          "head_sha": "eadfe01e8fee9072a873add9d15c045e68b47041",
+          "created_at": "2026-10-25T13:19:43Z",
+          "started_at": "2026-10-25T13:19:43Z",
+          "updated_at": "2026-10-25T13:35:23Z",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40197099773",
+          "duration_seconds": 940,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-24.04",
+            "windows-2022"
+          ],
+          "job_seconds": [
+            4,
+            24,
+            31,
+            44,
+            283,
+            20,
+            365,
+            62,
+            32,
+            31,
+            381,
+            206,
+            898,
+            473,
+            237,
+            194,
+            3
+          ],
+          "workflow": "CI",
+          "job_seconds_sum": 3288
+        },
+        {
+          "id": 40179208684,
+          "event": "pull_request",
+          "head_sha": "4838ca39e01411dfe1f3fbdc48d6b857f741b647",
+          "created_at": "2026-10-25T09:05:21Z",
+          "started_at": "2026-10-25T09:05:21Z",
+          "updated_at": "2026-10-25T09:17:30Z",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40179208684",
+          "duration_seconds": 729,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-24.04",
+            "windows-2022"
+          ],
+          "job_seconds": [
+            5,
+            23,
+            20,
+            36,
+            48,
+            43,
+            23,
+            37,
+            37,
+            179,
+            25,
+            30,
+            25,
+            58,
+            645,
+            26,
+            5
+          ],
+          "workflow": "CI",
+          "job_seconds_sum": 1265
+        },
+        {
+          "id": 40176267805,
+          "event": "pull_request",
+          "head_sha": "6e42de155f47fe93baecb547c5face447658700b",
+          "created_at": "2026-10-25T08:21:08Z",
+          "started_at": "2026-10-25T08:21:08Z",
+          "updated_at": "2026-10-25T08:35:26Z",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40176267805",
+          "duration_seconds": 858,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-24.04",
+            "windows-2022"
+          ],
+          "job_seconds": [
+            6,
+            21,
+            250,
+            815,
+            293,
+            283,
+            46,
+            72,
+            421,
+            29,
+            209,
+            31,
+            206,
+            26,
+            22,
+            71,
+            5
+          ],
+          "workflow": "CI",
+          "job_seconds_sum": 2806
+        },
+        {
+          "id": 40176010077,
+          "event": "pull_request",
+          "head_sha": "61024725b44930de4aba88a6d7e81ecc23490c9f",
+          "created_at": "2026-10-25T08:17:07Z",
+          "started_at": "2026-10-25T08:17:07Z",
+          "updated_at": "2026-10-25T08:17:26Z",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40176010077",
+          "duration_seconds": 19,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-24.04"
+          ],
+          "job_seconds": [
+            5,
+            6,
+            0,
+            0,
+            0
+          ],
+          "workflow": "CI",
+          "job_seconds_sum": 11
+        }
+      ]
+    },
+    {
+      "name": "BackEnd",
+      "visibility": "private",
+      "default_branch": "main",
+      "default_sha": "46fabfe956ca721d25565491a3e0f9bbd9509a8d",
+      "workbench_pin_sha": "a24bab6d1f7607fcdca85b52b690de2b53578558",
+      "workflow_inventory": [
+        {
+          "id": 328545691,
+          "name": "Backend CI",
+          "path": ".github/workflows/ci.yml",
+          "state": "disabled_manually",
+          "runs_on": [
+            "self-hosted"
+          ],
+          "source_missing_at_snapshot": false
+        },
+        {
+          "id": 366109124,
+          "name": "Copilot cloud agent",
+          "path": "dynamic/copilot-swe-agent/copilot",
+          "state": "active",
+          "runs_on": [],
+          "source_missing_at_snapshot": true
+        }
+      ],
+      "qualification_workflow": "Backend CI",
+      "qualification_runs": [
+        {
+          "id": 40137789811,
+          "event": "pull_request",
+          "created_at": "2026-10-24T22:15:44Z",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "url": "https://github.com/Silicium-Project/BackEnd/actions/runs/40137789811",
+          "duration_seconds": 16,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "a6951027f62d664f3215e715b5d592a3ce9ad87d",
+          "workflow": "Backend CI",
+          "job_seconds": [
+            12,
+            0,
+            0
+          ],
+          "job_seconds_sum": 12
+        },
+        {
+          "id": 39692312086,
+          "event": "push",
+          "created_at": "2026-10-21T23:16:16Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/BackEnd/actions/runs/39692312086",
+          "duration_seconds": 335,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "35387e8374fe2919bbe424b8e720467dcc211a10",
+          "workflow": "Backend CI",
+          "job_seconds": [
+            22,
+            157,
+            147
+          ],
+          "job_seconds_sum": 326
+        },
+        {
+          "id": 39650101334,
+          "event": "push",
+          "created_at": "2026-10-21T18:09:00Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/BackEnd/actions/runs/39650101334",
+          "duration_seconds": 327,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "5ccdde1fffb9ce279c3169ac762c604d87810857",
+          "workflow": "Backend CI",
+          "job_seconds": [
+            26,
+            147,
+            143
+          ],
+          "job_seconds_sum": 316
+        },
+        {
+          "id": 39645345815,
+          "event": "push",
+          "created_at": "2026-10-21T17:36:48Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/BackEnd/actions/runs/39645345815",
+          "duration_seconds": 1088,
+          "queue_seconds": 752,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "4c9448c69f5b13480a293d9b599ed0de8f114fc2",
+          "workflow": "Backend CI",
+          "job_seconds": [
+            21,
+            195,
+            108
+          ],
+          "job_seconds_sum": 324
+        },
+        {
+          "id": 39627870921,
+          "event": "push",
+          "created_at": "2026-10-21T15:40:54Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/BackEnd/actions/runs/39627870921",
+          "duration_seconds": 291,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "4c8509489cffe70954d87127b38e22d7409897bb",
+          "workflow": "Backend CI",
+          "job_seconds": [
+            20,
+            122,
+            116
+          ],
+          "job_seconds_sum": 258
+        },
+        {
+          "id": 39613996600,
+          "event": "push",
+          "created_at": "2026-10-21T14:07:02Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/BackEnd/actions/runs/39613996600",
+          "duration_seconds": 237,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "97a8d1b3d97a4020c9e60fb4f0de4b90b155e3bb",
+          "workflow": "Backend CI",
+          "job_seconds": [
+            20,
+            130,
+            77
+          ],
+          "job_seconds_sum": 227
+        },
+        {
+          "id": 39607630020,
+          "event": "push",
+          "created_at": "2026-10-21T13:23:51Z",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/Silicium-Project/BackEnd/actions/runs/39607630020",
+          "duration_seconds": 226,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "48d7a24ae31f6266824a9b79a4af2e0787f2a44e",
+          "workflow": "Backend CI",
+          "job_seconds": [
+            16,
+            145,
+            56
+          ],
+          "job_seconds_sum": 217
+        },
+        {
+          "id": 39585909115,
+          "event": "push",
+          "created_at": "2026-10-21T10:37:12Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/BackEnd/actions/runs/39585909115",
+          "duration_seconds": 267,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "7af04577a39e28d531c1adfbdcc8c508501cb317",
+          "workflow": "Backend CI",
+          "job_seconds": [
+            17,
+            158,
+            83
+          ],
+          "job_seconds_sum": 258
+        },
+        {
+          "id": 39577471794,
+          "event": "push",
+          "created_at": "2026-10-21T09:30:21Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/BackEnd/actions/runs/39577471794",
+          "duration_seconds": 140,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "f4120b43f2d1391aa1e2ab72ab3afa12b00579bb",
+          "workflow": "Backend CI",
+          "job_seconds": [
+            12,
+            74,
+            46
+          ],
+          "job_seconds_sum": 132
+        },
+        {
+          "id": 39497828512,
+          "event": "push",
+          "created_at": "2026-10-20T21:07:47Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/BackEnd/actions/runs/39497828512",
+          "duration_seconds": 152,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "c5247f5182ca28feb77c4799de76ed50d0289b56",
+          "workflow": "Backend CI",
+          "job_seconds": [
+            9,
+            72,
+            62
+          ],
+          "job_seconds_sum": 143
+        },
+        {
+          "id": 39459948189,
+          "event": "push",
+          "created_at": "2026-10-20T16:43:29Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/BackEnd/actions/runs/39459948189",
+          "duration_seconds": 146,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "c177c02a17cb102fa484127e6cf3b84a481f67b8",
+          "workflow": "Backend CI",
+          "job_seconds": [
+            8,
+            64,
+            63
+          ],
+          "job_seconds_sum": 135
+        },
+        {
+          "id": 38889990405,
+          "event": "push",
+          "created_at": "2026-10-16T10:51:38Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/BackEnd/actions/runs/38889990405",
+          "duration_seconds": 150,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "1ef3fe3ed5e497720f9413a275424af21559de91",
+          "workflow": "Backend CI",
+          "job_seconds": [
+            9,
+            67,
+            66
+          ],
+          "job_seconds_sum": 142
+        },
+        {
+          "id": 38600562593,
+          "event": "push",
+          "created_at": "2026-10-14T16:43:56Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/BackEnd/actions/runs/38600562593",
+          "duration_seconds": 100,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "c311dd2ddbddc9f3e2e02dba44e0149fefcc9578",
+          "workflow": "Backend CI",
+          "job_seconds": [
+            9,
+            47,
+            35
+          ],
+          "job_seconds_sum": 91
+        },
+        {
+          "id": 38561405340,
+          "event": "push",
+          "created_at": "2026-10-14T12:06:54Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/BackEnd/actions/runs/38561405340",
+          "duration_seconds": 128,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "c861426971c227b10854287dba6679f3834ad874",
+          "workflow": "Backend CI",
+          "job_seconds": [
+            8,
+            58,
+            51
+          ],
+          "job_seconds_sum": 117
+        },
+        {
+          "id": 38419628009,
+          "event": "push",
+          "created_at": "2026-10-13T15:09:37Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/BackEnd/actions/runs/38419628009",
+          "duration_seconds": 106,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "d9b2256be76d835b4ee398b5f443033f5382238c",
+          "workflow": "Backend CI",
+          "job_seconds": [
+            10,
+            49,
+            39
+          ],
+          "job_seconds_sum": 98
+        },
+        {
+          "id": 37833700107,
+          "event": "push",
+          "created_at": "2026-10-08T19:40:25Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/BackEnd/actions/runs/37833700107",
+          "duration_seconds": 99,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "aa3cdbcc37b2e06420c80f3030eb07353a375488",
+          "workflow": "Backend CI",
+          "job_seconds": [
+            8,
+            47,
+            32
+          ],
+          "job_seconds_sum": 87
+        },
+        {
+          "id": 37777647120,
+          "event": "push",
+          "created_at": "2026-10-08T12:32:54Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/BackEnd/actions/runs/37777647120",
+          "duration_seconds": 126,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "a74607d3005ed6892f120d5d214f47cb779ca28f",
+          "workflow": "Backend CI",
+          "job_seconds": [
+            9,
+            58,
+            49
+          ],
+          "job_seconds_sum": 116
+        },
+        {
+          "id": 37668723350,
+          "event": "push",
+          "created_at": "2026-10-07T18:41:14Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/BackEnd/actions/runs/37668723350",
+          "duration_seconds": 92,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "5ba236e445b43b4dde413b4747530c93426f31b5",
+          "workflow": "Backend CI",
+          "job_seconds": [
+            9,
+            44,
+            31
+          ],
+          "job_seconds_sum": 84
+        },
+        {
+          "id": 37602649591,
+          "event": "push",
+          "created_at": "2026-10-07T09:44:12Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/BackEnd/actions/runs/37602649591",
+          "duration_seconds": 115,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "a09a663658cadab969b43616fcb2defe1c325592",
+          "workflow": "Backend CI",
+          "job_seconds": [
+            9,
+            52,
+            44
+          ],
+          "job_seconds_sum": 105
+        },
+        {
+          "id": 37522846074,
+          "event": "push",
+          "created_at": "2026-10-06T19:58:00Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/BackEnd/actions/runs/37522846074",
+          "duration_seconds": 91,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "9012981f6b514ce269d011abbdc165b9f75bf3d1",
+          "workflow": "Backend CI",
+          "job_seconds": [
+            8,
+            35,
+            37
+          ],
+          "job_seconds_sum": 80
+        }
+      ]
+    },
+    {
+      "name": "FrontEnd",
+      "visibility": "private",
+      "default_branch": "main",
+      "default_sha": "69fffec62ee8ca87d9142489a01aa24bb7eb8e13",
+      "workbench_pin_sha": "3b5f0975ca0cdbdcff430023214e718401e3e266",
+      "workflow_inventory": [
+        {
+          "id": 328545692,
+          "name": "Frontend CI",
+          "path": ".github/workflows/ci.yml",
+          "state": "disabled_manually",
+          "runs_on": [
+            "self-hosted"
+          ],
+          "source_missing_at_snapshot": false
+        },
+        {
+          "id": 210043907,
+          "name": "CodeQL",
+          "path": "dynamic/github-code-scanning/codeql",
+          "state": "active",
+          "runs_on": [],
+          "source_missing_at_snapshot": true
+        }
+      ],
+      "qualification_workflow": "Frontend CI",
+      "qualification_runs": [
+        {
+          "id": 40137798922,
+          "event": "pull_request",
+          "created_at": "2026-10-24T22:15:51Z",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "url": "https://github.com/Silicium-Project/FrontEnd/actions/runs/40137798922",
+          "duration_seconds": 24,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "3ad08c48209f656dee6554125736887b4e08d6ae",
+          "workflow": "Frontend CI",
+          "job_seconds": [
+            19,
+            0,
+            0,
+            0
+          ],
+          "job_seconds_sum": 19
+        },
+        {
+          "id": 40109391568,
+          "event": "push",
+          "created_at": "2026-10-24T15:58:24Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/FrontEnd/actions/runs/40109391568",
+          "duration_seconds": 242,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-latest"
+          ],
+          "head_sha": "238de77dc85103d4901b4dce3b65f459860a40b2",
+          "workflow": "Frontend CI",
+          "job_seconds": [
+            5,
+            22,
+            79,
+            123
+          ],
+          "job_seconds_sum": 229
+        },
+        {
+          "id": 40109272711,
+          "event": "push",
+          "created_at": "2026-10-24T15:56:47Z",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/Silicium-Project/FrontEnd/actions/runs/40109272711",
+          "duration_seconds": 44,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-latest"
+          ],
+          "head_sha": "f2bfabc83c49b7213379de0be5660cf1b3cbe671",
+          "workflow": "Frontend CI",
+          "job_seconds": [
+            6,
+            32,
+            0,
+            0
+          ],
+          "job_seconds_sum": 38
+        },
+        {
+          "id": 40106865798,
+          "event": "push",
+          "created_at": "2026-10-24T15:25:00Z",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/Silicium-Project/FrontEnd/actions/runs/40106865798",
+          "duration_seconds": 46,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-latest"
+          ],
+          "head_sha": "5b7ef0c840a391e2f9435629be7393d0385aecdc",
+          "workflow": "Frontend CI",
+          "job_seconds": [
+            4,
+            34,
+            0,
+            0
+          ],
+          "job_seconds_sum": 38
+        },
+        {
+          "id": 40102138977,
+          "event": "push",
+          "created_at": "2026-10-24T14:21:37Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/FrontEnd/actions/runs/40102138977",
+          "duration_seconds": 310,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-latest"
+          ],
+          "head_sha": "77a86612ecc5e504e8aff18048d8537e480338f5",
+          "workflow": "Frontend CI",
+          "job_seconds": [
+            4,
+            36,
+            80,
+            178
+          ],
+          "job_seconds_sum": 298
+        },
+        {
+          "id": 40098507953,
+          "event": "push",
+          "created_at": "2026-10-24T13:31:29Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/FrontEnd/actions/runs/40098507953",
+          "duration_seconds": 291,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-latest"
+          ],
+          "head_sha": "f5a8731d29b3b06221768d2f82be014e4d6a0704",
+          "workflow": "Frontend CI",
+          "job_seconds": [
+            5,
+            38,
+            53,
+            182
+          ],
+          "job_seconds_sum": 278
+        },
+        {
+          "id": 40098111571,
+          "event": "push",
+          "created_at": "2026-10-24T13:26:03Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/FrontEnd/actions/runs/40098111571",
+          "duration_seconds": 261,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-latest"
+          ],
+          "head_sha": "6f9927ad4e16021cf0db93ec1043dd0fd19a7385",
+          "workflow": "Frontend CI",
+          "job_seconds": [
+            6,
+            35,
+            84,
+            123
+          ],
+          "job_seconds_sum": 248
+        },
+        {
+          "id": 40094544524,
+          "event": "push",
+          "created_at": "2026-10-24T12:35:17Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/FrontEnd/actions/runs/40094544524",
+          "duration_seconds": 276,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-latest"
+          ],
+          "head_sha": "b138e7f2cacc85ebb1fadcb56f5edccc735cf485",
+          "workflow": "Frontend CI",
+          "job_seconds": [
+            9,
+            22,
+            56,
+            178
+          ],
+          "job_seconds_sum": 265
+        },
+        {
+          "id": 40094542442,
+          "event": "push",
+          "created_at": "2026-10-24T12:35:15Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/FrontEnd/actions/runs/40094542442",
+          "duration_seconds": 263,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-latest"
+          ],
+          "head_sha": "b138e7f2cacc85ebb1fadcb56f5edccc735cf485",
+          "workflow": "Frontend CI",
+          "job_seconds": [
+            6,
+            32,
+            81,
+            131
+          ],
+          "job_seconds_sum": 250
+        },
+        {
+          "id": 40094138452,
+          "event": "push",
+          "created_at": "2026-10-24T12:29:31Z",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/Silicium-Project/FrontEnd/actions/runs/40094138452",
+          "duration_seconds": 310,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-latest"
+          ],
+          "head_sha": "000fcf913d87f4fa463c7cec0b713fba41b7b900",
+          "workflow": "Frontend CI",
+          "job_seconds": [
+            7,
+            21,
+            79,
+            190
+          ],
+          "job_seconds_sum": 297
+        },
+        {
+          "id": 40094136595,
+          "event": "push",
+          "created_at": "2026-10-24T12:29:29Z",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/Silicium-Project/FrontEnd/actions/runs/40094136595",
+          "duration_seconds": 275,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-latest"
+          ],
+          "head_sha": "000fcf913d87f4fa463c7cec0b713fba41b7b900",
+          "workflow": "Frontend CI",
+          "job_seconds": [
+            5,
+            22,
+            81,
+            156
+          ],
+          "job_seconds_sum": 264
+        },
+        {
+          "id": 40093938723,
+          "event": "push",
+          "created_at": "2026-10-24T12:26:32Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/FrontEnd/actions/runs/40093938723",
+          "duration_seconds": 237,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-latest"
+          ],
+          "head_sha": "155bfd75696c00e91490e1a8553995679f804ae5",
+          "workflow": "Frontend CI",
+          "job_seconds": [
+            7,
+            35,
+            63,
+            120
+          ],
+          "job_seconds_sum": 225
+        },
+        {
+          "id": 40093855122,
+          "event": "push",
+          "created_at": "2026-10-24T12:25:19Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/FrontEnd/actions/runs/40093855122",
+          "duration_seconds": 313,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-latest"
+          ],
+          "head_sha": "155bfd75696c00e91490e1a8553995679f804ae5",
+          "workflow": "Frontend CI",
+          "job_seconds": [
+            6,
+            22,
+            89,
+            184
+          ],
+          "job_seconds_sum": 301
+        },
+        {
+          "id": 40091128073,
+          "event": "push",
+          "created_at": "2026-10-24T11:44:47Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/FrontEnd/actions/runs/40091128073",
+          "duration_seconds": 289,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-latest"
+          ],
+          "head_sha": "8bf551075df4001f71a1784fa4823277ce5dc47c",
+          "workflow": "Frontend CI",
+          "job_seconds": [
+            9,
+            29,
+            61,
+            178
+          ],
+          "job_seconds_sum": 277
+        },
+        {
+          "id": 40084334196,
+          "event": "push",
+          "created_at": "2026-10-24T10:02:35Z",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/Silicium-Project/FrontEnd/actions/runs/40084334196",
+          "duration_seconds": 306,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-latest"
+          ],
+          "head_sha": "f78b7e233f0de22e700abe56869dc0e266325f1c",
+          "workflow": "Frontend CI",
+          "job_seconds": [
+            7,
+            38,
+            62,
+            186
+          ],
+          "job_seconds_sum": 293
+        },
+        {
+          "id": 40083869211,
+          "event": "push",
+          "created_at": "2026-10-24T09:55:27Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/FrontEnd/actions/runs/40083869211",
+          "duration_seconds": 334,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-latest"
+          ],
+          "head_sha": "f78b7e233f0de22e700abe56869dc0e266325f1c",
+          "workflow": "Frontend CI",
+          "job_seconds": [
+            5,
+            37,
+            85,
+            192
+          ],
+          "job_seconds_sum": 319
+        },
+        {
+          "id": 40083594986,
+          "event": "push",
+          "created_at": "2026-10-24T09:51:12Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/FrontEnd/actions/runs/40083594986",
+          "duration_seconds": 255,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-latest"
+          ],
+          "head_sha": "cae4e209ca18b396790465362db8ef15865839cd",
+          "workflow": "Frontend CI",
+          "job_seconds": [
+            7,
+            34,
+            60,
+            142
+          ],
+          "job_seconds_sum": 243
+        },
+        {
+          "id": 40082774896,
+          "event": "push",
+          "created_at": "2026-10-24T09:38:48Z",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/Silicium-Project/FrontEnd/actions/runs/40082774896",
+          "duration_seconds": 499,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-latest"
+          ],
+          "head_sha": "30f85c54e029d686ce3a8008fada504f1e52926f",
+          "workflow": "Frontend CI",
+          "job_seconds": [
+            4,
+            32,
+            85,
+            363
+          ],
+          "job_seconds_sum": 484
+        },
+        {
+          "id": 40082299462,
+          "event": "push",
+          "created_at": "2026-10-24T09:31:34Z",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/Silicium-Project/FrontEnd/actions/runs/40082299462",
+          "duration_seconds": 91,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-latest"
+          ],
+          "head_sha": "ba853f2589315dd54639bf9f8f30ca2e3bedb90a",
+          "workflow": "Frontend CI",
+          "job_seconds": [
+            7,
+            36,
+            37,
+            0
+          ],
+          "job_seconds_sum": 80
+        },
+        {
+          "id": 40081892350,
+          "event": "push",
+          "created_at": "2026-10-24T09:25:28Z",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/Silicium-Project/FrontEnd/actions/runs/40081892350",
+          "duration_seconds": 102,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-latest"
+          ],
+          "head_sha": "750bd01f53d7468b4e3613a1f088bef65598e630",
+          "workflow": "Frontend CI",
+          "job_seconds": [
+            7,
+            32,
+            52,
+            0
+          ],
+          "job_seconds_sum": 91
+        }
+      ]
+    },
+    {
+      "name": "DesktopApp",
+      "visibility": "private",
+      "default_branch": "main",
+      "default_sha": "f8b924e61e9b1f35c38257225c6fc2febe1e5217",
+      "workbench_pin_sha": "ef12c73350bc630579a9d2c3a56d985a64a871cf",
+      "workflow_inventory": [
+        {
+          "id": 396740141,
+          "name": "CI",
+          "path": ".github/workflows/ci.yml",
+          "state": "active",
+          "runs_on": [],
+          "source_missing_at_snapshot": true
+        },
+        {
+          "id": 197145012,
+          "name": "Mirror to Epitech",
+          "path": ".github/workflows/mirror.yml",
+          "state": "disabled_manually",
+          "runs_on": [],
+          "source_missing_at_snapshot": false
+        }
+      ],
+      "qualification_workflow": "CI",
+      "qualification_runs": [
+        {
+          "id": 40283448257,
+          "event": "pull_request",
+          "created_at": "2026-10-26T07:03:23Z",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/Silicium-Project/DesktopApp/actions/runs/40283448257",
+          "duration_seconds": 1,
+          "queue_seconds": 0,
+          "runners": [],
+          "head_sha": "ef12c73350bc630579a9d2c3a56d985a64a871cf",
+          "workflow": "CI",
+          "job_seconds": [
+            0
+          ],
+          "job_seconds_sum": 0
+        }
+      ]
+    },
+    {
+      "name": "Network",
+      "visibility": "private",
+      "default_branch": "main",
+      "default_sha": "03607d2e7b4842e2c4c48b8e0a6501437488a81f",
+      "workbench_pin_sha": "3bc1e3493842ba00adda83650d3ccf762e471421",
+      "workflow_inventory": [
+        {
+          "id": 253551377,
+          "name": "Copilot coding agent",
+          "path": "dynamic/copilot-swe-agent/copilot",
+          "state": "active",
+          "runs_on": [],
+          "source_missing_at_snapshot": true
+        },
+        {
+          "id": 315682831,
+          "name": "CodeQL",
+          "path": "dynamic/github-code-scanning/codeql",
+          "state": "active",
+          "runs_on": [],
+          "source_missing_at_snapshot": true
+        },
+        {
+          "id": 315877723,
+          "name": "Dependency Graph",
+          "path": "dynamic/dependabot/update-graph",
+          "state": "active",
+          "runs_on": [],
+          "source_missing_at_snapshot": true
+        },
+        {
+          "id": 318063632,
+          "name": "Native Runtime",
+          "path": ".github/workflows/native-runtime.yml",
+          "state": "active",
+          "runs_on": [],
+          "source_missing_at_snapshot": true
+        },
+        {
+          "id": 209004743,
+          "name": "Create GitHub Release",
+          "path": ".github/workflows/release.yml",
+          "state": "disabled_manually",
+          "runs_on": [
+            "self-hosted"
+          ],
+          "source_missing_at_snapshot": false
+        },
+        {
+          "id": 328427375,
+          "name": "Network CI",
+          "path": ".github/workflows/ci.yml",
+          "state": "disabled_manually",
+          "runs_on": [
+            "self-hosted"
+          ],
+          "source_missing_at_snapshot": false
+        },
+        {
+          "id": 393489356,
+          "name": "Solana SBF build",
+          "path": ".github/workflows/solana-sbf-build.yml",
+          "state": "disabled_manually",
+          "runs_on": [],
+          "source_missing_at_snapshot": true
+        }
+      ],
+      "qualification_workflow": "Network CI",
+      "qualification_runs": [
+        {
+          "id": 40137778682,
+          "event": "pull_request",
+          "created_at": "2026-10-24T22:15:35Z",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "url": "https://github.com/Silicium-Project/Network/actions/runs/40137778682",
+          "duration_seconds": 97,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "d2ffdcef04d4efe27c8ff7cad9d616795e702196",
+          "workflow": "Network CI",
+          "job_seconds": [
+            11,
+            80,
+            5,
+            5,
+            78,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            0
+          ],
+          "job_seconds_sum": 214
+        },
+        {
+          "id": 40086109149,
+          "event": "push",
+          "created_at": "2026-10-24T10:29:26Z",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/Silicium-Project/Network/actions/runs/40086109149",
+          "duration_seconds": 2331,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-latest"
+          ],
+          "head_sha": "e2eb8f109d910b2dc30a5cc260bf5055d8c501ab",
+          "workflow": "Network CI",
+          "job_seconds": [
+            4,
+            803,
+            21,
+            10,
+            14,
+            17,
+            585,
+            889
+          ],
+          "job_seconds_sum": 2343
+        },
+        {
+          "id": 40085504064,
+          "event": "push",
+          "created_at": "2026-10-24T10:20:14Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/Network/actions/runs/40085504064",
+          "duration_seconds": 503,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-latest"
+          ],
+          "head_sha": "e2eb8f109d910b2dc30a5cc260bf5055d8c501ab",
+          "workflow": "Network CI",
+          "job_seconds": [
+            7,
+            226,
+            0,
+            258,
+            0
+          ],
+          "job_seconds_sum": 491
+        },
+        {
+          "id": 40083714983,
+          "event": "push",
+          "created_at": "2026-10-24T09:53:03Z",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/Silicium-Project/Network/actions/runs/40083714983",
+          "duration_seconds": 1183,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-latest"
+          ],
+          "head_sha": "f364c9e3be48fb7e4689cf4034515c3bc278f5a4",
+          "workflow": "Network CI",
+          "job_seconds": [
+            7,
+            698,
+            0,
+            431,
+            0
+          ],
+          "job_seconds_sum": 1136
+        },
+        {
+          "id": 40083274752,
+          "event": "push",
+          "created_at": "2026-10-24T09:46:19Z",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "url": "https://github.com/Silicium-Project/Network/actions/runs/40083274752",
+          "duration_seconds": 441,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-latest"
+          ],
+          "head_sha": "2f2826bed4e7dfb694250431d2d43c3cd439aa9a",
+          "workflow": "Network CI",
+          "job_seconds": [
+            5,
+            11,
+            0,
+            414,
+            0
+          ],
+          "job_seconds_sum": 430
+        },
+        {
+          "id": 40080804120,
+          "event": "push",
+          "created_at": "2026-10-24T09:08:56Z",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/Silicium-Project/Network/actions/runs/40080804120",
+          "duration_seconds": 2039,
+          "queue_seconds": 0,
+          "runners": [
+            "ubuntu-latest"
+          ],
+          "head_sha": "d845688dc72fa1fe646bb2005bd9516bf40eca02",
+          "workflow": "Network CI",
+          "job_seconds": [
+            6,
+            7,
+            18,
+            15,
+            642,
+            15,
+            261,
+            0,
+            1081
+          ],
+          "job_seconds_sum": 2045
+        },
+        {
+          "id": 39859547458,
+          "event": "push",
+          "created_at": "2026-10-22T21:43:31Z",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "url": "https://github.com/Silicium-Project/Network/actions/runs/39859547458",
+          "duration_seconds": 1089,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "6f8da550925226042c34f21f8f2edc1ee0fa4351",
+          "workflow": "Network CI",
+          "job_seconds": [
+            17,
+            502,
+            0,
+            447
+          ],
+          "job_seconds_sum": 966
+        },
+        {
+          "id": 39857483928,
+          "event": "push",
+          "created_at": "2026-10-22T21:28:03Z",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "url": "https://github.com/Silicium-Project/Network/actions/runs/39857483928",
+          "duration_seconds": 1040,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "68e0615e7a6ff8f6362c7246ea35a784ab1b3d80",
+          "workflow": "Network CI",
+          "job_seconds": [
+            18,
+            249,
+            0,
+            762,
+            0
+          ],
+          "job_seconds_sum": 1029
+        },
+        {
+          "id": 39854164892,
+          "event": "push",
+          "created_at": "2026-10-22T21:03:55Z",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/Silicium-Project/Network/actions/runs/39854164892",
+          "duration_seconds": 1159,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "5f3f604cd90f98436a3d21fd84ddf1e568e8044d",
+          "workflow": "Network CI",
+          "job_seconds": [
+            18,
+            177,
+            0,
+            952,
+            0
+          ],
+          "job_seconds_sum": 1147
+        },
+        {
+          "id": 39840270863,
+          "event": "push",
+          "created_at": "2026-10-22T19:27:49Z",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/Silicium-Project/Network/actions/runs/39840270863",
+          "duration_seconds": 4748,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "05d148c4e6099eb634030f9b23403f9092bb268a",
+          "workflow": "Network CI",
+          "job_seconds": [
+            18,
+            172,
+            90,
+            31,
+            73,
+            87,
+            897,
+            3484
+          ],
+          "job_seconds_sum": 4852
+        },
+        {
+          "id": 39789219448,
+          "event": "push",
+          "created_at": "2026-10-22T13:42:26Z",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/Silicium-Project/Network/actions/runs/39789219448",
+          "duration_seconds": 7607,
+          "queue_seconds": 7260,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "7d94cf68a07eeb6f59fac8d525defbaac40de665",
+          "workflow": "Network CI",
+          "job_seconds": [
+            22,
+            340,
+            812,
+            4598,
+            74,
+            117
+          ],
+          "job_seconds_sum": 5963
+        },
+        {
+          "id": 39770909656,
+          "event": "push",
+          "created_at": "2026-10-22T11:29:01Z",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/Silicium-Project/Network/actions/runs/39770909656",
+          "duration_seconds": 3075,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "f73efa66c90a9935aa998c9a123530ea1d6c80de",
+          "workflow": "Network CI",
+          "job_seconds": [
+            15,
+            74,
+            827,
+            46,
+            1263,
+            1137,
+            1679
+          ],
+          "job_seconds_sum": 5041
+        },
+        {
+          "id": 39730723790,
+          "event": "push",
+          "created_at": "2026-10-22T05:54:38Z",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "url": "https://github.com/Silicium-Project/Network/actions/runs/39730723790",
+          "duration_seconds": 346,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "023c038d5156c45442014eee9150936602ab0969",
+          "workflow": "Network CI",
+          "job_seconds": [
+            9,
+            265,
+            265,
+            236,
+            0,
+            0
+          ],
+          "job_seconds_sum": 775
+        },
+        {
+          "id": 39730186339,
+          "event": "push",
+          "created_at": "2026-10-22T05:49:03Z",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "url": "https://github.com/Silicium-Project/Network/actions/runs/39730186339",
+          "duration_seconds": 401,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "c0143f9064990a66dcdf500c033c9ea6b1845f36",
+          "workflow": "Network CI",
+          "job_seconds": [
+            10,
+            385,
+            383,
+            323,
+            0,
+            0
+          ],
+          "job_seconds_sum": 1101
+        },
+        {
+          "id": 39721338746,
+          "event": "push",
+          "created_at": "2026-10-22T04:15:14Z",
+          "status": "completed",
+          "conclusion": "failure",
+          "url": "https://github.com/Silicium-Project/Network/actions/runs/39721338746",
+          "duration_seconds": 1840,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "fd540611322ab76bf91868f7cda36de8edd96850",
+          "workflow": "Network CI",
+          "job_seconds": [
+            11,
+            298,
+            1685,
+            135,
+            0,
+            0
+          ],
+          "job_seconds_sum": 2129
+        },
+        {
+          "id": 39719577042,
+          "event": "push",
+          "created_at": "2026-10-22T03:56:20Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/Network/actions/runs/39719577042",
+          "duration_seconds": 471,
+          "queue_seconds": 0,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "6ce340996d2f6ec08a87db048909217014c4eeb4",
+          "workflow": "Network CI",
+          "job_seconds": [
+            10,
+            348,
+            357,
+            104,
+            0,
+            0
+          ],
+          "job_seconds_sum": 819
+        },
+        {
+          "id": 39696747154,
+          "event": "push",
+          "created_at": "2026-10-21T23:57:55Z",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Silicium-Project/Network/actions/runs/39696747154",
+          "duration_seconds": 1709,
+          "queue_seconds": 1182,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "c379ef907793e60628488109a1bded5594ed4ef5",
+          "workflow": "Network CI",
+          "job_seconds": [
+            515,
+            0,
+            0,
+            887,
+            25,
+            429
+          ],
+          "job_seconds_sum": 1856
+        },
+        {
+          "id": 39693051822,
+          "event": "push",
+          "created_at": "2026-10-21T23:23:02Z",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "url": "https://github.com/Silicium-Project/Network/actions/runs/39693051822",
+          "duration_seconds": 2131,
+          "queue_seconds": 1304,
+          "runners": [
+            "self-hosted"
+          ],
+          "head_sha": "80644ba93b88a305f3268ebfcbf6086142149282",
+          "workflow": "Network CI",
+          "job_seconds": [
+            96,
+            118,
+            113,
+            700,
+            300,
+            32,
+            0
+          ],
+          "job_seconds_sum": 1359
+        }
+      ]
+    },
+    {
+      "name": "Solana",
+      "visibility": "private",
+      "default_branch": "main",
+      "default_sha": "a132f86671cb47872781e5eb5c8018f13800321a",
+      "workbench_pin_sha": "ef8f07d4fbedf28db01ce258a1988e19e3f13f73",
+      "workflow_inventory": [
+        {
+          "id": 396740156,
+          "name": "CI",
+          "path": ".github/workflows/ci.yml",
+          "state": "active",
+          "runs_on": [],
+          "source_missing_at_snapshot": true
+        }
+      ],
+      "qualification_workflow": "CI",
+      "qualification_runs": [
+        {
+          "id": 40283450884,
+          "event": "pull_request",
+          "created_at": "2026-10-26T07:03:25Z",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/Silicium-Project/Solana/actions/runs/40283450884",
+          "duration_seconds": 1,
+          "queue_seconds": 0,
+          "runners": [],
+          "head_sha": "ef8f07d4fbedf28db01ce258a1988e19e3f13f73",
+          "workflow": "CI",
+          "job_seconds": [
+            0
+          ],
+          "job_seconds_sum": 0
+        }
+      ]
+    },
+    {
+      "name": "Integration",
+      "visibility": "private",
+      "default_branch": "main",
+      "default_sha": "5ccf81c6e2aa5361706be5c497b1f239c11a3fff",
+      "workbench_pin_sha": null,
+      "workflow_inventory": [
+        {
+          "id": 397292339,
+          "name": "Full private integration",
+          "path": ".github/workflows/qualification.yml",
+          "state": "active",
+          "runs_on": [
+            "ubuntu-24.04",
+            "${{ matrix.runner }}"
+          ],
+          "source_missing_at_snapshot": false
+        }
+      ],
+      "qualification_workflow": "Full private integration",
+      "qualification_runs": []
+    }
+  ],
+  "workbench_ci_metrics": {
+    "schema_version": 1,
+    "total_runs": 20,
+    "active_runs": 0,
+    "successes": 10,
+    "failures": 9,
+    "cancellations": 1,
+    "failure_ratio": 0.47368421052631576,
+    "workflow": {
+      "samples": 19,
+      "median_seconds": 131,
+      "p95_seconds": 31996
+    },
+    "quick_feedback": {
+      "samples": 14,
+      "median_seconds": 110,
+      "p95_seconds": 31986
+    },
+    "job_queue_and_matrix_wait": {
+      "samples": 158,
+      "median_seconds": 4,
+      "p95_seconds": 96
+    },
+    "job_execution": {
+      "samples": 158,
+      "median_seconds": 26,
+      "p95_seconds": 380
+    },
+    "definitions": {
+      "quick_feedback": "run creation to last completed quick lane",
+      "job_queue_and_matrix_wait": "job created_at to first executed step; includes queue, matrix throttling and runner provisioning",
+      "p95": "nearest rank; always report sample count"
+    },
+    "runs": [
+      {
+        "id": 40370826132,
+        "sha": "006e40747d0383d9ba4714aae0c9c20feab00dd8",
+        "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40370826132",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 40367808786,
+        "sha": "5b8e43c56cab6c93811433fadcf4ba9b674297ac",
+        "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40367808786",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 40359090517,
+        "sha": "90bec77675ca7a67c7202126386ef5dd9033b761",
+        "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40359090517",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 40358697680,
+        "sha": "434da6c83aeb198ac51bc5a047f60542ab4586ef",
+        "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40358697680",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 40357338511,
+        "sha": "78b69feea6f32835eef511542afa135d967a5769",
+        "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40357338511",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      {
+        "id": 40356907373,
+        "sha": "cc3c98e7c00784e6dd1c85a96aeda7e64372d3ef",
+        "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40356907373",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 40356369757,
+        "sha": "0614e41cd73d8635a5c344da35b537573836bcd7",
+        "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40356369757",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 40355853257,
+        "sha": "0614e41cd73d8635a5c344da35b537573836bcd7",
+        "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40355853257",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      {
+        "id": 40284157049,
+        "sha": "fe24e51b643d879efb4ccc18516293d9c8e0d287",
+        "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40284157049",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      {
+        "id": 40283233161,
+        "sha": "2f3e6c8792ea80d717ece0a6eb9165f0a261d0c3",
+        "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40283233161",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      {
+        "id": 40235140866,
+        "sha": "ff14db3c666eb9f355f59bfa908a48f0e7a44e6c",
+        "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40235140866",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 40234928850,
+        "sha": "873ed2f2156abddb6d633e42ce615eed967d43a2",
+        "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40234928850",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 40232356923,
+        "sha": "24c7590c02eeeebcb0fb1ef8c0aa01aa576fd039",
+        "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40232356923",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 40223122663,
+        "sha": "03e62285bb7c3cc95f1c375416667f148a505cc3",
+        "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40223122663",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 40222030783,
+        "sha": "7a57610c148b8e13c661fced6a455e2807ff1515",
+        "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40222030783",
+        "status": "completed",
+        "conclusion": "cancelled"
+      },
+      {
+        "id": 40199389136,
+        "sha": "c04445eb356eb0e039e264f3e04abe78753ff549",
+        "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40199389136",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      {
+        "id": 40197099773,
+        "sha": "eadfe01e8fee9072a873add9d15c045e68b47041",
+        "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40197099773",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      {
+        "id": 40179208684,
+        "sha": "4838ca39e01411dfe1f3fbdc48d6b857f741b647",
+        "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40179208684",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      {
+        "id": 40176267805,
+        "sha": "6e42de155f47fe93baecb547c5face447658700b",
+        "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40176267805",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      {
+        "id": 40176010077,
+        "sha": "61024725b44930de4aba88a6d7e81ecc23490c9f",
+        "url": "https://github.com/Silicium-Project/Workbench/actions/runs/40176010077",
+        "status": "completed",
+        "conclusion": "failure"
+      }
+    ],
+    "artifacts": {
+      "observed": 100,
+      "total": 100,
+      "bytes": 579712,
+      "complete": true,
+      "scope": "Silicium-Project/Workbench"
+    },
+    "caches": {
+      "hits": 24,
+      "misses": 16,
+      "hit_ratio": 0.6,
+      "disabled_reports": 0,
+      "unavailable_reports": 0,
+      "runs_without_report_evidence": 8
+    }
+  },
+  "variable_observations": {
+    "Workbench": {
+      "SILICIUM_DELIVERY_ENABLED": "0",
+      "SILICIUM_DIAGNOSTICS_ENABLED": "0",
+      "SILICIUM_PROJECT_AUTOMATION_ENABLED": "0"
+    },
+    "BackEnd": {
+      "SILICIUM_COMPONENT_CI_ENABLED": "0"
+    },
+    "FrontEnd": {
+      "SILICIUM_COMPONENT_CI_ENABLED": "0"
+    },
+    "DesktopApp": {
+      "SILICIUM_COMPONENT_CI_ENABLED": "0"
+    },
+    "Network": {
+      "SILICIUM_COMPONENT_CI_ENABLED": "0"
+    },
+    "Solana": {
+      "SILICIUM_COMPONENT_CI_ENABLED": "0"
+    },
+    "Integration": {
+      "SILICIUM_INTEGRATION_ENABLED": "absent",
+      "SOURCE_APP_CLIENT_ID": "secret present by name only",
+      "SOURCE_APP_PRIVATE_KEY": "secret present by name only",
+      "SILICIUM_DELIVERY_ENABLED": "absent"
+    }
+  },
+  "migration_pull_requests": [
+    {
+      "repository": "BackEnd",
+      "number": 39,
+      "head_sha": "a24bab6d1f7607fcdca85b52b690de2b53578558",
+      "state": "open draft",
+      "url": "https://github.com/Silicium-Project/BackEnd/pull/39"
+    },
+    {
+      "repository": "FrontEnd",
+      "number": 28,
+      "head_sha": "3b5f0975ca0cdbdcff430023214e718401e3e266",
+      "state": "open draft",
+      "url": "https://github.com/Silicium-Project/FrontEnd/pull/28"
+    },
+    {
+      "repository": "DesktopApp",
+      "number": 1,
+      "head_sha": "ef12c73350bc630579a9d2c3a56d985a64a871cf",
+      "state": "open draft",
+      "url": "https://github.com/Silicium-Project/DesktopApp/pull/1"
+    },
+    {
+      "repository": "Network",
+      "number": 355,
+      "head_sha": "3bc1e3493842ba00adda83650d3ccf762e471421",
+      "state": "open draft",
+      "url": "https://github.com/Silicium-Project/Network/pull/355"
+    },
+    {
+      "repository": "Solana",
+      "number": 1,
+      "head_sha": "ef8f07d4fbedf28db01ce258a1988e19e3f13f73",
+      "state": "open draft",
+      "url": "https://github.com/Silicium-Project/Solana/pull/1"
+    }
+  ]
+}

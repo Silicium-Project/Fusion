@@ -20,3 +20,4 @@ par sous-modules. Leurs commandes ne sont pas les procédures actuelles.
 
 - [Workbench et composants](architecture/multi-repo.md)
 - [CI privée, activation et limites](operations/multi-repo-ci.md)
+- [Inventaire mesuré de la CI/CD (26 octobre 2026)](operations/ci-inventory-2026-10-26.md)
