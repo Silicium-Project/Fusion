@@ -252,3 +252,38 @@ Ces exemples valident le comportement du planificateur local, pas le déclenchem
 - Deux exemples de routage produits par `tools/lib/planner.mjs`.
 - Aucun build, test applicatif, benchmark, changement de secret, changement de protection ou déploiement exécuté.
 - Le rapport ne ferme pas l’issue : revue humaine, fusion et validation explicite des critères restent nécessaires.
+
+## Suivi complémentaire Workbench — 26 octobre 2026
+
+La capture multi-dépôts ci-dessus reste datée de 19:09 CEST. Pour ne pas
+présenter les états privés comme rafraîchis, ce relevé ne couvre que les
+20 derniers runs publics Workbench observés à 21:08 UTC ; les données JSON
+complètes sont dans
+[`ci-workbench-metrics-follow-up-2026-10-26.json`](ci-workbench-metrics-follow-up-2026-10-26.json).
+
+| Mesure Workbench | Échantillon | Médiane | p95 |
+|---|---:|---:|---:|
+| Workflow complet, succès et échecs | 20 | 117,5 s | 354 s |
+| Attente avant démarrage du workflow | 20 | 0 s | 96 s |
+| Retour des voies rapides | 17 | 100 s | 31 986 s |
+| Attente / provisionnement des jobs | 127 jobs | 4 s | 6 s |
+| Exécution des jobs | 128 jobs | 18,5 s | 66 s |
+
+La capture compte 16 succès, 4 échecs et aucune annulation. Le p95 du workflow
+complet est de 5 min 54 s car, avec 20 observations et la règle nearest-rank,
+il retient l'avant-dernière durée. Le p95 du retour rapide est dominé par un
+unique run qui a attendu avant même la création de ses jobs.
+
+Le run [40284157049](https://github.com/Silicium-Project/Workbench/actions/runs/40284157049)
+a été créé à 07:10:24Z et démarré à 16:01:55Z, soit 8 h 51 min 31 s d'attente
+au niveau du workflow. Il s'est terminé à 16:03:40Z après environ 1 min 45 s
+d'exécution. Les jobs `quick (docs)` et `quick (tooling)` ont échoué ; le gate
+a correctement échoué avec eux. L'API ne donne pas la cause de l'attente :
+ne l'attribuer ni au quota ni à une saturation des runners sans preuve.
+
+Le relevé paginé contient 101 artefacts Workbench non expirés, pour 542 090
+octets (0,52 Mio), sur deux pages ; le total est complet. Ce chiffre ne couvre
+pas les dépôts privés ni les caches Actions de l'organisation. Les rapports
+disponibles mesurent 7 hits et 10 misses de cache sur 17 observations (41,2 %) ;
+3 runs n'ont pas de rapport de cache. Cet échantillon est trop réduit pour
+justifier seul une modification de stratégie de cache.

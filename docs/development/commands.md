@@ -92,18 +92,21 @@ prépare une transition du Project ; `--apply` la réalise après contrôle du W
 `dev release plan` prépare un candidat ; `dev deploy request` prépare ou lance
 un workflow GitHub. Les étapes de production et d'acceptation sont humaines.
 
-`dev ci metrics --limit 20 --json` mesure les durées médianes et p95, le retour
-des contrôles rapides, l'attente des jobs, les échecs et les observations de
-cache disponibles. La commande lit les métadonnées GitHub et télécharge les
-petits rapports dans un répertoire temporaire supprimé après lecture. Elle ne
-relance aucun job. Les échantillons manquants et les caches désactivés restent
-distincts des valeurs nulles ou des échecs de cache ; le volume d'artefacts
-affiché porte sur Workbench, avec une indication de pagination incomplète.
+`dev ci metrics --limit 20 --json` (schéma 2) mesure les durées médianes et p95,
+le retour des contrôles rapides, l'attente avant démarrage des workflows, l'attente
+des jobs, les échecs et les observations de cache disponibles. La commande lit
+les métadonnées GitHub et télécharge les petits rapports dans un répertoire
+temporaire supprimé après lecture. Elle ne relance aucun job. Les échantillons
+manquants et les caches désactivés restent distincts des valeurs nulles ou des
+échecs de cache. Les artefacts Workbench sont paginés jusqu'à 10 000 entrées ;
+si le relevé reste incomplet ou change pendant la pagination, `bytes` vaut `null`
+et `bytes_observed` ne donne que le sous-total effectivement lu.
 
-L'attente part de `job.created_at` jusqu'à la première étape exécutée : elle
-inclut la file, la limitation de matrice et le provisionnement. `started_at`
-seul arrive trop tard pour mesurer cette attente. Une date de création absente
-est une observation indisponible.
+`workflow_start_wait` part de la création du run jusqu'à `run_started_at` : il
+mesure l'attente avant que les jobs existent. `job_queue_and_matrix_wait` part de
+`job.created_at` jusqu'à la première étape exécutée : il inclut ensuite la file,
+la limitation de matrice et le provisionnement du runner. Ces deux mesures ne
+doivent pas être confondues ; une date absente reste une observation indisponible.
 
 `dev ci authorize-private --head SHA --minutes 180` prépare une fenêtre de
 qualification privée du commit exact. `--apply` exige les droits administratifs,
