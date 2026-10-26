@@ -58,6 +58,17 @@ uniquement sur BackEnd, FrontEnd, DesktopApp, Network et Solana. Son unique droi
 explicite est `contents: read` ; métadonnées en lecture implicites. Aucun droit
 Project, Actions, secrets ou déploiement, aucune écriture de code.
 
+Création manuelle par le propriétaire : ouvrir [les réglages GitHub Apps de
+l'organisation](https://github.com/organizations/Silicium-Project/settings/apps/new),
+reprendre le nom et l'URL du manifeste, désactiver les webhooks et abonnements
+d'événements, puis ne donner que `Contents: Read-only`. À l'installation, choisir
+« Only select repositories » et les cinq dépôts listés ci-dessus ; ne pas choisir
+« All repositories ». Générer ensuite une clé privée de l'App et enregistrer le
+Client ID et la clé comme secrets chiffrés `SOURCE_APP_CLIENT_ID` et
+`SOURCE_APP_PRIVATE_KEY` dans Integration. Transférer la clé directement depuis
+l'interface GitHub ou `gh secret set`; ne pas la coller dans un chat, une issue,
+un commit ou un artefact.
+
 Dans Integration, configurer `SOURCE_APP_CLIENT_ID` et `SOURCE_APP_PRIVATE_KEY`
 comme secrets chiffrés. Ces secrets **ne sont pas encore provisionnés** pendant
 la préparation de migration. Ne pas réutiliser le jeton personnel du propriétaire
