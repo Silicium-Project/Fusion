@@ -4,6 +4,17 @@ import { resolve } from 'node:path';
 import { api, verifiedRun, requireWriter, repository } from './github.mjs';
 import { root, git, readJson, Failure } from './process.mjs';
 import { requireManifest, packageVersions } from './manifest.mjs';
+
+export function assertDeliveryGate(variables = {}) {
+  if (variables.SILICIUM_DELIVERY_ENABLED !== '1')
+    throw new Failure('GitHub delivery is disabled; no deployment request was sent', 4);
+  if (variables.SILICIUM_DELIVERY_CONTRACT !== 'private-integration-v1')
+    throw new Failure(
+      'Private Integration delivery bridge is not qualified; no deployment request was sent',
+      4,
+    );
+}
+
 export function releasePlan({
   channel = 'dev',
   version,
@@ -20,21 +31,27 @@ export function releasePlan({
   if (!/^[a-f0-9]{40}$/.test(sha)) throw new Failure('Use an exact source SHA', 2);
   const qualification = runId ? verifiedRun(runId, { sha }) : null;
   return {
-    schema_version: 1,
+    schema_version: 2,
     operation: 'release.plan',
-    status: qualification ? 'qualified' : 'requires_qualification',
+    status: qualification ? 'public_ci_passed_private_integration_required' : 'requires_public_ci',
     source_sha: sha,
     channel,
     version,
     package_versions: versions,
     release_id: `${channel}-${version}-${sha.slice(0, 12)}`,
     qualification_run: qualification?.html_url ?? null,
+    qualification_scope: qualification ? 'public' : null,
+    private_integration_required: true,
   };
 }
 export function requestDeploy(path, { environment = 'dev', apply = false } = {}) {
   const manifest = requireManifest(readJson(resolve(path)));
   if (!['dev', 'prod'].includes(environment) || manifest.channel !== environment)
     throw new Failure('Candidate/environment mismatch', 2);
+  if (apply) {
+    const variables = api(`repos/${repository}/actions/variables?per_page=100`).variables;
+    assertDeliveryGate(Object.fromEntries(variables.map(({ name, value }) => [name, value])));
+  }
   const viewer = requireWriter();
   verifiedRun(manifest.qualification.run_id, { sha: manifest.source_sha });
   const result = {

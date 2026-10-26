@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   apply:
-    if: ${{ !github.event.repository.private && vars.SILICIUM_DELIVERY_ENABLED == '1' && github.ref == 'refs/heads/main' }}
+    if: ${{ !github.event.repository.private && vars.SILICIUM_DELIVERY_ENABLED == '1' && vars.SILICIUM_DELIVERY_CONTRACT == 'private-integration-v1' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: ${{ inputs.environment == 'dev' && 'development' || 'production' }}

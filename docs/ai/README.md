@@ -91,7 +91,9 @@ restent à qualifier ; ne pas accepter une fonctionnalité sur le seul gate publ
 ## Publier et déployer
 
 Lire [le runbook](../operations/delivery.md). Utiliser un SHA exact, le canal
-explicite et le manifeste qualifié. `dev release plan` est une commande de
+explicite et le manifeste qualifié. `dev release plan` distingue maintenant
+le succès public Workbench de la qualification privée requise ; il ne marque
+pas le public comme livraison qualifiée. C'est une commande de
 préparation. Au 27 octobre 2026, le raccordement de la qualification privée à la
 release et au déploiement n'est pas opérationnel (issue
 [CI-10](https://github.com/Silicium-Project/Workbench/issues/331)). Ne lance

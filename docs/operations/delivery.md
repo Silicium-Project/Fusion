@@ -36,6 +36,12 @@ opérationnelle après la séparation de Workbench et des cinq dépôts privés.
   déploiement dev ou prod n'est autorisé par cet état. Le budget privé Actions
   avait été épuisé lors de la dernière vérification du 26 octobre ; il doit être
   vérifié de nouveau avant tout run, sans dépassement facturé ni runner VPS.
+- Le marqueur `SILICIUM_DELIVERY_CONTRACT=private-integration-v1` n'est pas
+  configuré. Le CLI et les jobs GitHub exigent à la fois ce marqueur et le
+  drapeau d'activation ; leur absence bloque aujourd'hui le dispatch. Ces deux
+  valeurs sont des verrous d'activation, pas une preuve de qualification. La
+  vérification cryptographique du run et de ses cinq pins reste à implémenter
+  dans CI-10 ; ne configure pas les marqueurs avant son acceptation.
 - Les environnements Workbench de signature et de déploiement n'ont aucun
   secret ni variable d'environnement configuré. Les workflows attendent entre
   autres des clés de signature et `DEPLOY_SSH_HOST` / `DEPLOY_SSH_KNOWN_HOSTS` /
@@ -103,10 +109,10 @@ rebasés en HTTP interne ; les métadonnées signées, clés et paquets sont ide
 ./dev deploy request --manifest .artifacts/candidate.json --environment dev --json
 ```
 
-La commande de plan est disponible. Aujourd'hui, `--apply` peut encore envoyer
-un dispatch que les garde-fous désactivés feront ignorer ; même réactiver le
-flag ne suffit pas, car les secrets et variables de signature/déploiement sont
-absents. Ne l'utilise pas.
+La commande de plan est disponible. Aujourd'hui, `--apply` est refusé par le
+CLI tant que le drapeau et le marqueur de contrat privé ne sont pas configurés.
+Les secrets et variables de signature/déploiement sont également absents ; ne
+contourne pas ce refus en envoyant un dispatch manuel.
 Le chemin sera considéré actif après CI-10, la qualification privée complète et
 l'activation contrôlée des workflows. La requête devra alors viser un candidat
 signé exact ; aucune construction ne sera faite sur le VPS. Les signatures et
