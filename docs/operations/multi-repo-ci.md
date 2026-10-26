@@ -52,28 +52,48 @@ sources privées dans des workflows publics ou ouvrir un budget facturable.
 ## Accès aux sources
 
 L'organisation interdit la création de clés SSH de déploiement ; cette politique
-reste conservée. Une App dédiée **Silicium Source Reader** doit être créée avec
-[le manifeste minimal](../../tools/config/source-app-manifest.json), puis installée
-uniquement sur BackEnd, FrontEnd, DesktopApp, Network et Solana. Son unique droit
+reste conservée. L'App **Silicium Source Reader** est créée et installée
+uniquement sur BackEnd, FrontEnd, DesktopApp, Network et Solana, conformément au
+[manifeste minimal](../../tools/config/source-app-manifest.json). Son unique droit
 explicite est `contents: read` ; métadonnées en lecture implicites. Aucun droit
-Project, Actions, secrets ou déploiement, aucune écriture de code.
+Project, Actions, secrets ou déploiement, aucune écriture de code. Ne pas recréer
+l'App ni élargir son périmètre.
 
-Création manuelle par le propriétaire : ouvrir [les réglages GitHub Apps de
-l'organisation](https://github.com/organizations/Silicium-Project/settings/apps/new),
-reprendre le nom et l'URL du manifeste, désactiver les webhooks et abonnements
-d'événements, puis ne donner que `Contents: Read-only`. À l'installation, choisir
-« Only select repositories » et les cinq dépôts listés ci-dessus ; ne pas choisir
-« All repositories ». Générer ensuite une clé privée de l'App et enregistrer le
-Client ID et la clé comme secrets chiffrés `SOURCE_APP_CLIENT_ID` et
-`SOURCE_APP_PRIVATE_KEY` dans Integration. Transférer la clé directement depuis
-l'interface GitHub ou `gh secret set`; ne pas la coller dans un chat, une issue,
-un commit ou un artefact.
+Les secrets chiffrés `SOURCE_APP_CLIENT_ID` et `SOURCE_APP_PRIVATE_KEY` sont
+présents dans Integration. Vérifier seulement leur présence par nom ; ne jamais
+lire, afficher ou copier leurs valeurs. Ne pas réutiliser le jeton personnel du
+propriétaire ni la clé de l'App du Project. Aucune clé de wallet, de signature ou
+d'upgrade Solana n'est utilisée. Workbench et les CI natives ne reçoivent pas
+cette clé.
 
-Dans Integration, configurer `SOURCE_APP_CLIENT_ID` et `SOURCE_APP_PRIVATE_KEY`
-comme secrets chiffrés. Ces secrets **ne sont pas encore provisionnés** pendant
-la préparation de migration. Ne pas réutiliser le jeton personnel du propriétaire
-ni la clé de l'App du Project. Aucune clé de wallet, de signature ou d'upgrade
-Solana n'est utilisée. Workbench et les CI natives ne reçoivent pas cette clé.
+Au 26 octobre 2026, le workflow manuel est sur Integration/main, mais
+`SILICIUM_INTEGRATION_ENABLED` n'est pas configuré et aucun run n'a été lancé.
+Le quota inclus d'Actions privées est épuisé alors que le dépassement reste
+bloqué à zéro. Vérifier à nouveau le quota avant le premier run ; ne pas
+activer de dépassement ni utiliser le VPS comme runner. Le détail à jour est
+conservé dans le [README privé d'Integration](https://github.com/Silicium-Project/Integration#current-status).
+
+Pour éliminer les chemins CI vers les runners VPS, Backend CI, Frontend CI,
+Network CI et Create GitHub Release (qui ciblent les runners `self-hosted`) ont
+été désactivés dans GitHub le 26 octobre 2026. Solana SBF build, exécuté sur un
+runner GitHub mais redondant avec la qualification privée, ainsi que l'ancien
+miroir Epitech lié au dépôt DesktopApp ont aussi été suspendus. Aucun run
+n'était en attente ou actif lors de ces suspensions. Les PR
+de restauration des cinq composants contiennent les nouveaux wrappers vers
+`component-ci.yml`, épinglés à un SHA Workbench public et protégés par
+`SILICIUM_COMPONENT_CI_ENABLED`. Ils restent en brouillon ; tant qu'ils ne sont
+pas intégrés et que le quota n'est pas disponible, aucune qualification privée
+ne doit démarrer. La variable `SILICIUM_COMPONENT_CI_ENABLED` vaut explicitement
+`0` dans chacun des cinq dépôts. Après intégration et vérification du quota, ne
+réactiver que ces nouveaux wrappers.
+
+La création, l'installation ou la rotation de l'App exigent une décision et une
+session du propriétaire GitHub. Si elles deviennent nécessaires, reprendre le
+nom et l'URL du manifeste, désactiver webhooks et abonnements d'événements,
+garder `Contents: Read-only` et « Only select repositories », puis vérifier la
+présence des secrets par leur nom. Transférer toute nouvelle clé directement
+depuis GitHub vers les secrets Integration ; ne jamais la coller dans un chat,
+une issue, un commit ou un artefact.
 
 Chaque suite privée crée un jeton d'installation de courte durée, limité aux
 dépôts déclarés comme sources de cette suite ; le contrôle des contrats demande
