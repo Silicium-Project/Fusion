@@ -204,11 +204,15 @@ export function policyFromBase(base) {
     return null;
   }
 }
-export function combinePlans(plan, previous) {
+export function combinePlans(plan, previous, env = process.env) {
   if (!previous) return plan;
   const reviewed =
-    /^[a-f0-9]{40}$/.test(plan.head_sha ?? '') &&
-    process.env.SILICIUM_POLICY_MIGRATION_SHA === plan.head_sha;
+    (env.GITHUB_EVENT_NAME === 'push' &&
+      env.GITHUB_REF === 'refs/heads/main' &&
+      env.GITHUB_REPOSITORY === 'Silicium-Project/Workbench' &&
+      env.SILICIUM_TRUSTED_MAIN_PUSH === 'true') ||
+    (/^[a-f0-9]{40}$/.test(plan.head_sha ?? '') &&
+      env.SILICIUM_POLICY_MIGRATION_SHA === plan.head_sha);
   const relocated = previous.suites.filter((id) => !plan.suites.includes(id));
   const migration = plan.scope === 'public' && previous.scope === 'legacy';
   if (migration && relocated.length && !reviewed)
