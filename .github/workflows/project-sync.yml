@@ -48,11 +48,11 @@ jobs:
     environment: project-automation
     if: ${{ !github.event.repository.private && (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main') && (vars.SILICIUM_PROJECT_AUTOMATION_ENABLED == '1' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'dry-run')) && (github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           ref: main
           persist-credentials: 'false'
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903
         with:
           node-version: 22.23.4
       - name: Create scoped Project installation token
