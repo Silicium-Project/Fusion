@@ -79,6 +79,13 @@ Qualifier les deux côtés et la compatibilité avec les données existantes.
 Pour Solana : garder ID de programme, autorités et clés hors du changement
 sauf demande explicite distincte ; localnet est l'oracle de CI.
 
+Avant d’affirmer qu’un résultat P2P ou Solana est vérifié, final, indépendant
+du site ou sûr pendant une partition, lire [les frontières de confiance et les
+états de finalité](../architecture/trust-boundaries.md). Ce document sépare les
+observations aux SHA étudiés des invariants visés et liste les limites encore
+ouvertes ; ne pas présenter une signature, un hash, une copie locale ou un vote
+comme preuve plus forte que son contrat.
+
 ## Qualification privée
 
 Lire [le runbook multi-dépôts](../operations/multi-repo-ci.md). Les workflows
