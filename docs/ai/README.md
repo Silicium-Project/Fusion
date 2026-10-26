@@ -91,9 +91,16 @@ restent à qualifier ; ne pas accepter une fonctionnalité sur le seul gate publ
 ## Publier et déployer
 
 Lire [le runbook](../operations/delivery.md). Utiliser un SHA exact, le canal
-explicite et le manifeste qualifié. Préparer avec `dev release plan` et
-`dev deploy request`. L'option `--apply` demande l'action GitHub ; elle ne
-permet pas de contourner les protections ou l'approbation production.
+explicite et le manifeste qualifié. `dev release plan` est une commande de
+préparation. Au 27 octobre 2026, le raccordement de la qualification privée à la
+release et au déploiement n'est pas opérationnel (issue
+[CI-10](https://github.com/Silicium-Project/Workbench/issues/331)). Ne lance
+pas `dev deploy request --apply`, ne change pas les variables de livraison et
+ne traite pas une CI publique verte comme qualification des cinq dépôts. Les
+tests privés restent suspendus tant que quota et plafond à zéro ne sont pas
+vérifiés. Après acceptation de CI-10, l'option `--apply` demandera l'action
+GitHub autorisée ; elle ne contournera pas les protections ni l'approbation
+production.
 
 ## Utiliser les fonctions produit existantes
 

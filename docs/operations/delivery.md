@@ -15,7 +15,56 @@ Les compteurs Windows 1 à 65534 servent aux versions dev ; 65535 est réservé
 à la stable. Une publication doit être strictement plus récente que le candidat
 signé précédent du canal, et son source doit en descendre.
 
+## État vérifié au 27 octobre 2026
+
+La chaîne décrite ci-dessous est la **cible** ; elle n'est pas encore
+opérationnelle après la séparation de Workbench et des cinq dépôts privés.
+
+- `Integration` ne contient qu'une qualification privée manuelle. Son
+  `integration/required` valide les rapports, mais ne construit ni ne publie un
+  candidat et n'appelle pas la livraison.
+- `Workbench/.github/workflows/release.yml` écoute les fins du workflow `CI`
+  de Workbench, puis exige dans son job `prepare` que le run appartienne au
+  dépôt privé `Integration`. Un run public Workbench ne peut donc pas satisfaire
+  cette condition. Le run 40359464116 a terminé `skipped` ; ce n'est pas une
+  qualification ni une release.
+- Le script de candidat actuel vérifie les runs et les artefacts dans
+  `Silicium-Project/Workbench`. Il ne consomme pas encore la preuve privée
+  `integration/required` ni ses cinq pins.
+- `SILICIUM_DELIVERY_ENABLED` est à `0` dans Workbench et
+  `SILICIUM_INTEGRATION_ENABLED` n'est pas activé dans Integration. Aucun
+  déploiement dev ou prod n'est autorisé par cet état. Le budget privé Actions
+  avait été épuisé lors de la dernière vérification du 26 octobre ; il doit être
+  vérifié de nouveau avant tout run, sans dépassement facturé ni runner VPS.
+- L'environnement de production possède une règle de réviseurs, mais cela ne
+  prouve pas que la chaîne privée de qualification appelle cet environnement.
+
+Le raccordement est suivi dans [CI-10](https://github.com/Silicium-Project/Workbench/issues/331).
+Ne pas lancer `dev deploy request --apply`, ne pas activer les variables de
+livraison et ne pas considérer un run public vert comme preuve de qualification
+privée tant que cette issue n'est pas acceptée.
+
+### Frontière entre dépôts
+
+La qualification doit rester exécutée dans Integration, où les sources et
+rapports privés sont protégés. Le futur appel de livraison doit relier le SHA
+Workbench exact, les cinq SHAs de `components.lock.json`, le run privé et les
+rapports réussis. Un workflow réutilisable public appelé depuis Integration
+hérite du contexte et des permissions du dépôt appelant ; son `GITHUB_TOKEN`
+ne gagne pas de droits d'écriture dans Workbench. Le contrat doit donc séparer
+les droits de lecture des sources, de publication, de signature et de
+déploiement, et passer explicitement uniquement les secrets requis. `secrets:
+inherit` et l'App Source Reader en écriture sont interdits.
+
+Avant d'implémenter l'appel, fixer la destination de chaque sortie (rapport
+privé, artefact temporaire, image, paquet, manifeste signé) et vérifier que
+les binaires ne révèlent pas une source privée non autorisée à la publication.
+Un transfert public ou un jeton d'App plus puissant ne doit pas être choisi
+implicitement.
+
 ## Chaîne
+
+Une fois le raccordement CI-10 qualifié, la cible est :
 
 1. CI sur les PR de l'équipe et `main` ; `ci/required` valide les rapports.
 2. Construction des candidats après intégration, avec outils verrouillés.
@@ -48,9 +97,12 @@ rebasés en HTTP interne ; les métadonnées signées, clés et paquets sont ide
 ./dev deploy request --manifest .artifacts/candidate.json --environment dev --json
 ```
 
-Examiner le résultat avant d'ajouter `--apply`. Les requêtes passent par le
-workflow GitHub `deploy.yml` ; aucune construction n'est faite sur le VPS.
-Les signatures et empreintes doivent être vérifiées avant activation.
+La commande de plan est disponible. Aujourd'hui, `--apply` peut encore envoyer
+un dispatch que les garde-fous désactivés feront ignorer ; ne l'utilise pas.
+Le chemin sera considéré actif après CI-10, la qualification privée complète et
+l'activation contrôlée des workflows. La requête devra alors viser un candidat
+signé exact ; aucune construction ne sera faite sur le VPS. Les signatures et
+empreintes seront vérifiées avant activation.
 
 L'application prépare un répertoire distinct et vérifie les identités de
 l'API et du web avant de changer le pointeur de paquets. Le changement d'image
