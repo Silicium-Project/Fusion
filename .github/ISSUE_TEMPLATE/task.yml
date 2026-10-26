@@ -1,7 +1,13 @@
 name: Tranche d'implémentation
 description: Travail borné, dépendances explicites et acceptation vérifiable.
-labels: ["enhancement"]
+title: '[Task] '
+type: Task
+projects:
+  - Silicium-Project/12
 body:
+  - type: markdown
+    attributes:
+      value: Consultez les issues existantes et le Project commun. Ne publiez aucune clé, jeton, donnée personnelle ou contenu confidentiel.
   - type: textarea
     id: purpose
     attributes:
