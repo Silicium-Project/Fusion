@@ -1,121 +1,87 @@
-# Gestion des issues et du travail Silicium
+# Issues, préparation, revue et acceptation
 
-Le pilotage des quatre dépôts se fait dans un seul [GitHub Project](https://github.com/orgs/Silicium-Project/projects/12).
-La [direction du programme](https://github.com/Silicium-Project/Fusion/issues/208) fixe les invariants ; le Project porte l'état courant.
+## Références et provenance
 
-## Ce que chaque objet signifie
+Ce workflow reprend les propositions Fusion #242, Network #354, BackEnd #38 et
+FrontEnd #27. Leurs formulaires communs sont regroupés à la racine de Workbench.
+Les changements utiles sont reportés ; les PR d'origine restent ouvertes tant
+que l'intégration n'a pas été acceptée.
 
-| Objet | Usage |
-| --- | --- |
-| Programme | Direction, garanties, navigation et arbitrages. |
-| Phase R0–R9 | Capacité à obtenir et condition de sortie ; peut avancer en parallèle d'une autre phase. |
-| Spécification | Contrat détaillé, critères, risques et catalogue de validation. |
-| Issue d'exécution | Livrable borné à une PR cohérente, avec oracle de validation. |
-| Milestone | Qualification d'un lot dans un dépôt ; les milestones R0–R9 sont coordonnées par les phases transverses. |
-| Arbitrage | Question nécessitant une décision explicite ; hors travail engagé. |
+Le Project 12 et le dépôt `planning-private` restent privés. Les issues actives
+de Workbench et ses milestones forment la roadmap publiable. Une décision HOLD
+n'est ni un abandon, ni un élément à exposer dans un rapport public.
 
-Les dépendances de sûreté et d'intégration restent obligatoires. Une tranche documentaire ou d'inventaire peut commencer avant sa spécification parente si elle ne modifie aucun comportement qui en dépend.
+## Préparer une tranche
 
-## Une information, un emplacement
+1. Choisir une issue ouverte ; vérifier son parent et ses dépendances natives.
+2. Donner un responsable, une taille, un résultat borné, des critères d'acceptation
+   sous forme de checklist et une cible : Documentation, CI, Dev ou Prod.
+3. Définir `Préparation = Validée` après revue du périmètre et des tests attendus.
+4. L'issue devient `Prêt` lorsque ses dépendances sont acceptées.
+5. `./dev issue start URL` vérifie les champs, dépendances et WIP ; `--apply`
+   applique le passage à `En cours`. Une seule tranche active par personne.
 
-- **Status, Urgence, Horizon, Phase, Niveau et Size** : champs du Project commun.
-- **Responsable** : assignation native de l'issue ; une personne responsable d'une issue engagée.
-- **Domaine** : labels `area:*` ; ne pas créer une seconde taxonomie équivalente.
-- **Type de demande** : types natifs Bug, Feature ou Task. Investigation et décision sont distinguées dans le formulaire et le titre.
-- **Parents et prérequis** : relations natives de sous-issue et de dépendance, avec URL complète entre dépôts.
-- **Acceptation et preuves** : corps de l'issue et commentaire final de qualification.
+Le chantier de migration est une tranche transversale explicitement demandée,
+découpée en commits et PR de revue. Ses lots ne clôturent pas les issues de
+gouvernance, QRE ou CI avant leurs propres preuves d'acceptation.
 
-Les anciens labels `status:planned` et `priority:P*` du backlog réaligné sont retirés pour éviter une seconde source d'état. L'ancien champ Priority du modèle de Project n'est pas le champ de pilotage : utiliser **Urgence** dans les vues communes.
+## Relier les PR
 
-## Cycle de travail
+Utiliser `Refs: https://github.com/Silicium-Project/Workbench/issues/NUMERO` dans
+chaque PR. Plusieurs PR peuvent contribuer à une même issue. Les mots-clés de
+clôture automatique ne font pas partie de ce workflow.
 
-`À qualifier → Backlog → Prêt → En cours → Revue → Validation → Terminé`
+Écrire une ligne `Refs:` par URL, sans fragment ni paramètres. Une simple
+mention dans un paragraphe est informative et ne rend pas la PR obligatoire
+pour l'acceptation. Les liens sont comparés exactement : l'issue 21 n'hérite
+pas des PR de l'issue 210. Une contribution remplacée doit être arbitrée
+explicitement dans les PR et leurs références ; une fermeture sans fusion
+n'est jamais déduite comme une réalisation.
 
-| Passage | Conditions |
-| --- | --- |
-| À qualifier → Backlog | Besoin compris, dépôt compétent, doublons vérifiés et décision de conserver la demande. |
-| Backlog → Prêt | Périmètre borné, critères d'acceptation, tests/oracles attendus, dépendances applicables satisfaites et responsable. |
-| Prêt → En cours | Travail effectivement commencé, branche liée ; une seule implémentation active par personne pour commencer. |
-| En cours → Revue | PR prête à relire, auto-relecture et preuves disponibles ; contrôles pertinents verts. |
-| Revue → Validation | Changement intégré ou livrable accepté en revue ; qualification restante explicitée. |
-| Validation → Terminé | Critères satisfaits, preuves liées aux SHA exacts et limites connues documentées. |
+Une PR brouillon indique du travail commencé. `Revue` exige que toutes les PR
+actives soient prêtes et que leur contrôle `ci/required` soit réussi pour leur
+dernier commit. Une PR fermée sans fusion ne vaut pas livraison.
 
-Une PR fusionnée ne suffit pas à terminer une issue. Le responsable place manuellement l'issue en **Validation** après fusion ; il ne la clôt qu'après acceptation. Un défaut découvert pendant la qualification renvoie l'issue vers En cours ou Backlog avec une explication.
+`main` utilise le mode mainteneur unique décidé par le propriétaire le
+25 octobre 2026 : PR obligatoire, contrôle CI obligatoire lié à GitHub Actions,
+branche à jour et discussions résolues. Aucune approbation par un autre compte
+n'est imposée ; CODEOWNERS conserve la carte des responsabilités. Le mainteneur
+examine les changements et décide de la fusion, même s'il en est l'auteur.
+La revue automatisée reste une aide. Les protections de production et la
+décision humaine d'acceptation des issues ne sont pas supprimées.
 
-Le blocage est une relation ou un motif documenté, pas un état qui efface l'étape réelle. Ajouter le prérequis avec **Relationships → Mark as blocked by**. Pour un blocage externe, ouvrir une décision ou une tâche de résolution avec responsable et prochaine action. Aucun timeout ne transforme un calcul non vérifié en résultat final.
+Après fusion, l'issue reste en `Validation`. Ni un ancien événement CI, ni une
+fusion ne suffisent à la déclarer terminée. La réconciliation consulte les
+preuves actuelles ; les événements répétés ne créent pas de doublon.
 
-## Prêt à commencer
-
-Avant d'engager une issue d'exécution :
-
-- [ ] Objectif unique et livrable vérifiable, adapté à une PR relisible.
-- [ ] Dépôt, chemins, consommateurs et commit de départ vérifiés.
-- [ ] Préconditions et dépendances explicites ; aucune décision d'architecture cachée.
-- [ ] Critères d'acceptation et oracle indépendant définis.
-- [ ] Méthode de validation proportionnée : unitaire, intégration, adversarial, E2E ou revue documentaire selon le changement.
-- [ ] Risques de sécurité, compatibilité, migration et restauration traités lorsqu'ils s'appliquent.
-- [ ] Responsable identifié ; estimation XS/S/M indicative. Un L/XL doit être redécoupé avant exécution.
-
-Ne pas forcer toutes les spécifications du programme dans ce format dès maintenant : créer les tranches quand elles approchent du début du travail.
-
-## Définition de terminé
-
-- [ ] Chaque critère d'acceptation est satisfait ou son changement a été décidé et tracé.
-- [ ] PR et commits exacts liés ; composition Fusion identifiée pour un changement intercomposants.
-- [ ] Vérifications pertinentes réussies, avec commandes, environnement et résultats réels. Un test prévu n'est pas un test exécuté.
-- [ ] Tests négatifs/adversariaux et non-régression ajoutés si le comportement l'exige ; aucune garantie de sûreté affaiblie pour réduire la latence.
-- [ ] Documentation, contrats et migrations mis à jour lorsqu'ils sont concernés.
-- [ ] Déploiement ou parcours réel qualifié lorsque le critère porte sur l'environnement livré ; une compilation ne prouve pas un déploiement.
-- [ ] Limites, risques résiduels et suites restantes explicités. Un simple constat statique ne certifie pas le runtime.
-
-Une phase est terminée après sa synthèse de qualification, pas au seul pourcentage de sous-issues fermées. Les issues historiques déjà fermées sont conservées comme historique ; le nouveau workflow ne les recertifie pas rétroactivement.
-
-## Urgence et horizon
-
-| Urgence | Sens |
-| --- | --- |
-| P0 | Incident ou blocage immédiat confirmé, avec impact, responsable et condition de sortie. |
-| P1 | Fondation ou prochain travail important ; sélectionner selon les prérequis et l'horizon. |
-| P2 | Travail prévu après les fondations ; pas d'engagement implicite. |
-| P3 | Extension ou exploration conditionnelle. |
-
-La criticité de sécurité et l'urgence d'exécution sont différentes : les exigences de sûreté restent obligatoires même sur un ticket qui n'est pas P0.
-
-**Maintenant / Ensuite / Plus tard** ordonnent les objectifs. Maintenant ne rend pas toute une spécification prête. Une date ou une itération n'est ajoutée qu'après engagement ; ne pas inventer des échéances pour remplir une frise.
-
-## Vues et revue courte
-
-1. **À faire maintenant** : les tranches prêtes, avec responsable.
-2. **Tableau de travail** : Prêt, En cours, Revue et Validation ; surveiller le travail simultané.
-3. **Backlog** : spécifications et prochaines tranches, ordonnées après triage.
-4. **Roadmap** : phases, horizon et progression.
-5. **Blocages** : prérequis ouverts et action nécessaire pour avancer.
-6. **Arbitrages** : décisions en attente, y compris les anciennes demandes conservées.
-7. **Validation** : travail relu ou intégré en attente de qualification.
-
-Chaque semaine : trier les entrées, traiter les blocages, vérifier l'âge des travaux engagés et préparer quelques prochaines tranches. Revoir les horizons et arbitrages toutes les deux semaines ou après un changement de direction.
-
-Suivre le délai de réalisation, le temps bloqué, l'âge des travaux actifs, les réouvertures et les défauts découverts après qualification. Un nombre d'issues fermées ou un pourcentage de couverture ne suffit pas à mesurer la qualité. Ces mesures ne sont annoncées comme disponibles qu'après instrumentation.
-
-## Automatisation sobre et droits
-
-Les formulaires ciblent `Silicium-Project/12`. GitHub exige que la personne qui crée l'issue ait le droit d'écriture sur ce Project pour cet ajout automatique. Les sous-issues d'un parent déjà présent bénéficient de l'automatisation native d'ajout.
-
-Une issue créée hors formulaire ou par un contributeur sans ce droit doit être ajoutée au triage par un mainteneur :
+## Accepter
 
 ```sh
-gh project item-add 12 --owner Silicium-Project --url https://github.com/Silicium-Project/REPO/issues/NUMERO
+./dev issue accept ISSUE_URL --evidence https://github.com/Silicium-Project/Workbench/actions/runs/ID --human-approved
 ```
 
-L'offre Free limite le nombre de règles natives d'ajout par Project. Ce fonctionnement n'exige ni nouveau secret, ni robot de compilation, ni tâche sur le VPS. L'ajout via API ne doit pas être supposé automatique hors de ces parcours.
+Le premier appel décrit l'opération. `--apply` enregistre la preuve, applique
+`Terminé` et clôture l'issue. L'approbation humaine doit avoir réellement été
+donnée ; un agent ne doit pas s'attribuer cette approbation par la seule présence
+du drapeau. Les droits GitHub du contributeur restent vérifiés.
 
-Le passage fusion → Terminé a été retiré. Les transitions qui attestent l'acceptation restent une décision humaine traçable. Les anciens Projects sont conservés fermés avec un lien vers le tableau commun ; leur historique n'est pas supprimé.
+La commande vérifie la checklist, les enfants obligatoires, toutes les PR liées,
+leur fusion par un humain autorisé en écriture et l'inclusion des changements
+dans la preuve. L'auteur peut être cet humain ; aucun bot ne peut s'y substituer.
+La preuve conserve le mode de contribution, les SHA et l'identité de fusion.
+Une cible Dev/Prod exige aussi une livraison réussie du candidat exact. Une
+phase dont un livrable obligatoire reste ouvert ne peut pas être acceptée.
 
-## Branches et PR
+Une dépendance fermée exige aussi `Status = Terminé` dans le Project ; une
+fermeture manuelle sans acceptation ne suffit pas. Une dépendance absente de
+l'inventaire ou une liste de relations tronquée bloque la transition : il
+faut restaurer les données ou étendre la pagination, jamais ignorer le reste.
 
-Le flux applicatif reste une branche de travail → PR vers `dev` → qualification → promotion contrôlée vers `main`.
-Utiliser un nom comme `issue/240-invariants-finalite`. Lier chaque PR avec **Refs** et l'URL complète ; éviter **Closes/Fixes/Resolves** tant que la fusion n'est pas à elle seule le critère d'acceptation. Relier les PR entre dépôts pour un changement de contrat.
+L'abandon ou le doublon est une décision explicite (`Abandonné`). Les issues
+HOLD exigent un arbitrage individuel dans l'espace privé.
 
-Les formulaires GitHub sont lus depuis la branche par défaut. Leur première mise en service peut donc demander une PR de métadonnées basée sur cette branche : elle doit être limitée à la documentation et aux modèles, relue, et ne doit pas promouvoir les changements applicatifs de dev.
+## Activation de l'automatisation
 
-Sources : [GitHub Projects](https://docs.github.com/en/issues/planning-and-tracking-with-projects/learning-about-projects/best-practices-for-projects), [formulaires](https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-issue-forms), [dépendances](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/creating-issue-dependencies).
+Les champs sont créés. Le moteur et le workflow de réconciliation sont fournis.
+Leur exécution reste désactivée avant la création/installation de l'App dédiée
+et la qualification de ses droits. Voir [l'activation](../operations/bootstrap.md).

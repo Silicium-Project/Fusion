@@ -1,0 +1,191 @@
+[
+  {
+    "page": "/",
+    "file": "01-accueil.png",
+    "size": [
+      955,
+      1647
+    ],
+    "bytes": 1424813
+  },
+  {
+    "page": "/service",
+    "file": "02-produit.png",
+    "size": [
+      907,
+      1733
+    ],
+    "bytes": 1480559
+  },
+  {
+    "page": "/download?channel=prod",
+    "file": "03-installation-stable.png",
+    "size": [
+      955,
+      1647
+    ],
+    "bytes": 1503340
+  },
+  {
+    "page": "/about",
+    "file": "04-a-propos.png",
+    "size": [
+      960,
+      1639
+    ],
+    "bytes": 1605569
+  },
+  {
+    "page": "/blockchain",
+    "file": "05-blockchain.png",
+    "size": [
+      955,
+      1647
+    ],
+    "bytes": 1511910
+  },
+  {
+    "page": "/contact",
+    "file": "06-contact.png",
+    "size": [
+      1536,
+      1024
+    ],
+    "bytes": 1354406
+  },
+  {
+    "page": "/auth",
+    "file": "07-connexion.png",
+    "size": [
+      1536,
+      1024
+    ],
+    "bytes": 1366076
+  },
+  {
+    "page": "/auth?mode=register",
+    "file": "08-inscription.png",
+    "size": [
+      1536,
+      1024
+    ],
+    "bytes": 1335480
+  },
+  {
+    "page": "/dashboard",
+    "file": "09-vue-ensemble.png",
+    "size": [
+      1536,
+      1024
+    ],
+    "bytes": 1359947
+  },
+  {
+    "page": "/jobs",
+    "file": "10-mes-projets.png",
+    "size": [
+      1536,
+      1024
+    ],
+    "bytes": 1358419
+  },
+  {
+    "page": "/jobs/new",
+    "file": "11-nouveau-projet.png",
+    "size": [
+      1536,
+      1024
+    ],
+    "bytes": 1429467
+  },
+  {
+    "page": "/jobs/:id",
+    "file": "12-detail-projet.png",
+    "size": [
+      1536,
+      1024
+    ],
+    "bytes": 1465562
+  },
+  {
+    "page": "/network",
+    "file": "13-etat-reseau.png",
+    "size": [
+      1536,
+      1024
+    ],
+    "bytes": 1418575
+  },
+  {
+    "page": "/nodes",
+    "file": "14-mes-machines.png",
+    "size": [
+      1536,
+      1024
+    ],
+    "bytes": 1368124
+  },
+  {
+    "page": "/workloads",
+    "file": "15-types-calcul.png",
+    "size": [
+      1536,
+      1024
+    ],
+    "bytes": 1590496
+  },
+  {
+    "page": "/profile",
+    "file": "16-profil.png",
+    "size": [
+      1536,
+      1024
+    ],
+    "bytes": 1387569
+  },
+  {
+    "page": "404 / erreur",
+    "file": "17-page-introuvable.png",
+    "size": [
+      1536,
+      1024
+    ],
+    "bytes": 1549726
+  },
+  {
+    "page": "/download?channel=dev",
+    "file": "18-installation-dev.png",
+    "size": [
+      955,
+      1647
+    ],
+    "bytes": 1564190
+  },
+  {
+    "page": "/ · mobile",
+    "file": "19-accueil-mobile.png",
+    "size": [
+      858,
+      1834
+    ],
+    "bytes": 1393387
+  },
+  {
+    "page": "/download · mobile",
+    "file": "20-installation-mobile.png",
+    "size": [
+      901,
+      1746
+    ],
+    "bytes": 1533598
+  },
+  {
+    "page": "/jobs/:id · mobile",
+    "file": "21-projet-mobile.png",
+    "size": [
+      866,
+      1816
+    ],
+    "bytes": 1409203
+  }
+]

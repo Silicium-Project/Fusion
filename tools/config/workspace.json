@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "name": "Workbench",
+  "repository": "Silicium-Project/Workbench",
+  "repository_id": 1304063299,
+  "legacy_repositories": ["Silicium-Project/Fusion"],
+  "mode": "multi-repo",
+  "integration_repository": "Silicium-Project/Integration",
+  "public_suites": ["docs", "powershell", "security", "tooling"],
+  "components": {
+    "api": {
+      "repository": "Silicium-Project/BackEnd",
+      "path": "apps/api",
+      "visibility": "private",
+      "suites": ["api"]
+    },
+    "web": {
+      "repository": "Silicium-Project/FrontEnd",
+      "path": "apps/web",
+      "visibility": "private",
+      "suites": ["web"]
+    },
+    "node": {
+      "repository": "Silicium-Project/DesktopApp",
+      "path": "apps/node",
+      "visibility": "private",
+      "suites": ["node-ui", "node-native", "node-windows"]
+    },
+    "network": {
+      "repository": "Silicium-Project/Network",
+      "path": "network",
+      "visibility": "private",
+      "suites": ["network", "network-integration", "network-wasm"]
+    },
+    "solana": {
+      "repository": "Silicium-Project/Solana",
+      "path": "chain",
+      "visibility": "private",
+      "suites": ["solana"]
+    }
+  }
+}

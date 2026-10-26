@@ -1,48 +1,63 @@
-# Silicium
+# Silicium Workbench
 
-Silicium est un réseau de calcul distribué : des ordinateurs de particuliers
-calculent des sous-tâches, d'autres nœuds les vérifient, les résultats sont
-rassemblés, et la blockchain Solana rend les transactions transparentes
-(jobs, réputation, staking, récompenses).
+Workbench est l'atelier d'intégration de Silicium : documentation, roadmap,
+contrats partagés, outillage commun et description exacte des versions compatibles.
+Les applications évoluent dans des dépôts indépendants, actuellement privés.
 
-Ce dépôt, **Fusion**, assemble tous les composants et contient le déploiement.
+## Commencer
 
-## Carte du dépôt
-
-| Chemin | Type | Contenu |
-| --- | --- | --- |
-| [`Network/`](Network/) | sous-module | Runtime réseau en Rust (nœud, calcul, workloads), programme Solana. Voir `Network/README.md` |
-| [`BackEnd/`](BackEnd/) | sous-module | API Go : comptes, sessions JWT, jobs, pilotage du réseau |
-| [`FrontEnd/`](FrontEnd/) | sous-module | Site Nuxt 3 : création et suivi des calculs |
-| [`apps/silicium-node/`](apps/silicium-node/) | dossier | Application desktop Tauri qui installe et supervise un nœud chez l'utilisateur |
-| [`deploy/`](deploy/) | dossier | Serveur (VPS) : Docker Compose, Nginx, systemd, VPN, canaux de release, scripts de CI |
-| [`.github/workflows/`](.github/workflows/) | dossier | CI/CD : Build, Test, Deploy, synchronisation des sous-modules |
-| [`docs/`](docs/) | dossier | Documentation transverse (architecture, exploitation, développement) |
-| [`tests/`](tests/) | dossier | Tests Python des canaux de release et du VPN |
-| `install-silicium-windows.*`, `start-silicium-local.*` | scripts | Installation et lancement de l'environnement local (Windows) |
-
-## Règle de langage
-
-- **Rust** pour tout ce qui s'exécute chez un utilisateur ou sur le serveur
-  (nœud réseau, calcul, app desktop).
-- **Go** pour le BackEnd, **TypeScript** pour le FrontEnd et le SDK Solana.
-- **Python** uniquement pour l'outillage des développeurs.
-
-Le runtime réseau est entièrement en Rust : l'orchestrateur du serveur et les
-nœuds des utilisateurs exécutent le même binaire `p2p_node`. L'ancien runtime
-Python a été supprimé ; l'historique de la bascule est dans
-[`Network/docs/architecture/rust-migration.md`](Network/docs/architecture/rust-migration.md).
-
-## Démarrage rapide (Windows)
-
-```powershell
-git clone --recurse-submodules https://github.com/Silicium-Project/Fusion.git
-.\install-silicium-windows.cmd -InstallSystemDeps
-.\start-silicium-local.cmd
+```sh
+git clone https://github.com/Silicium-Project/Workbench.git
+cd Workbench
+./dev doctor --profile tooling
+./dev capabilities --json
+./dev workspace status --json
+./dev ci plan --scope public --base origin/main --json
 ```
 
-Détails, options et variables : [`docs/development/local-setup.md`](docs/development/local-setup.md).
+Pour développer un composant, un accès à son dépôt est nécessaire :
 
-## Documentation
+```sh
+./dev workspace init --component web       # aperçu, aucune récupération
+./dev workspace init --component web --apply
+cd apps/web
+npm ci
+npm run dev
+```
 
-Index : [`docs/README.md`](docs/README.md).
+Sous Windows, utiliser `.\dev.ps1`. Consulter les
+[commandes communes](docs/development/commands.md) et les
+[instructions agents](AGENTS.md).
+
+## Dépôts et responsabilités
+
+| Chemin local | Dépôt | Responsabilité |
+| --- | --- | --- |
+| `apps/web` | [FrontEnd](https://github.com/Silicium-Project/FrontEnd) | Nuxt, comptes et projets |
+| `apps/api` | [BackEnd](https://github.com/Silicium-Project/BackEnd) | API Go et accès au réseau |
+| `apps/node` | [DesktopApp](https://github.com/Silicium-Project/DesktopApp) | Application Tauri et supervision locale |
+| `network` | [Network](https://github.com/Silicium-Project/Network) | Runtime P2P Rust et workloads |
+| `chain` | [Solana](https://github.com/Silicium-Project/Solana) | Programme Anchor dans `solana/`, SDK dans `sdk/` |
+| — | [Integration](https://github.com/Silicium-Project/Integration) | Qualification complète avec sources et journaux privés |
+
+[components.lock.json](components.lock.json) et les gitlinks désignent les mêmes
+commits immuables. Le clone public ne récupère aucune source privée par défaut.
+Un changement de composant passe par sa PR ; son intégration passe par une PR
+Workbench modifiant le pin et son lock ensemble.
+
+## Historique et qualification
+
+Workbench conserve l'identité GitHub et l'historique public de Fusion, ainsi que
+ses issues, PR et releases. **Les anciennes sources déjà publiées restent dans
+cet historique.** Les versions futures utilisent les dépôts séparés. Voir
+[la décision et la méthode de migration](docs/architecture/multi-repo.md).
+
+`ci/required` sur Workbench qualifie ses fichiers publics. La compatibilité
+applicative exige une qualification privée complète des cinq pins. Une CI
+publique verte ne suffit pas à publier une application. GitHub Free limite la
+CI des dépôts privés ; aucun dépassement facturé ni runner VPS de secours.
+Les publications automatiques restent suspendues pendant cette transition.
+
+[Documentation](docs/README.md) · [Contribution](CONTRIBUTING.md) ·
+[Sécurité](Security.md) · [Licence MIT de Workbench](LICENSE) ·
+[Roadmap](docs/roadmap/README.md)

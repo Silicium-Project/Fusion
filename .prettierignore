@@ -1,0 +1,10 @@
+**/node_modules/
+**/target/
+**/.nuxt/
+**/.output/
+**/dist/
+**/gen/
+docs/archive/
+.artifacts/
+**/*lock*
+**/*.min.*

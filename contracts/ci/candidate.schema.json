@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://silicium.network/contracts/ci/candidate/v1",
+  "title": "Silicium candidate v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "source_sha",
+    "channel",
+    "version",
+    "release_id",
+    "qualification",
+    "components",
+    "assets"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "source_sha": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "policy_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "channel": {
+      "enum": [
+        "dev",
+        "prod"
+      ]
+    },
+    "release_id": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "qualification": {
+      "type": "object"
+    },
+    "components": {
+      "type": "object"
+    },
+    "assets": {
+      "type": "array"
+    }
+  }
+}

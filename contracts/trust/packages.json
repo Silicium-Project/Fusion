@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "channels": {
+    "dev": {
+      "apt": {
+        "fingerprint": "DDA6BB8A4020E15D7E86D05DE2C241EAB1ED18C4",
+        "file": "contracts/trust/apt-dev.asc",
+        "sha256": "0b52baab1a1baa0482cf7194692c65b366ef749ec2b6e6bad89608d09875911f",
+        "source": "https://10.77.0.1:8443/downloads/apt/silicium-packages.asc"
+      },
+      "rpm": {
+        "fingerprint": "B02E44CAD82A4CE25DD0EEC3062B6305BFAD74AC",
+        "file": "contracts/trust/rpm-dev.asc",
+        "sha256": "94fe984e803c38e6bfa124e70d747f0775d2609c8e5167e320bc7068609a3999",
+        "source": "https://10.77.0.1:8443/downloads/rpm/silicium-rpm-signing.asc"
+      }
+    },
+    "prod": {
+      "apt": {
+        "fingerprint": "8A6A1AA15BA1F399541B0A0D3989B1AF72599F22",
+        "file": "contracts/trust/apt-prod.asc",
+        "sha256": "f59165cd1ff851f6ca5643d826c86ba86891fefc7184aae4be6ace016ff2bd56",
+        "source": "https://vps-910c1dbc.vps.ovh.net/downloads/apt/silicium-packages.asc"
+      },
+      "rpm": {
+        "fingerprint": "D8B58C020594A2B87D767A522AD482B51CAA3F96",
+        "file": "contracts/trust/rpm-prod.asc",
+        "sha256": "e49c305e98207b9775ab1a5f6e6938370749ea4fccbfc2aa5370780f166fcd95",
+        "source": "https://vps-910c1dbc.vps.ovh.net/downloads/rpm/silicium-rpm-signing.asc"
+      }
+    }
+  }
+}

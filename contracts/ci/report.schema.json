@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://silicium.network/contracts/ci/report/v1",
+  "title": "Silicium report v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "suite",
+    "source_sha",
+    "policy_digest",
+    "status",
+    "steps"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "source_sha": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "policy_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "suite": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "running",
+        "success",
+        "failure",
+        "cancelled",
+        "skipped",
+        "timed_out"
+      ]
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "command",
+          "kind",
+          "exit_code"
+        ],
+        "properties": {
+          "command": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "kind": {
+            "enum": [
+              "check",
+              "build",
+              "test"
+            ]
+          },
+          "exit_code": {
+            "type": "integer"
+          },
+          "tests_executed": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          }
+        }
+      }
+    }
+  }
+}

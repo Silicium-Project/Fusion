@@ -1,21 +1,22 @@
-# Documentation — Fusion
+# Documentation Silicium
 
-Documentation transverse au projet. Chaque composant a aussi sa propre
-documentation : `Network/docs/`, `deploy/README.md`,
-`apps/silicium-node/README.md`, et les README de `BackEnd/` et `FrontEnd/`.
+- [Normes et qualité](development/quality.md)
+- [Développement et commandes](development/commands.md)
+- [Procédures pour les agents IA](ai/README.md)
+- [Utilisation des parcours produit](ai/product-usage.md)
+- [Architecture du monorepo](architecture/monorepo.md)
+- [CI, publication et déploiement](operations/delivery.md)
+- [État de la refonte et conditions d'activation](operations/refactor-status.md)
+- [Instructions communes](../AGENTS.md)
+- [Contrats](../contracts/README.md)
 
-| Dossier | Contenu |
-| --- | --- |
-| [`architecture/`](architecture/) | Comment les composants s'assemblent |
-| [`operations/`](operations/) | CI/CD, canaux de release, synchronisation des sous-modules |
-| [`development/`](development/) | Environnement local, conventions |
-| [`archive/`](archive/) | Documents datés, conservés pour l'historique |
+Les documents de `archive/` conservent l'historique de l'ancienne composition
+par sous-modules. Leurs commandes ne sont pas les procédures actuelles.
 
-## Index
+- [Workflow des issues](development/issue-workflow.md)
+- [Roadmap active](roadmap/README.md)
 
-- [architecture/overview.md](architecture/overview.md) — composants, flux, où vit chaque chose
-- [operations/ci-cd-topology.md](operations/ci-cd-topology.md) — workflows GitHub et runners
-- [operations/releases-and-submodules.md](operations/releases-and-submodules.md) — canaux `dev` / `prod`, composition des sous-modules
-- [development/local-setup.md](development/local-setup.md) — installer et lancer tout le projet en local
-- [../CONTRIBUTING.md](../CONTRIBUTING.md) — contribuer
-- [archive/repo-attack-plan-and-triage-2026-09-08.md](archive/repo-attack-plan-and-triage-2026-09-08.md) — plan figé du 08/09/2026 (remplacé par la migration Rust)
+## Dépôts séparés
+
+- [Workbench et composants](architecture/multi-repo.md)
+- [CI privée, activation et limites](operations/multi-repo-ci.md)

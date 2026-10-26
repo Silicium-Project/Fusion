@@ -7,6 +7,12 @@ projects:
 body:
 - type: markdown
   attributes:
+    value: >-
+      Les décisions HOLD et documents internes restent dans le dépôt privé
+      planning-private. Ne publiez ici que des arbitrages destinés à la roadmap
+      publique.
+- type: markdown
+  attributes:
     value: Consultez les issues existantes et le Project commun. Ne publiez aucune clé, jeton, donnée
       personnelle ou contenu confidentiel. Une demande est à qualifier avant tout engagement.
 - type: textarea

@@ -1,0 +1,62 @@
+{
+  "Network": {
+    "source_dev": "e2eb8f109d910b2dc30a5cc260bf5055d8c501ab",
+    "reconciled_head": "e2eb8f109d910b2dc30a5cc260bf5055d8c501ab",
+    "source_main": "03607d2e7b4842e2c4c48b8e0a6501437488a81f",
+    "destination": "network"
+  },
+  "BackEnd": {
+    "source_dev": "35387e8374fe2919bbe424b8e720467dcc211a10",
+    "reconciled_head": "c28aeb99ca3810729c26c67d15d5aaaa4ccc05a2",
+    "source_main": "46fabfe956ca721d25565491a3e0f9bbd9509a8d",
+    "destination": "apps/api"
+  },
+  "FrontEnd": {
+    "source_dev": "238de77dc85103d4901b4dce3b65f459860a40b2",
+    "reconciled_head": "6723fcdc3ee7ea63938563f852fc5804d469aa0c",
+    "source_main": "69fffec62ee8ca87d9142489a01aa24bb7eb8e13",
+    "destination": "apps/web"
+  },
+  "additional_source_commits": [
+    {
+      "repository": "BackEnd",
+      "source_sha": "8e0b6dfe59fbd1c01d38e7f7b7f1fff0379d6450",
+      "reason": "Committed work present in the original detached checkout; imported after the canonical dev/main merge",
+      "path": "apps/api"
+    }
+  ],
+  "local_work_disposition": [
+    {
+      "original": "apps/silicium-node/src-tauri/src/{runtime,tests}.rs",
+      "commit": "5d8f7a8b",
+      "destination": "apps/node/src-tauri/src",
+      "action": "ported separately; original dirty checkout preserved"
+    },
+    {
+      "original": "BackEnd detached HEAD 8e0b6df",
+      "commit": "60f9a47f",
+      "destination": "apps/api",
+      "action": "history-preserving merge and escrow fix imported"
+    },
+    {
+      "original": "deploy/env/*.example.env and DEV_MINIWORKERS.md",
+      "commit": "58becf44",
+      "destination": "infra",
+      "action": "ported separately"
+    },
+    {
+      "original": "deploy/compose/docker-compose.yml program ID correction",
+      "destination": "infra/compose/docker-compose.yml",
+      "action": "superseded by explicit mandatory configured program ID; no hardcoded old ID"
+    },
+    {
+      "original": "deploy/compose/deploy.sh gateway persistence",
+      "destination": "infra/delivery",
+      "action": "legacy build/deploy script retired; preserve resolved gateway in the protected Compose configuration during VPS adoption"
+    },
+    {
+      "original": "docs/operations remediation reports and Network/tools/dev/solana-sil-pool",
+      "action": "preserved in private backup and separate private planning PR; no generated node_modules imported"
+    }
+  ]
+}

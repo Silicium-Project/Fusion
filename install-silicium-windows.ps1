@@ -10,41 +10,6 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-function Ensure-Submodules {
-    $gitmodules = Join-Path $Root ".gitmodules"
-    $requiredPaths = @(
-        (Join-Path $Root "Network"),
-        (Join-Path $Root "BackEnd"),
-        (Join-Path $Root "FrontEnd")
-    )
-
-    if (-not (Test-Path -LiteralPath $gitmodules -PathType Leaf)) {
-        return
-    }
-
-    $missing = @()
-    foreach ($path in $requiredPaths) {
-        if (-not (Test-Path -LiteralPath $path -PathType Container)) {
-            $missing += $path
-        }
-    }
-
-    if ($missing.Count -eq 0) {
-        return
-    }
-
-    if (-not (Test-Command "git")) {
-        throw "git is required to initialize Fusion submodules. Run git submodule update --init --recursive manually."
-    }
-
-    Write-Step "Initializing Git submodules"
-    Push-Location $Root
-    try {
-        git submodule update --init --recursive
-    } finally {
-        Pop-Location
-    }
-}
 
 function Write-Step($Message) {
     Write-Host ""
@@ -146,10 +111,10 @@ function Find-RaytracerBinary {
         $candidates += $env:SILICIUM_RAYTRACER_BIN
     }
     $candidates += @(
-        (Join-Path $Root "Network\bin\raytracer\silicium-raytracer.exe"),
-        (Join-Path $Root "Network\target\release\silicium-raytracer.exe"),
-        (Join-Path $Root "Network\bin\raytracer\raytracer.exe"),
-        (Join-Path $Root "Network\bin\raytracer\raytracer"),
+        (Join-Path $Root "network\bin\raytracer\silicium-raytracer.exe"),
+        (Join-Path $Root "network\target\release\silicium-raytracer.exe"),
+        (Join-Path $Root "network\bin\raytracer\raytracer.exe"),
+        (Join-Path $Root "network\bin\raytracer\raytracer"),
         (Join-Path $Root "raytracer.exe"),
         (Join-Path $Root "raytracer")
     )
@@ -280,7 +245,6 @@ Ensure-Tool "go" "GoLang.Go" "Go" | Out-Null
 Ensure-Tool "rustup" "Rustlang.Rustup" "Rustup/Rust" | Out-Null
 Ensure-Tool "cargo" "" "Cargo" -Optional | Out-Null
 
-Ensure-Submodules
 
 if (-not $SkipDockerCheck) {
     Ensure-Tool "docker" "Docker.DockerDesktop" "Docker Desktop" -Optional | Out-Null
@@ -304,9 +268,9 @@ Show-Version "go" @("version")
 Show-Version "solana" @("--version")
 
 Write-Step "Installing JavaScript dependencies"
-Invoke-NpmInstall (Join-Path $Root "Network\solana-layer") "Solana layer scripts"
-Invoke-NpmInstall (Join-Path $Root "FrontEnd") "FrontEnd"
-Invoke-NpmInstall (Join-Path $Root "apps\silicium-node") "Silicium Node desktop app"
+Invoke-NpmInstall (Join-Path $Root "chain\solana") "Solana layer scripts"
+Invoke-NpmInstall (Join-Path $Root "apps/web") "apps/web"
+Invoke-NpmInstall (Join-Path $Root "apps\node") "Silicium Node desktop app"
 
 Write-Step "Configuring raytracer workload runtime"
 $detectedRaytracerBin = Find-RaytracerBinary $RaytracerBin
@@ -317,7 +281,7 @@ if ($detectedRaytracerBin) {
     Write-RaytracerEnv $installedRaytracerBin (Join-Path (Split-Path -Parent $installedRaytracerBin) "assets")
 } else {
     Write-Warning "Raytracer executable not found. Raytracer jobs need a packaged binary."
-    Write-Warning "Build it with: cargo build --release --manifest-path Network\crates\raytracer\Cargo.toml"
+    Write-Warning "Build it with: cargo build --release --manifest-path network\crates\raytracer\Cargo.toml"
     Write-Warning "Or run once: .\install-silicium-windows.cmd -RaytracerBin C:\path\to\raytracer.exe"
 }
 

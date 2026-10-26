@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "public_key_base64": "px9didtoGftLilUX8iA1Yoj4PjNiCvZD47GK6/fdzX8=",
+  "key_id": "f8d1c0149d9fcc171a39f96e5b9965a235500b7fe20cd2348912d38ca91e6d4c",
+  "source": "apps/node/src-tauri/src/config.rs",
+  "rotation_policy": "explicit migration; never trust a replacement key from an unsigned endpoint"
+}

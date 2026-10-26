@@ -1,0 +1,12 @@
+{
+  "name": "silicium-workbench",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/dev/*.test.mjs",
+    "check": "node tools/dev.mjs check --changed"
+  },
+  "engines": {
+    "node": ">=22.23.4 <25"
+  }
+}

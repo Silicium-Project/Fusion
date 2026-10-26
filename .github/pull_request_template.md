@@ -1,6 +1,6 @@
 ## Issue et périmètre
 
-Refs https://github.com/Silicium-Project/Fusion/issues/NUMERO
+Refs: https://github.com/Silicium-Project/Workbench/issues/NUMERO
 
 <!-- Une modification cohérente ; liens complets entre dépôts. Utiliser Refs tant que la fusion ne suffit pas à accepter le résultat. -->
 
@@ -34,5 +34,5 @@ Refs https://github.com/Silicium-Project/Fusion/issues/NUMERO
 - [ ] Aucune donnée secrète dans le diff ou les preuves.
 - [ ] Après fusion : passage en Validation ; clôture de l'issue après preuves d'acceptation.
 
-Workflow commun : https://github.com/Silicium-Project/Fusion/issues/208
+Workflow commun : https://github.com/Silicium-Project/Workbench/issues/208
 Project : https://github.com/orgs/Silicium-Project/projects/12
