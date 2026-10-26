@@ -37,8 +37,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: project-automation
-    if: ${{ !github.event.repository.private && vars.SILICIUM_PROJECT_AUTOMATION_ENABLED == '1' && (github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name
-      == github.repository) }}
+    if: ${{ !github.event.repository.private && vars.SILICIUM_PROJECT_AUTOMATION_ENABLED == '1' && (github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) }}
     steps:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       with:
@@ -55,6 +54,10 @@ jobs:
         private-key: ${{ secrets.PROJECT_APP_PRIVATE_KEY }}
         owner: Silicium-Project
         repositories: Workbench,planning-private
+        permission-checks: read
+        permission-issues: read
+        permission-organization-projects: write
+        permission-pull-requests: read
     - name: Reconcile trusted metadata
       env:
         GH_TOKEN: ${{ steps.token.outputs.token }}

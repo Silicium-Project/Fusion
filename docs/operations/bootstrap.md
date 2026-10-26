@@ -155,10 +155,11 @@ Le manifeste est `tools/config/project-app-manifest.json`. L'App doit avoir
 uniquement les permissions de lecture nécessaires aux preuves, la gestion des
 issues et des Projects. Aucun secret de livraison et aucun droit d'écriture du
 code ne lui sont attribués. Pour mesurer le budget global, l'installation doit
-viser **tous les dépôts** de l'organisation. Les jetons de synchronisation du
-Project sont ensuite limités à Fusion et planning-private. Le jeton budget
-demande seulement `actions: read` ; un JWT de courte durée vérifie que
-l'installation couvre bien toute l'organisation, sans être enregistré.
+viser **tous les dépôts** de l'organisation. Le jeton `Project sync` est ensuite
+limité à `Workbench` et `planning-private`, avec `checks: read`, `issues: read`,
+`pull_requests: read` et `organization_projects: write`. Le jeton budget demande
+seulement `actions: read` ; un JWT de courte durée vérifie que l'installation
+couvre bien toute l'organisation, sans être enregistré.
 
 La création d'une App requiert la session GitHub d'un propriétaire : le jeton
 CLI ne permet pas de la créer via REST. Placer `PROJECT_APP_CLIENT_ID` et
@@ -167,11 +168,18 @@ sans `--apply` avant de définir `SILICIUM_PROJECT_AUTOMATION_ENABLED=1`.
 
 L'App `Silicium Project Automation` est créée et installée depuis le 25 octobre
 2026. Les deux secrets sont provisionnés dans cet environnement. La
-réconciliation locale a été qualifiée avec un jeton temporaire limité à
-Fusion/planning-private et à la lecture, puis révoqué : 134 issues observées,
-aucune écriture. L'observateur de stockage a aussi été vérifié avec un jeton
-Actions/metadata en lecture sur les huit dépôts. L'activation du workflow reste
-conditionnée à son intégration revue dans `main`.
+réconciliation locale a été qualifiée en lecture seule : 134 éléments observés,
+aucune écriture. Le workflow est dans `main`, mais
+`SILICIUM_PROJECT_AUTOMATION_ENABLED` reste à `0`. Le dry-run du 26 octobre 2026
+prévoit six transitions d'état et 132 mises à jour du champ `Blocage`; la validation de la
+politique d'acceptation et de la confidentialité des logs est en cours avant
+toute application. Les exécutions `--apply` journalisent des compteurs
+agrégés, même en cas d'erreur ; les détails par issue et les messages d'API sont
+masqués dans les logs publics, car les champs du Project 12 restent privés.
+
+L'observateur de stockage a aussi été vérifié avec un jeton Actions/metadata en
+lecture sur les huit dépôts. L'activation du workflow reste conditionnée à une
+PR qualifiée et à une première réconciliation contrôlée.
 
 L'authentification de l'App pour vérifier son installation utilise un JWT
 envoyé avec `Authorization: Bearer`, directement en mémoire. Un HTTP 401 ou une
@@ -179,15 +187,16 @@ réponse invalide bloque la mesure ; aucun corps de réponse ni jeton n'entre
 dans les diagnostics. Le jeton d'installation utilisé pour lire les artefacts
 est distinct du JWT et ne reçoit que les permissions Actions nécessaires.
 
-Retirer seulement ensuite les anciens workflows natifs qui clôturent ou
-déplacent une issue sur une fusion. Conserver l'ajout automatique et les
-relations parent/enfant. Tester une réconciliation et un événement dupliqué.
+Ne retirer les anciens workflows natifs qui clôturent ou déplacent une issue
+sur une fusion qu'après qualification de la nouvelle réconciliation. Conserver
+l'ajout automatique et les relations parent/enfant. Tester une réconciliation
+et un événement dupliqué.
 
 ## Budget et preuves
 
 Conserver les limites de dépenses GitHub à zéro. Le contrôle de budget doit
 avoir une vue Actions en lecture sur tous les dépôts de l'organisation ; un
-jeton limité à Fusion ne prouve pas l'usage global. Le plafond cible des
+jeton limité à Workbench ne prouve pas l'usage global. Le plafond cible des
 artefacts temporaires est de 400 Mio. Un défaut de mesure ou de quota reste
 bloquant. Aucun runner VPS ne sert de solution de secours.
 

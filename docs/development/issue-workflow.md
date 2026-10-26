@@ -52,7 +52,11 @@ décision humaine d'acceptation des issues ne sont pas supprimées.
 
 Après fusion, l'issue reste en `Validation`. Ni un ancien événement CI, ni une
 fusion ne suffisent à la déclarer terminée. La réconciliation consulte les
-preuves actuelles ; les événements répétés ne créent pas de doublon.
+preuves actuelles ; les événements répétés ne créent pas de doublon. Le champ
+`Blocage` résume les dépendances, sous-tâches, contrôles, revue ou preuve
+manquante et contient les liens GitHub utiles. Une issue fermée sans preuve
+d'acceptation vérifiée reste en `Validation`, même si GitHub la marque comme
+terminée.
 
 ## Accepter
 
@@ -82,6 +86,10 @@ HOLD exigent un arbitrage individuel dans l'espace privé.
 
 ## Activation de l'automatisation
 
-Les champs sont créés. Le moteur et le workflow de réconciliation sont fournis.
-Leur exécution reste désactivée avant la création/installation de l'App dédiée
-et la qualification de ses droits. Voir [l'activation](../operations/bootstrap.md).
+Les champs, le moteur et le workflow de réconciliation sont fournis. L'App
+dédiée est installée, mais `SILICIUM_PROJECT_AUTOMATION_ENABLED` reste à `0`
+jusqu'à la fusion de la correction de confidentialité et à une première
+réconciliation contrôlée. Les journaux de Workbench, public, ne contiennent que
+des compteurs agrégés lors d'une écriture ou d'un échec ; les diagnostics par
+issue et les détails d'API restent masqués. Le Project 12 reste privé. Voir
+[l'activation](../operations/bootstrap.md).

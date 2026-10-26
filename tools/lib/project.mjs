@@ -8,11 +8,13 @@ export function nextStatus(item) {
   if (item.abandoned) return 'Abandonné';
   if (
     item.acceptance?.verified &&
+    item.dependencies_complete &&
     item.children_complete &&
     item.required_prs_complete &&
     item.target_verified
   )
     return 'Terminé';
+  if (item.closedCompleted) return 'Validation';
   if (item.merged) return 'Validation';
   if (item.pull_requests?.length) {
     const current = item.pull_requests.filter((x) => !x.superseded && !x.closed);
@@ -34,6 +36,73 @@ export function nextStatus(item) {
     return 'Prêt';
   if (item.status && ['Backlog', 'Prêt'].includes(item.status)) return 'Backlog';
   return 'À qualifier';
+}
+export function projectBlockage(item, issueUrl, next) {
+  const blockers = [];
+  const linkList = (items, fallback) => {
+    const urls = items.map((x) => x.url).filter(Boolean);
+    const shown = urls.slice(0, 2);
+    const remaining = urls.length - shown.length;
+    return `${shown.length ? shown.join(', ') : fallback}${remaining > 0 ? ` (+${remaining})` : ''}`;
+  };
+  if (!item.dependencies_complete)
+    blockers.push(
+      `Dépendances non acceptées: ${linkList(
+        item.dependencies.filter((x) => !x.accepted),
+        issueUrl,
+      )}`,
+    );
+  if (!item.children_complete)
+    blockers.push(
+      `Sous-tâches non acceptées: ${linkList(
+        item.children.filter((x) => !x.accepted),
+        issueUrl,
+      )}`,
+    );
+  const failing = (item.pull_requests ?? []).filter(
+    (x) => !x.merged && (x.ci !== 'success' || x.changes_requested),
+  );
+  if (failing.length)
+    blockers.push(
+      `CI ou revue en attente: ${linkList(
+        failing.map((x) => ({ url: x.check_url || x.url })),
+        issueUrl,
+      )}`,
+    );
+  if ((next === 'Validation' || item.closedCompleted) && !item.required_prs_complete) {
+    const unmerged = (item.linked_pull_requests ?? []).filter((x) => !x.merged);
+    blockers.push(
+      `${unmerged.length ? 'PR non fusionnées' : 'Aucune PR liée'}: ${linkList(unmerged, issueUrl)}`,
+    );
+  }
+  const closedUnmerged = (item.linked_pull_requests ?? []).filter((x) => x.closed && !x.merged);
+  if (closedUnmerged.length)
+    blockers.push(`PR fermées sans fusion à arbitrer: ${linkList(closedUnmerged, issueUrl)}`);
+  if (item.closedCompleted && !item.acceptance?.verified)
+    blockers.push(`Clôture sans preuve d’acceptation vérifiée: ${issueUrl}`);
+  else if ((item.merged || next === 'Validation') && !item.acceptance?.verified)
+    blockers.push(
+      `Validation de la cible ${item.validation_target || 'non définie'} en attente: ${issueUrl}`,
+    );
+  if (next === 'Revue') {
+    const reviewable = (item.pull_requests ?? []).filter(
+      (pullRequest) => !pullRequest.draft && pullRequest.ci === 'success',
+    );
+    blockers.push(`Revue humaine en attente: ${linkList(reviewable, issueUrl)}`);
+  }
+  if (next === 'En cours' && !(item.pull_requests ?? []).some((pullRequest) => !pullRequest.closed))
+    blockers.push(`Travail en cours sans PR active: ${issueUrl}`);
+  if (['Backlog', 'À qualifier'].includes(next)) {
+    const missing = [];
+    if (item.preparation !== 'Validée') missing.push('préparation');
+    if (!['Documentation', 'CI', 'Dev', 'Prod'].includes(item.validation_target))
+      missing.push('cible');
+    if (!item.owner) missing.push('responsable');
+    if (!item.size) missing.push('taille');
+    if (missing.length)
+      blockers.push(`Préparation incomplète (${missing.join(', ')}): ${issueUrl}`);
+  }
+  return blockers.join(' · ');
 }
 export function dependencyAccepted(child, itemsById) {
   const item = itemsById.get(child.id);
@@ -125,6 +194,7 @@ export function projectState() {
                     }
                     nodes {
                       id
+                      url
                       state
                       stateReason
                     }
@@ -135,6 +205,7 @@ export function projectState() {
                     }
                     nodes {
                       id
+                      url
                       state
                       stateReason
                     }
@@ -207,6 +278,7 @@ export function projectState() {
                         }
                         nodes {
                           id
+                          url
                           state
                           stateReason
                         }
@@ -217,6 +289,7 @@ export function projectState() {
                         }
                         nodes {
                           id
+                          url
                           state
                           stateReason
                         }
@@ -245,6 +318,34 @@ export function fieldValues(item) {
   return Object.fromEntries(
     item.fieldValues.nodes.filter((x) => x.field).map((x) => [x.field.name, x.name ?? x.text]),
   );
+}
+export function projectSyncOutput({ apply, items, statusUpdates = 0, blockageUpdates = 0 }) {
+  if (!apply) return { schema_version: 1, apply, items };
+  return {
+    schema_version: 1,
+    apply,
+    processed_items: items.length,
+    status_updates: statusUpdates,
+    blockage_updates: blockageUpdates,
+  };
+}
+export function projectSyncFailureOutput({
+  error,
+  processedItems,
+  statusUpdates,
+  blockageUpdates,
+}) {
+  const failureCode = Number.isInteger(error?.exitCode) ? error.exitCode : 1;
+  return {
+    schema_version: 1,
+    apply: true,
+    status: 'failed',
+    failure_kind: failureCode === 4 ? 'rate_limit' : 'reconciliation',
+    processed_items: processedItems,
+    status_updates: statusUpdates,
+    blockage_updates: blockageUpdates,
+    diagnostics: 'Per-item diagnostics are suppressed in public workflow logs.',
+  };
 }
 export function setField(project, itemId, fieldName, value) {
   const field = project.fields.nodes.find((x) => x.name === fieldName);
