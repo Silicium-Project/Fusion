@@ -37,8 +37,8 @@ une qualification CI ne valent acceptation ou déploiement.
 |---|---|---|
 | L0 | Références Git et GitHub, sauvegardes des historiques, patchs et fichiers locaux, inventaire des CI et runners | Conserver l'inventaire privé comme référence de restauration ; actualiser les nouvelles preuves |
 | L1 | Audit d'exposition actualisé, ouverture et publication des visuels validées, HOLD isolés, contribution et consignes IA | Conserver les rapports privés et contrôler les nouveaux contenus |
-| L2 | Ascendance historique réparée par #319 et qualification `push main` prouvée pour `90bec…` ; retour à des dépôts composants indépendants décidé et documenté dans l'ADR | Réaliser la séparation des composants privés, fixer les pins/gitlinks et réconcilier les PR de migration monorepo avec cette décision ; qualifier l'intégration privée avant livraison |
-| L3 | Workbench public, runners CI VPS retirés, règles de contribution et mode mainteneur unique définis | Confirmer les règles d'accès/environnements sur les composants privés et ne pas confondre le gate public avec leur qualification |
+| L2 | #319 a rétabli l'ascendance ; cinq dépôts composants privés existent et Workbench les référence par gitlinks/locks ; vérification locale matérialisée réussie | Les pins actuels sont les têtes des cinq PR d'export, pas des ancêtres des `main` natifs. Qualifier et intégrer ces PR, puis repinner les commits acceptés. Déplacer aussi le runtime IA desktop encore présent comme dossier public ordinaire |
+| L3 | Workbench public, runners CI VPS retirés, règles de contribution et mode mainteneur unique définis | Confirmer les protections et environnements privés ; le gate public ne qualifie pas les composants privés |
 | L4 | `dev`/`dev.ps1`, registre, routage, contrôle final, normes, diagnostics et métriques | Résultat GitHub complet du commit évalué et parcours Windows/Anchor ; voir les checks de la PR |
 | L5 | Construction sur GitHub, manifeste, signatures et snapshots, tests d'installation, application et rollback API/web | Provisionner les signatures/SSH, qualifier installations et mises à niveau, adopter le VPS et démontrer le rollback ; drainage/canari runtime toujours bloquants |
 | L6 | Champs du Project, App installée et accès protégés provisionnés, réconciliation qualifiée en lecture, acceptation avec preuves et procédures IA | Intégrer le workflow revu, qualifier son exécution GitHub puis activer la synchronisation et retirer les automatismes natifs remplacés |
@@ -79,6 +79,22 @@ a réussi sur le SHA exact `90bec77675ca7a67c7202126386ef5dd9033b761` ;
 blocage d'ascendance et de qualification `push` décrit dans le rapport initial
 est levé pour ce SHA. Les validations privées et la livraison restent distinctes.
 
+Le contrôle `dev workspace verify --materialized --json` réussit sur le checkout
+de référence : les cinq gitlinks correspondent aux SHA de `components.lock.json`
+et les cinq sources sont matérialisées. L'API GitHub confirme que BackEnd,
+FrontEnd, DesktopApp, Network et Solana sont privés. À la date de ce relevé, les
+SHA verrouillés correspondent aux têtes des PR natives d'export ; aucun n'est
+encore ancêtre du `main` natif. Les PR doivent être qualifiées et intégrées avant
+que les pins représentent des versions acceptées.
+
+Le tree public observé contient aussi `apps/silicium-ai-runtime` comme dossier
+ordinaire : le code Tauri du composant DesktopApp le charge par chemins relatifs.
+La PR native DesktopApp a été actualisée pour intégrer ce paquet dans le dépôt
+privé et corriger les chemins ; le gitlink Workbench reste à l'ancien SHA tant
+qu'une PR d'intégration distincte ne l'a pas repinné et retiré du tree courant.
+Le snapshot et son historique antérieur restent publics, selon la décision
+explicite du propriétaire ; cette migration ne réécrit aucun commit.
+
 Le run a exécuté notamment 151 tests Go, 112 unités web et 56 scénarios
 navigateur, 34 unités natives Linux, 323 tests runtime et 69 tests WASM. Les
 trois scénarios P2P existants et 22 tests Python réseau ont passé. Ces scénarios
@@ -102,10 +118,8 @@ unitaires de scripts ne remplacent pas ces preuves.
 
 ## Activation restante, dans l'ordre
 
-1. Réconcilier les PR de migration encore ouvertes avec la décision multi-dépôts :
-   les sources applicatives doivent rester dans leurs dépôts privés ; Workbench
-   porte la composition, la politique commune et les procédures. Rattacher les
-   composants par leurs pins Git documentés et conserver les références d'origine.
+1. Repinner DesktopApp sur le commit qui contient son runtime IA privé et retirer
+   `apps/silicium-ai-runtime` du tree Workbench courant, sans purger son historique.
 2. Garder les qualifications privées suspendues tant que quota et budget strict
    à zéro ne permettent pas une preuve sans dépassement. Les jobs différés restent
    bloquants pour toute livraison.
