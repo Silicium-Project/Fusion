@@ -24,23 +24,28 @@ Aucune exécution CI `push` n'a été créée pour `e0183e8b` lors du constat.
 Les indicateurs de livraison, de synchronisation Project et de diagnostic
 restent à zéro ; cette fusion n'a déclenché aucun déploiement.
 
-## Réparation préparée
+## Réparation intégrée
 
 La branche `lf-fix-210-restore-import-history` part de `e0183e8b` et contient
 une fusion normale de `24c7590c`, sans squash ni rebase. Son commit de
-rattachement est `ed5983d8` : ses deux parents sont le squash déjà intégré et
-la révision qualifiée. Son arbre reste exactement celui du squash.
+rattachement est `ed5983d827c26b66f47f20f36ac21a3e37122617` : ses deux parents
+sont le squash déjà intégré et la révision qualifiée. Son arbre reste
+exactement celui du squash. La [PR #319](https://github.com/Silicium-Project/Workbench/pull/319)
+a intégré ce commit par merge commit `ff14db3c666eb9f355f59bfa908a48f0e7a44e6c`
+le 25 octobre 2026.
 
 Les changements suivants documentent l'incident et sa reprise. Aucun commit
-existant de `main` n'est réécrit. La fusion de cette branche doit conserver son
-ascendance ; un nouveau squash annulerait le but de la réparation.
+existant de `main` n'est réécrit. Le merge commit a conservé l'ascendance ; un
+nouveau squash de cette réparation aurait annulé son objectif.
 
 Pour empêcher cette répétition, les options squash et rebase du dépôt ont été
-désactivées temporairement. La fusion normale reste disponible. Les autres
-protections de branche et les protections de production sont conservées.
-Leurs réglages précédents sont sauvegardés dans le même espace privé.
+désactivées. Au 26 octobre 2026, l'API GitHub confirme `allow_merge_commit=true`,
+`allow_squash_merge=false` et `allow_rebase_merge=false`. La fusion normale
+reste disponible. Les autres protections de branche et les protections de
+production sont conservées. Leurs réglages précédents sont sauvegardés dans le
+même espace privé.
 
-## Vérification et qualification
+## Vérification initiale
 
 Depuis un checkout à jour de la branche de réparation :
 
@@ -60,21 +65,38 @@ Le plan de cette correction documentaire exige les quatre suites `docs`,
 la révision qualifiée ; ces quatre suites ne sont pas une nouvelle
 qualification complète des applications.
 
-Après décision humaine de fusion avec **Merge commit** :
+## Qualification après intégration
 
-1. Actualiser `origin/main` et refaire les vérifications d'ascendance sur cette
-   référence. Ne supprimer aucune source de provenance avant ce contrôle.
-2. Vérifier la qualification `push` du SHA exact de `main`. Les anciennes
-   directives présentes dans les commits importés peuvent encore perturber le
-   déclenchement ; une absence de run ne vaut jamais une réussite.
-3. Si aucun run n'est créé, soumettre une petite PR suivante avec un message
-   propre pour déclencher un nouveau push une fois les historiques rattachés.
-   Une exécution manuelle peut servir au diagnostic ; elle ne remplace pas la
-   preuve `push main` exigée pour la livraison et l'acceptation.
-4. Conserver les livraisons désactivées jusqu'aux qualifications et accès décrits
+Le contrôle a été exécuté sur `origin/main` au SHA
+`90bec77675ca7a67c7202126386ef5dd9033b761` :
+
+```sh
+git merge-base --is-ancestor ed5983d827c26b66f47f20f36ac21a3e37122617 origin/main
+git merge-base --is-ancestor 873ed2f2156abddb6d633e42ce615eed967d43a2 origin/main
+gh run view 40359090517 --repo Silicium-Project/Workbench
+```
+
+Les deux tests d'ascendance réussissent. Le run
+[40359090517](https://github.com/Silicium-Project/Workbench/actions/runs/40359090517)
+est un événement `push` sur `main`, sur le SHA exact ci-dessus, avec conclusion
+`success` pour le run et `ci/required`. Le job `validate` est `skipped` : ce
+workflow qualifie le scope public et ne récupère pas les sources privées.
+Cette preuve lève le blocage d'ascendance et de `push main` pour ce SHA ; elle
+ne vaut pas qualification privée des applications, acceptation des issues ou
+autorisation de livraison.
+
+Pour toute nouvelle révision de `main`, réactualiser les références et répéter
+les tests d'ascendance et la vérification du run `push` sur le SHA précis. Une
+absence de run ne vaut jamais une réussite.
+
+## Procédure historique de fusion
+
+La fusion humaine a été réalisée avec **Merge commit** :
+
+1. Conserver les livraisons désactivées jusqu'aux qualifications et accès décrits
    dans [le bootstrap](bootstrap.md). Les données du VPS restent en place.
-5. Réexaminer les modes de fusion après la réparation et sa qualification ; ne
-   pas réactiver automatiquement le squash pendant les imports d'historiques.
+2. Réexaminer les modes de fusion après la fin de la migration des historiques ;
+   ne pas réactiver automatiquement squash ou rebase.
 
 Cette procédure ne vaut ni acceptation des issues de migration, ni validation
 du drainage des workers, des signatures ou des installations APT/DNF/Windows.
