@@ -93,3 +93,8 @@ réconciliation contrôlée. Les journaux de Workbench, public, ne contiennent q
 des compteurs agrégés lors d'une écriture ou d'un échec ; les diagnostics par
 issue et les détails d'API restent masqués. Le Project 12 reste privé. Voir
 [l'activation](../operations/bootstrap.md).
+
+Les lectures REST et les requêtes GraphQL réessaient au plus deux fois après
+une erreur réseau transitoire identifiée, avec une attente bornée. Les mutations
+ne sont jamais rejouées automatiquement ; les réponses de limitation GitHub
+restent visibles et attendent une exécution ultérieure.
