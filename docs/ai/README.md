@@ -66,6 +66,12 @@ ni repli sur un runner VPS n'est autorisé.
 `dev ci metrics --limit 20 --json` donne les distributions et le nombre
 d'observations. Vérifier le SHA des runs avant de comparer ; ne pas présenter
 une absence de rapport ou un cache désactivé comme un gain de performance.
+Lire séparément `workflow_start_wait` (création du run jusqu'au démarrage du
+workflow) et `job_queue_and_matrix_wait` (création du job jusqu'à sa première
+étape). Si le premier est élevé et le second bas, l'attente précède les jobs ;
+les métadonnées seules ne prouvent pas sa cause. Pour les artefacts, ne présenter
+`bytes` comme total que si `complete` vaut `true` ; sinon `bytes_observed` n'est
+qu'un sous-total.
 
 Pour un service : préparer `dev ops diagnose --environment dev --json`, puis
 utiliser `--apply` si l'automatisation est configurée et autorisée. Lire
