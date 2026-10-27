@@ -53,10 +53,15 @@ décision humaine d'acceptation des issues ne sont pas supprimées.
 Après fusion, l'issue reste en `Validation`. Ni un ancien événement CI, ni une
 fusion ne suffisent à la déclarer terminée. La réconciliation consulte les
 preuves actuelles ; les événements répétés ne créent pas de doublon. Le champ
-`Blocage` résume les dépendances, sous-tâches, contrôles, revue ou preuve
-manquante et contient les liens GitHub utiles. Une issue fermée sans preuve
-d'acceptation vérifiée reste en `Validation`, même si GitHub la marque comme
-terminée.
+`Blocage` conserve les motifs saisis par un mainteneur et les distingue des
+résumés de synchronisation marqués `[auto]`. La réconciliation recalcule et
+remplace uniquement ses propres résumés ; elle n'efface jamais un motif manuel
+tel qu'un quota épuisé ou un accès externe manquant. Les résumés automatiques
+pointent vers les dépendances, sous-tâches, contrôles, revues ou preuves
+manquantes. Les trois messages simples produits par l'ancien synchroniseur sont
+retirés lors de la migration. Le préfixe `[auto]` est réservé aux messages
+générés. Une issue fermée sans preuve d'acceptation vérifiée reste en
+`Validation`, même si GitHub la marque comme terminée.
 
 ## Accepter
 

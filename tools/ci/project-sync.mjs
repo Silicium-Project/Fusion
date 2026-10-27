@@ -104,7 +104,7 @@ try {
       abandoned: issue.state === 'CLOSED' && issue.stateReason === 'NOT_PLANNED',
     };
     const next = nextStatus(model);
-    const block = projectBlockage(model, issue.url, next);
+    const block = projectBlockage({ ...model, manual_blockage: f.Blocage }, issue.url, next);
     if (apply && next !== f.Status) {
       setField(project, item.id, 'Status', next);
       statusUpdates++;

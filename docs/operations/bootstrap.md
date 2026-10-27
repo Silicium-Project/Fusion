@@ -168,14 +168,20 @@ sans `--apply` avant de définir `SILICIUM_PROJECT_AUTOMATION_ENABLED=1`.
 
 L'App `Silicium Project Automation` est créée et installée depuis le 25 octobre
 2026. Les deux secrets sont provisionnés dans cet environnement. La
-réconciliation locale a été qualifiée en lecture seule : 134 éléments observés,
-aucune écriture. Le workflow est dans `main`, mais
-`SILICIUM_PROJECT_AUTOMATION_ENABLED` reste à `0`. Le dry-run du 26 octobre 2026
-prévoit six transitions d'état et 132 mises à jour du champ `Blocage`; la validation de la
-politique d'acceptation et de la confidentialité des logs est en cours avant
-toute application. Les exécutions `--apply` journalisent des compteurs
-agrégés, même en cas d'erreur ; les détails par issue et les messages d'API sont
-masqués dans les logs publics, car les champs du Project 12 restent privés.
+réconciliation locale en lecture seule du 27 octobre 2026 a observé 139 éléments
+et prédit huit transitions d'état et 139 mises à jour du champ `Blocage` ; elle
+n'a effectué aucune écriture. Le résultat intègre les PR qui référencent leurs
+issues avec `Refs:`. Le workflow est dans `main`, mais
+`SILICIUM_PROJECT_AUTOMATION_ENABLED` n'est pas configuré et l'automatisation
+reste donc désactivée. Les blocages saisis par un mainteneur sont conservés,
+tandis que les résumés `[auto]` sont recalculés ; les trois anciens messages
+standard sont retirés pendant cette migration. Ce
+dry-run local ne remplace pas un dry-run du workflow avec l'App. Avant toute
+application, qualifier cette PR, inspecter le résultat agrégé du workflow en
+lecture seule, puis garder l'activation désactivée jusqu'à décision explicite.
+Les exécutions `--apply` journalisent des compteurs agrégés, même en cas
+d'erreur ; les détails par issue et les messages d'API sont masqués dans les
+logs publics, car les champs du Project 12 restent privés.
 
 L'observateur de stockage a aussi été vérifié avec un jeton Actions/metadata en
 lecture sur les huit dépôts. L'activation du workflow reste conditionnée à une

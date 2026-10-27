@@ -39,6 +39,19 @@ export function nextStatus(item) {
 }
 export function projectBlockage(item, issueUrl, next) {
   const blockers = [];
+  const manual = String(item.manual_blockage ?? '')
+    .split(' · ')
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .filter(
+      (value) =>
+        !value.startsWith('[auto] ') &&
+        ![
+          'Dépendances non acceptées',
+          'CI requise en attente ou en échec',
+          'Clôture sans preuve d’acceptation vérifiée',
+        ].includes(value),
+    );
   const linkList = (items, fallback) => {
     const urls = items.map((x) => x.url).filter(Boolean);
     const shown = urls.slice(0, 2);
@@ -102,7 +115,7 @@ export function projectBlockage(item, issueUrl, next) {
     if (missing.length)
       blockers.push(`Préparation incomplète (${missing.join(', ')}): ${issueUrl}`);
   }
-  return blockers.join(' · ');
+  return [...manual, ...blockers.map((blocker) => `[auto] ${blocker}`)].join(' · ');
 }
 export function dependencyAccepted(child, itemsById) {
   const item = itemsById.get(child.id);

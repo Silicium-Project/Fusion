@@ -162,6 +162,63 @@ test('Project blockages expose blocked subtask and review evidence', () => {
   assert.match(closedPr, /PR fermées sans fusion à arbitrer/);
   assert.match(closedPr, new RegExp(prUrl.replaceAll('/', '\\/')));
 });
+test('Project sync preserves human blockers and replaces stale automatic blockers', () => {
+  const issueUrl = 'https://github.com/Silicium-Project/Workbench/issues/31';
+  const prUrl = 'https://github.com/Silicium-Project/Workbench/pull/32';
+  const manual = 'Quota Actions privé épuisé ; plafond de dépense maintenu à zéro.';
+  const base = {
+    dependencies_complete: false,
+    dependencies: [
+      { url: 'https://github.com/Silicium-Project/Workbench/issues/33', accepted: false },
+    ],
+    children_complete: true,
+    children: [],
+    pull_requests: [{ url: prUrl, draft: true, ci: 'pending', merged: false, closed: false }],
+    linked_pull_requests: [{ url: prUrl, merged: false, closed: false }],
+    required_prs_complete: false,
+    closedCompleted: false,
+    acceptance: null,
+    merged: false,
+    validation_target: 'CI',
+    preparation: 'Validée',
+    owner: 'member',
+    size: 'S',
+  };
+  const first = projectBlockage(
+    {
+      ...base,
+      manual_blockage: [
+        manual,
+        'Dépendances non acceptées',
+        'CI requise en attente ou en échec',
+        'Clôture sans preuve d’acceptation vérifiée',
+      ].join(' · '),
+    },
+    issueUrl,
+    'En cours',
+  );
+  assert.match(first, new RegExp(manual.replaceAll('.', '\\.')));
+  assert.deepEqual(
+    first.split(' · ').filter((value) => !value.startsWith('[auto] ')),
+    [manual],
+  );
+  assert.match(first, /\[auto\] Dépendances non acceptées/);
+
+  const refreshed = projectBlockage(
+    {
+      ...base,
+      dependencies_complete: true,
+      dependencies: [],
+      manual_blockage: first,
+      pull_requests: [{ url: prUrl, draft: false, ci: 'success', merged: false, closed: false }],
+    },
+    issueUrl,
+    'Revue',
+  );
+  assert.match(refreshed, new RegExp(manual.replaceAll('.', '\\.')));
+  assert.doesNotMatch(refreshed, /\[auto\] Dépendances non acceptées/);
+  assert.match(refreshed, /\[auto\] Revue humaine en attente/);
+});
 test('applied Project sync output contains only aggregate data', () => {
   const output = projectSyncOutput({
     apply: true,
