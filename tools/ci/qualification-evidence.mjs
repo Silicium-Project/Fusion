@@ -41,7 +41,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const record = verifiedRun(id);
   const directory = resolve(root, '.artifacts/qualification-evidence');
   mkdirSync(directory, { recursive: true });
-  for (const pattern of ['qualification-plan', 'report-*']) {
+  const attempt = record.run_attempt;
+  for (const pattern of [`qualification-plan-${attempt}`, `report-*-${attempt}`]) {
     run(
       [
         'gh',

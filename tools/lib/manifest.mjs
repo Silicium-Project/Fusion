@@ -2,6 +2,13 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { Failure } from './process.mjs';
+const privateSources = Object.freeze({
+  api: 'Silicium-Project/BackEnd',
+  web: 'Silicium-Project/FrontEnd',
+  node: 'Silicium-Project/DesktopApp',
+  network: 'Silicium-Project/Network',
+  solana: 'Silicium-Project/Solana',
+});
 export const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 export function validateManifest(m) {
   const errors = [];
@@ -20,9 +27,26 @@ export function validateManifest(m) {
     !m.qualification ||
     m.qualification.source_sha !== m.source_sha ||
     m.qualification.status !== 'success' ||
-    !/^[1-9][0-9]*$/.test(String(m.qualification.run_id))
+    m.qualification.repository !== 'Silicium-Project/Integration' ||
+    m.qualification.workflow !== '.github/workflows/qualification.yml' ||
+    m.qualification.workbench_sha !== m.source_sha ||
+    !/^[1-9][0-9]*$/.test(String(m.qualification.run_id)) ||
+    !Number.isSafeInteger(Number(m.qualification.run_attempt)) ||
+    Number(m.qualification.run_attempt) < 1 ||
+    !Number.isSafeInteger(Number(m.qualification.run_number)) ||
+    Number(m.qualification.run_number) < 1 ||
+    !/^[a-f0-9]{40}$/.test(m.qualification.integration_sha ?? '') ||
+    !/^[a-f0-9]{40}$/.test(m.qualification.policy_workflow_sha ?? '') ||
+    !/^[a-f0-9]{64}$/.test(m.qualification.policy_digest ?? '') ||
+    m.policy_digest !== m.qualification.policy_digest ||
+    !m.qualification.component_pins ||
+    Object.keys(m.qualification.component_pins).sort().join() !== 'api,network,node,solana,web' ||
+    Object.entries(privateSources).some(([component, repository]) => {
+      const pin = m.qualification.component_pins?.[component];
+      return pin?.repository !== repository || !/^[a-f0-9]{40}$/.test(pin.commit ?? '');
+    })
   )
-    errors.push('qualification missing or stale');
+    errors.push('private Integration qualification missing or stale');
   for (const component of ['api', 'web', 'network', 'node'])
     if (!m.components?.[component]) errors.push(`missing component ${component}`);
   for (const [name, c] of Object.entries(m.components ?? {})) {
