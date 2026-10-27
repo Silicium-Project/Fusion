@@ -39,6 +39,7 @@ jobs:
       version: ${{ steps.candidate.outputs.version }}
       channel: ${{ steps.candidate.outputs.channel }}
       node_changed: ${{ steps.candidate.outputs.node_changed }}
+      qualification_attempt: ${{ steps.candidate.outputs.qualification_attempt }}
     steps:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       with:
@@ -92,7 +93,7 @@ jobs:
         '
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       with:
-        name: candidate-input
+        name: candidate-input-${{ github.run_attempt }}
         path: '.artifacts/candidate
 
           .artifacts/publish'
@@ -121,7 +122,7 @@ jobs:
     - *id001
     - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
       with:
-        name: candidate-input
+        name: candidate-input-${{ github.run_attempt }}
         path: .artifacts
     - name: Download qualifying outputs only
       env:
@@ -135,7 +136,7 @@ jobs:
     - run: node tools/ci/candidate.mjs images
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       with:
-        name: candidate-images
+        name: candidate-images-${{ github.run_attempt }}
         path: .artifacts/candidate/components.json
         include-hidden-files: true
         retention-days: 1
@@ -171,7 +172,7 @@ jobs:
     - run: node tools/ci/bootstrap.mjs "${{ matrix.suite }}"
     - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
       with:
-        name: node-ui-output
+        name: node-ui-output-${{ needs.prepare.outputs.qualification_attempt }}
         path: apps/node/dist
         run-id: ${{ inputs.qualification_run || github.event.workflow_run.id }}
         github-token: ${{ github.token }}
@@ -181,7 +182,7 @@ jobs:
       run: node tools/ci/artifact-size.mjs .artifacts/installers 167772160
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       with:
-        name: ${{ runner.os == 'Windows' && 'unsigned-Windows' || 'installers-Linux' }}
+        name: ${{ runner.os == 'Windows' && 'unsigned-Windows' || 'installers-Linux' }}-${{ github.run_attempt }}
         path: .artifacts/installers
         include-hidden-files: true
         if-no-files-found: error
@@ -218,16 +219,16 @@ jobs:
     - *id001
     - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
       with:
-        name: candidate-input
+        name: candidate-input-${{ github.run_attempt }}
         path: .artifacts
     - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
       with:
-        name: candidate-images
+        name: candidate-images-${{ github.run_attempt }}
         path: .artifacts/candidate
     - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
       if: ${{ needs.prepare.outputs.node_changed == 'true' }}
       with:
-        pattern: installers-*
+        pattern: installers-*-${{ github.run_attempt }}
         path: .artifacts/installers
         merge-multiple: true
     - name: Prepare signing tools
@@ -286,7 +287,7 @@ jobs:
         node-version: 22.23.4
     - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
       with:
-        name: unsigned-Windows
+        name: unsigned-Windows-${{ github.run_attempt }}
         path: .artifacts/installers
     - name: Sign verified Windows installer
       shell: pwsh
@@ -305,7 +306,7 @@ jobs:
       run: node tools/ci/artifact-size.mjs .artifacts/installers 16777216
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       with:
-        name: installers-Windows
+        name: installers-Windows-${{ github.run_attempt }}
         path: .artifacts/installers
         include-hidden-files: true
         retention-days: 1

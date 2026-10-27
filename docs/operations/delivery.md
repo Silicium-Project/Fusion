@@ -7,6 +7,11 @@ composants et leurs digests. Le manifeste contient les références de
 qualification et les signatures. Une image déployée est désignée par digest.
 Deux contenus différents ne peuvent pas partager une version de paquet.
 
+Les artefacts temporaires de qualification et de livraison portent le numéro
+de tentative du workflow qui les a produits. Les téléchargements, la preuve
+permanente et le nettoyage sélectionnent cette tentative exacte afin qu'une
+relance ne récupère ni ne supprime les sorties d'une ancienne tentative.
+
 Les formats APT/RPM utilisent `~dev.N` pour conserver l'ordre des versions ;
 les versions stables suivent les préversions. Le compteur Windows est borné
 et vérifié. Les identifiants Tauri et les chemins de données restent stables.

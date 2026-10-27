@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { root, run, readJson, writeJson, Failure } from '../lib/process.mjs';
 import { verifiedRun, api, repository } from '../lib/github.mjs';
 import { sha256, requireManifest, compareVersions } from '../lib/manifest.mjs';
+import { qualifiedBuildArtifacts } from '../lib/release-artifacts.mjs';
 const operation = process.argv[2];
 const dir = resolve(root, '.artifacts/candidate');
 mkdirSync(dir, { recursive: true });
@@ -17,12 +18,7 @@ if (operation === 'prepare') {
     `repos/${repository}/actions/runs/${id}/artifacts?per_page=100`,
   ).artifacts;
   const artifacts = new Set(artifactRows.filter((x) => !x.expired).map((x) => x.name));
-  const required = {
-    api: 'api-binary',
-    web: 'web-output',
-    network: 'network-binaries',
-    node: 'node-ui-output',
-  };
+  const required = qualifiedBuildArtifacts(qualified.run_attempt);
   const changed = Object.keys(required).filter((c) => artifacts.has(required[c]));
   if (!changed.length) throw new Failure('No deliverable changed; this CI requires no release', 4);
   let previous = null;
@@ -120,11 +116,16 @@ if (operation === 'prepare') {
     channel,
     version,
     release_id,
-    qualification: { source_sha: source, status: 'success', run_id: Number(id) },
+    qualification: {
+      source_sha: source,
+      status: 'success',
+      run_id: Number(id),
+      run_attempt: Number(qualified.run_attempt),
+    },
   });
   appendFileSync(
     process.env.GITHUB_OUTPUT,
-    `source_sha=${source}\nrelease_id=${release_id}\nversion=${version}\nchannel=${channel}\n`,
+    `source_sha=${source}\nrelease_id=${release_id}\nversion=${version}\nchannel=${channel}\nqualification_attempt=${qualified.run_attempt}\n`,
   );
 } else if (operation === 'images') {
   const identity = readJson(resolve(dir, 'identity.json'));
