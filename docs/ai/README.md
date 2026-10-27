@@ -41,6 +41,9 @@ bloque la suite avant toute demande de jeton Source Reader.
 2. Ne démarrer que si préparation, responsable, taille et prérequis sont définis.
 3. Créer une branche courte et une PR brouillon avec les URL des issues.
 4. Lire les contrats affectés ; demander au plan CI les suites nécessaires.
+   Lorsqu'un test lit plusieurs dépôts privés, le déclarer comme suite croisée
+   avec tous ses `sources` ; ne pas l'ajouter aux suites de CI native d'un seul
+   composant. Garder ces sources hors des workflows publics.
 5. Implémenter le changement avec le contre-exemple et les tests applicables.
    Appliquer `dev format --write` puis les [normes de qualité](../development/quality.md).
 6. Exécuter les suites communes et conserver leurs rapports. Ne pas inventer

@@ -25,6 +25,25 @@ Lire [la décision](../architecture/multi-repo.md) et les
    des preuves de ses seuls fichiers publics. Ne pas activer une publication
    à partir de ce seul gate.
 
+## Suites qui lisent plusieurs dépôts privés
+
+La CI native d'un composant ne compose que ce dépôt avec la politique Workbench.
+Un test qui lit un autre composant privé ne doit donc pas être ajouté aux suites
+déclarées dans `workspace.components.<id>.suites`. Déclarer une suite croisée
+dans `tools/config/lanes.json`, lister chaque composant lu dans `sources`, et la
+laisser hors des suites natives. `Integration` matérialise alors uniquement ces
+sources épinglées, avec un jeton de lecture limité à ces dépôts.
+
+Pour Network, `network-integration` couvre les tests locaux au dépôt ; les
+assertions qui ont besoin du programme ou du SDK Solana sont isolées dans
+`network-contract`, avec `sources: [network, solana]`. Le plan de composant
+Network ne lance pas cette suite. Le plan privé Integration la lancera avec les
+deux dépôts quand leurs pins intègreront les changements correspondants. Le
+chemin attendu du SDK est `chain/sdk/src/index.ts`, selon la structure du dépôt
+Solana ; ne pas réintroduire les anciens chemins du monorepo
+`packages/solana-sdk`. La suite privée reste non qualifiée tant que les Actions
+Integration et son quota sont suspendus.
+
 Le workflow réutilisable s'exécute dans le contexte d'Integration : son jeton
 reste en lecture seule sur le dépôt appelant et ne gagne aucun droit sur
 Workbench. Le reçu de métadonnées et sa signature détachée restent privés

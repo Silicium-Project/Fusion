@@ -66,7 +66,19 @@ test('qualification plans carry each suite source list for least-privilege priva
   assert.deepEqual(suites['workspace-sources'], ['api', 'web', 'node', 'network', 'solana']);
   assert.deepEqual(suites.network, ['network']);
   assert.deepEqual(suites['network-integration'], ['network']);
+  assert.deepEqual(suites['network-contract'], ['network', 'solana']);
   assert.deepEqual(suites.tooling, []);
+});
+
+test('Network-to-Solana contracts run only in the cross-repository composition', () => {
+  const component = makePlan({ paths: [], scope: 'component:network' });
+  assert.ok(!component.suites.includes('network-contract'));
+  const integration = makePlan({ paths: [], scope: 'integration' });
+  assert.ok(integration.suites.includes('network-contract'));
+  const row = integration.matrix.include.find((entry) => entry.suite === 'network-contract');
+  assert.deepEqual(row.sources, ['network', 'solana']);
+  const publicPlan = makePlan({ paths: [], scope: 'public' });
+  assert.ok(!publicPlan.suites.includes('network-contract'));
 });
 
 test('a PR cannot silently remove the test command from an unchanged suite', () => {
