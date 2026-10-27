@@ -60,12 +60,13 @@ workflow contrôlent les caches.
 
 ## Audit public des règles du dépôt
 
-`tools/config/repository-policy.json` fixe la visibilité, la branche par défaut
-et les paramètres publics attendus de `Protect Main`. `dev ci policy --json`
-relit le dépôt et le ruleset via l'API GitHub sans jeton ni secret. Le rapport
-contient le SHA de politique, l'heure de vérification, les écarts et les
-limites de couverture. Une réponse API refusée, limitée, invalide ou incomplète
-produit `blocked`, jamais un rapport propre.
+`tools/config/workspace.json` fixe l'identité, la visibilité et la branche par
+défaut attendues de Workbench ; `tools/config/repository-policy.json` décrit le
+ruleset `Protect Main`. `dev ci policy --json` relit le dépôt et le ruleset via
+l'API GitHub sans jeton ni secret, après avoir vérifié le registre local et les
+pins. Le rapport contient le SHA de politique, l'heure de vérification, les
+écarts et les limites de couverture. Une réponse API refusée, limitée, invalide
+ou incomplète produit `blocked`, jamais un rapport propre.
 
 La CI requise appelle ce contrôle lorsque le manifeste, son code, ses tests, le
 lanceur ou le workflow CI changent ; les autres PR ne déclenchent pas cet appel
