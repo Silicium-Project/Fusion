@@ -42,6 +42,16 @@ composant sans modifier un checkout utilisateur. Les métadonnées enregistrent
 les deux SHA originaux. Ce commit n'est ni une version intégrée ni un candidat
 livrable ; il ne doit jamais être poussé.
 
+## Autorisation des PR Workbench
+
+Avant la qualification d'une PR interne, `tools/ci/authorize-internal-pull-request.mjs`
+vérifie auprès de l'API GitHub que la tête appartient au même dépôt et que
+l'auteur possède un droit `write`, `maintain` ou `admin`. Les lectures API
+réessaient au maximum trois fois les erreurs réseau, timeouts et réponses HTTP
+500/502/503/504, avec des pauses bornées de 250 ms puis 1 s. Les erreurs
+d'autorisation 4xx échouent immédiatement. Le jeton `GITHUB_TOKEN` reste
+éphémère et aucune réponse API ou valeur du jeton n'est journalisée.
+
 ## Publication séparée
 
 L'App `Silicium Source Reader` reste strictement en lecture seule. Ne pas ajouter
