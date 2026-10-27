@@ -2,22 +2,25 @@
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { api, repository, canonicalRepository } from '../lib/github.mjs';
-import { Failure } from '../lib/process.mjs';
+import { Failure, git } from '../lib/process.mjs';
 
 // Reserve for private delivery artifacts plus the public Workbench budget run
 // itself. The budget query runs before this workflow uploads its bounded plan
 // and public-suite reports, so omitting those would create a time-of-check gap.
 export const organizationArtifactReservation = 232 * 1024 ** 2;
 
-export function requireBudgetProof(record, jobs, now = Date.now()) {
+export function requireBudgetProof(record, jobs, expectedSourceSha, now = Date.now()) {
   const budget = jobs.find((job) => job.name === 'budget');
   const step = budget?.steps?.find((item) => item.name === 'Check organization artifact headroom');
   const completed = Date.parse(step?.completed_at);
+  if (!/^[a-f0-9]{40}$/.test(expectedSourceSha ?? ''))
+    throw new Failure('Exact Workbench policy SHA is required for the storage proof', 4);
   if (record.event !== 'push' && record.event !== 'workflow_dispatch')
     throw new Failure('Budget proof must come from trusted main', 4);
   if (
     canonicalRepository(record.head_repository?.full_name) !== repository ||
     record.head_branch !== 'main' ||
+    record.head_sha !== expectedSourceSha ||
     record.path?.split('@')[0] !== '.github/workflows/ci.yml' ||
     record.conclusion !== 'success' ||
     budget?.conclusion !== 'success' ||
@@ -41,14 +44,18 @@ export function requireBudgetProof(record, jobs, now = Date.now()) {
   };
 }
 
-export function privateBudget({ request = api, now = Date.now() } = {}) {
+export function privateBudget({
+  request = api,
+  now = Date.now(),
+  expectedSourceSha = git('rev-parse', 'HEAD'),
+} = {}) {
   const runs = request(
     `repos/${repository}/actions/workflows/ci.yml/runs?branch=main&status=success&per_page=20`,
   ).workflow_runs;
   for (const run of runs) {
     const jobs = request(`repos/${repository}/actions/runs/${run.id}/jobs?per_page=100`).jobs;
     try {
-      return requireBudgetProof(run, jobs, now);
+      return requireBudgetProof(run, jobs, expectedSourceSha, now);
     } catch (error) {
       if (error.exitCode !== 4) throw error;
     }

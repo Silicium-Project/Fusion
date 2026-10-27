@@ -30,7 +30,7 @@ const jobs = [
   },
 ];
 test('private budget proof requires the actual protected organization check', () => {
-  const proof = requireBudgetProof(record, jobs, now);
+  const proof = requireBudgetProof(record, jobs, record.head_sha, now);
   assert.equal(proof.run_id, 1);
   assert.equal(proof.incoming_bytes_reserved, organizationArtifactReservation);
   assert.equal(organizationArtifactReservation, 232 * 1024 ** 2);
@@ -49,16 +49,42 @@ test('private budget proof requires the actual protected organization check', ()
   for (const changes of [
     { event: 'pull_request' },
     { head_branch: 'topic' },
+    { head_sha: 'b'.repeat(40) },
     { conclusion: 'failure' },
     { path: '.github/workflows/other.yml' },
     { head_repository: { full_name: 'attacker/repo' } },
   ])
-    assert.throws(() => requireBudgetProof({ ...record, ...changes }, jobs, now));
-  assert.throws(() => requireBudgetProof(record, [], now));
-  assert.throws(() => requireBudgetProof(record, [{ ...jobs[0], steps: [] }], now));
+    assert.throws(() => requireBudgetProof({ ...record, ...changes }, jobs, record.head_sha, now));
+  assert.throws(() => requireBudgetProof(record, jobs, 'short-sha', now));
+  assert.throws(() => requireBudgetProof(record, [], record.head_sha, now));
+  assert.throws(() =>
+    requireBudgetProof(record, [{ ...jobs[0], steps: [] }], record.head_sha, now),
+  );
 });
 test('stale or future storage observations block uploads and no job is dispatched', () => {
   for (const at of [now + 16 * 60_000, now - 2 * 60_000])
-    assert.throws(() => requireBudgetProof(record, jobs, at));
-  assert.throws(() => privateBudget({ request: () => ({ workflow_runs: [] }), now }), /blocked/);
+    assert.throws(() => requireBudgetProof(record, jobs, record.head_sha, at));
+  assert.throws(
+    () =>
+      privateBudget({
+        request: () => ({ workflow_runs: [] }),
+        now,
+        expectedSourceSha: record.head_sha,
+      }),
+    /blocked/,
+  );
+});
+test('a fresh budget check from a different main commit is rejected', () => {
+  const oldRun = { ...record, id: 1, head_sha: 'b'.repeat(40) };
+  const currentRun = { ...record, id: 2 };
+  const proof = privateBudget({
+    now,
+    expectedSourceSha: record.head_sha,
+    request: (path) => {
+      if (path.includes('/workflows/ci.yml/runs?')) return { workflow_runs: [oldRun, currentRun] };
+      return { jobs };
+    },
+  });
+  assert.equal(proof.run_id, currentRun.id);
+  assert.equal(proof.source_sha, record.head_sha);
 });

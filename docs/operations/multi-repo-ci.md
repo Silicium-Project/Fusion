@@ -75,7 +75,8 @@ plan et les quatre rapports publics du run Workbench lui-même. Les 6 Mio
 restants couvrent les marges d'archivage. Cette réserve tient compte du fait
 que le contrôle de stockage s'exécute avant les téléversements du run courant.
 Les workflows privés exigent que cette étape exacte ait réussi depuis moins
-de quinze minutes. Il s'agit d'une observation bornée, pas d'un verrou global
+de quinze minutes et que son SHA corresponde exactement au Workbench utilisé
+pour la qualification. Il s'agit d'une observation bornée, pas d'un verrou global
 de stockage entre tous les dépôts. Les campagnes complètes sont sérialisées,
 les rapports limités à 1 Mio et expirent après un jour ; les caches privés
 sont désactivés pendant la migration.
