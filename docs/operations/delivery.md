@@ -7,6 +7,12 @@ composants et leurs digests. Le manifeste contient les références de
 qualification et les signatures. Une image déployée est désignée par digest.
 Deux contenus différents ne peuvent pas partager une version de paquet.
 
+Les manifestes récupérés depuis une release sont des entrées non fiables :
+le validateur vérifie d'abord que le document et ses structures imbriquées sont
+des objets/listes JSON de la forme attendue. Une forme malformée est refusée
+comme identité invalide avant toute utilisation. Cette validation de structure
+ne remplace jamais la vérification de la signature détachée avec le trust anchor.
+
 Les artefacts temporaires de qualification et de livraison portent le numéro
 de tentative du workflow qui les a produits. Les téléchargements, la preuve
 permanente et le nettoyage sélectionnent cette tentative exacte afin qu'une

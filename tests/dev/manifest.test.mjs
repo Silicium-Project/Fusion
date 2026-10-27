@@ -56,6 +56,26 @@ test('release ordering reserves the final Windows field for stable and compares 
 });
 test('complete immutable identity validates', () =>
   assert.deepEqual(validateManifest(candidate()), []));
+test('malformed JSON containers fail closed without throwing', () => {
+  for (const value of [null, [], 'manifest']) assert.ok(validateManifest(value).length);
+
+  const badQualification = candidate();
+  badQualification.qualification = [];
+  assert.ok(validateManifest(badQualification).length);
+
+  const badPins = candidate();
+  badPins.qualification.component_pins.api = null;
+  assert.ok(validateManifest(badPins).length);
+
+  const badComponents = candidate();
+  badComponents.components.api = null;
+  assert.ok(validateManifest(badComponents).length);
+
+  const badAssets = candidate();
+  badAssets.assets[0] = null;
+  assert.ok(validateManifest(badAssets).length);
+  assert.ok(validateManifest({ ...candidate(), assets: {} }).length);
+});
 test('mutable images, stale qualification and prod prereleases fail', () => {
   for (const edit of [
     (m) => (m.components.api.image = 'api:latest'),

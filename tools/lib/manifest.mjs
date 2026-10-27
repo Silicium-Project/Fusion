@@ -9,65 +9,94 @@ const privateSources = Object.freeze({
   network: 'Silicium-Project/Network',
   solana: 'Silicium-Project/Solana',
 });
+const isRecord = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
 export const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 export function validateManifest(m) {
+  if (!isRecord(m)) return ['manifest must be a JSON object'];
+
   const errors = [];
+  const sourceSha = typeof m.source_sha === 'string' ? m.source_sha : '';
+  const version = typeof m.version === 'string' ? m.version : '';
   if (m.schema_version !== 1) errors.push('unsupported manifest version');
-  if (!/^[a-f0-9]{40}$/.test(m.source_sha ?? '')) errors.push('invalid source SHA');
+  if (!/^[a-f0-9]{40}$/.test(sourceSha)) errors.push('invalid source SHA');
   if (!['dev', 'prod'].includes(m.channel)) errors.push('invalid channel');
-  if (!/^\d+\.\d+\.\d+(?:-dev\.\d+)?$/.test(m.version ?? ''))
-    errors.push('invalid release version');
-  if (m.channel === 'prod' && m.version?.includes('-'))
+  if (!/^\d+\.\d+\.\d+(?:-dev\.\d+)?$/.test(version)) errors.push('invalid release version');
+  if (m.channel === 'prod' && version.includes('-'))
     errors.push('production cannot use a prerelease');
-  if (m.channel === 'dev' && !m.version?.includes('-dev.'))
+  if (m.channel === 'dev' && !version.includes('-dev.'))
     errors.push('development must use a prerelease');
-  if (m.release_id !== `${m.channel}-${m.version}-${m.source_sha?.slice(0, 12)}`)
+  if (m.release_id !== `${m.channel}-${version}-${sourceSha.slice(0, 12)}`)
     errors.push('candidate identity mismatch');
+  const qualification = isRecord(m.qualification) ? m.qualification : null;
+  const componentPins = isRecord(qualification?.component_pins)
+    ? qualification.component_pins
+    : null;
   if (
-    !m.qualification ||
-    m.qualification.source_sha !== m.source_sha ||
-    m.qualification.status !== 'success' ||
-    m.qualification.repository !== 'Silicium-Project/Integration' ||
-    m.qualification.workflow !== '.github/workflows/qualification.yml' ||
-    m.qualification.workbench_sha !== m.source_sha ||
-    !/^[1-9][0-9]*$/.test(String(m.qualification.run_id)) ||
-    !Number.isSafeInteger(Number(m.qualification.run_attempt)) ||
-    Number(m.qualification.run_attempt) < 1 ||
-    !Number.isSafeInteger(Number(m.qualification.run_number)) ||
-    Number(m.qualification.run_number) < 1 ||
-    !/^[a-f0-9]{40}$/.test(m.qualification.integration_sha ?? '') ||
-    !/^[a-f0-9]{40}$/.test(m.qualification.policy_workflow_sha ?? '') ||
-    !/^[a-f0-9]{64}$/.test(m.qualification.policy_digest ?? '') ||
-    m.policy_digest !== m.qualification.policy_digest ||
-    !m.qualification.component_pins ||
-    Object.keys(m.qualification.component_pins).sort().join() !== 'api,network,node,solana,web' ||
+    !qualification ||
+    qualification.source_sha !== sourceSha ||
+    qualification.status !== 'success' ||
+    qualification.repository !== 'Silicium-Project/Integration' ||
+    qualification.workflow !== '.github/workflows/qualification.yml' ||
+    qualification.workbench_sha !== sourceSha ||
+    !/^[1-9][0-9]*$/.test(String(qualification.run_id)) ||
+    !Number.isSafeInteger(Number(qualification.run_attempt)) ||
+    Number(qualification.run_attempt) < 1 ||
+    !Number.isSafeInteger(Number(qualification.run_number)) ||
+    Number(qualification.run_number) < 1 ||
+    !/^[a-f0-9]{40}$/.test(qualification.integration_sha ?? '') ||
+    !/^[a-f0-9]{40}$/.test(qualification.policy_workflow_sha ?? '') ||
+    !/^[a-f0-9]{64}$/.test(qualification.policy_digest ?? '') ||
+    m.policy_digest !== qualification.policy_digest ||
+    !componentPins ||
+    Object.keys(componentPins).sort().join() !== 'api,network,node,solana,web' ||
     Object.entries(privateSources).some(([component, repository]) => {
-      const pin = m.qualification.component_pins?.[component];
+      const pin = componentPins[component];
+      if (!isRecord(pin)) return true;
       return pin?.repository !== repository || !/^[a-f0-9]{40}$/.test(pin.commit ?? '');
     })
   )
     errors.push('private Integration qualification missing or stale');
-  for (const component of ['api', 'web', 'network', 'node'])
-    if (!m.components?.[component]) errors.push(`missing component ${component}`);
-  for (const [name, c] of Object.entries(m.components ?? {})) {
-    if (!['web', 'api', 'network', 'node', 'solana', 'sdk'].includes(name))
-      errors.push('unknown component');
-    if (!/^[a-f0-9]{40}$/.test(c.source_sha ?? ''))
-      errors.push(`${name}: missing component provenance`);
-    if (c.image && !/^ghcr\.io\/silicium-project\/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$/.test(c.image))
-      errors.push(`${name}: image must use an allowed immutable digest`);
+  if (!isRecord(m.components)) errors.push('components must be a JSON object');
+  else {
+    for (const component of ['api', 'web', 'network', 'node'])
+      if (!m.components[component]) errors.push(`missing component ${component}`);
+    for (const [name, c] of Object.entries(m.components)) {
+      if (!['web', 'api', 'network', 'node', 'solana', 'sdk'].includes(name))
+        errors.push('unknown component');
+      if (!isRecord(c)) {
+        errors.push(`${name}: component metadata must be a JSON object`);
+        continue;
+      }
+      if (!/^[a-f0-9]{40}$/.test(c.source_sha ?? ''))
+        errors.push(`${name}: missing component provenance`);
+      if (
+        c.image !== undefined &&
+        c.image !== null &&
+        (typeof c.image !== 'string' ||
+          !/^ghcr\.io\/silicium-project\/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$/.test(c.image))
+      )
+        errors.push(`${name}: image must use an allowed immutable digest`);
+    }
   }
   const names = new Set();
-  for (const asset of m.assets ?? []) {
-    if (names.has(asset.name)) errors.push('duplicate asset');
-    names.add(asset.name);
-    if (
-      !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(asset.name ?? '') ||
-      !/^[a-f0-9]{64}$/.test(asset.sha256 ?? '') ||
-      !Number.isSafeInteger(asset.size) ||
-      asset.size < 1
-    )
-      errors.push('invalid asset identity');
+  if (!Array.isArray(m.assets)) errors.push('assets must be a JSON array');
+  else {
+    for (const asset of m.assets) {
+      if (!isRecord(asset)) {
+        errors.push('invalid asset identity');
+        continue;
+      }
+      const name = typeof asset.name === 'string' ? asset.name : '';
+      if (names.has(name)) errors.push('duplicate asset');
+      names.add(name);
+      if (
+        !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(name) ||
+        !/^[a-f0-9]{64}$/.test(asset.sha256 ?? '') ||
+        !Number.isSafeInteger(asset.size) ||
+        asset.size < 1
+      )
+        errors.push('invalid asset identity');
+    }
   }
   if (
     !['packages.tar.gz', 'deployment.tar.gz', 'qualification.json'].every((name) => names.has(name))

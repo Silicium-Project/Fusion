@@ -106,7 +106,9 @@ restent à qualifier ; ne pas accepter une fonctionnalité sur le seul gate publ
 ## Publier et déployer
 
 Lire [le runbook](../operations/delivery.md). Utiliser un SHA exact, le canal
-explicite et le manifeste qualifié. `dev release plan` distingue maintenant
+explicite et le manifeste qualifié. Traiter le manifeste de release comme une
+entrée non fiable : valider sa structure puis vérifier sa signature avec le
+trust anchor avant de l'appliquer. `dev release plan` distingue maintenant
 le succès public Workbench de la qualification privée requise ; il ne marque
 pas le public comme livraison qualifiée. C'est une commande de
 préparation. Au 27 octobre 2026, le raccordement de la qualification privée à la
