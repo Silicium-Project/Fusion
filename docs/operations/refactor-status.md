@@ -20,6 +20,10 @@
   [40471477621](https://github.com/Silicium-Project/Workbench/actions/runs/40471477621)
   a ensuite prévu zéro changement après la qualification de #325 ; les journaux
   restent agrégés et ne révèlent pas les issues privées.
+- Après l'ajout à la PR #326 de la ligne de référence canonique `Refs:`, le run
+  [40473660391](https://github.com/Silicium-Project/Workbench/actions/runs/40473660391)
+  a automatiquement déplacé GOV-02 (#210) de `Validation` à `En cours`. L'issue
+  est restée ouverte ; aucun commentaire, assignation ou clôture n'a été créé.
 - La PR #326 reste en brouillon. Sa branche a intégré `main` jusqu'au commit
   `a20fcf2`, retire le runtime IA du tree public courant et pointe DesktopApp,
   BackEnd et Network vers les têtes de leurs PR d'export. Cette révision doit
