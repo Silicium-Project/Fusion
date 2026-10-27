@@ -215,7 +215,11 @@
       "job": "validate (solana, ubuntu-24.04, 45)",
       "duration_seconds": 790,
       "conclusion": "success",
-      "sample_count": 1
+      "sample_count": 1,
+      "branch": "refactor/monorepo-cicd",
+      "sha": "03e62285bb7c3cc95f1c375416667f148a505cc3",
+      "pre_component_split": true,
+      "component_split_pr": "https://github.com/Silicium-Project/Workbench/pull/320"
     },
     "current_cache_inventory": {
       "captured_at": "2026-10-27T09:32:41Z",

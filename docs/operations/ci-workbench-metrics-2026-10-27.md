@@ -17,9 +17,9 @@ Le run CI de la PR [#326](https://github.com/Silicium-Project/Workbench/pull/326
 
 ## Suite Solana
 
-Le run [40223122663](https://github.com/Silicium-Project/Workbench/actions/runs/40223122663) a réussi ; son job `validate (solana, ubuntu-24.04, 45)` a duré **790 secondes** (13 min 10 s). C’est une observation isolée, mesurée le 25 octobre, hors de l’échantillon du 27 octobre. Les tests localnet restent requis lorsqu’un changement touche Solana.
+Le run [40223122663](https://github.com/Silicium-Project/Workbench/actions/runs/40223122663), sur la branche `refactor/monorepo-cicd` et le SHA `03e62285bb7c3cc95f1c375416667f148a505cc3`, a réussi ; son job `validate (solana, ubuntu-24.04, 45)` a duré **790 secondes** (13 min 10 s). Il date du 25 octobre, avant la fusion de la séparation des composants privés par la PR [#320](https://github.com/Silicium-Project/Workbench/pull/320), le 26 octobre. C’est une mesure de l’ancien pipeline, pas de la qualification privée actuelle. Integration n’ayant aucun run, la durée actuelle de Solana reste inconnue. Les tests localnet restent requis lorsqu’un changement touche Solana.
 
-Le cache Cargo de registre est actif, tandis que la sauvegarde du répertoire Rust `target` reste désactivée pour la suite Solana. L’inventaire des caches relevé le 27 octobre comptait 79 entrées / 6 185 088 793 octets dans Workbench et 18 entrées / 9 144 183 415 octets dans Network. Les caches sont séparés par dépôt ; la faible marge observée dans Network ne justifie pas d’y ajouter une compilation SBF volumineuse sans mesure.
+Le workflow Workbench conserve le cache Cargo de registre et désactive la sauvegarde Rust `target` pour la suite Solana. L’exécution privée Integration a son propre workflow, où `SILICIUM_CACHE_ENABLED` est désactivé ; la mesure du 25 octobre ne permet donc pas de prévoir le gain d’un changement de cache dans le pipeline actuel. L’inventaire des caches relevé le 27 octobre comptait 79 entrées / 6 185 088 793 octets dans Workbench et 18 entrées / 9 144 183 415 octets dans Network. Les caches sont séparés par dépôt ; la faible marge observée dans Network ne justifie pas d’y ajouter une compilation SBF volumineuse sans mesure.
 
 ## Décision de suivi
 
