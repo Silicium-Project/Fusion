@@ -184,18 +184,22 @@ sources privées dans des workflows publics ou ouvrir un budget facturable.
 
 ## Synchronisation du Project 12 entre dépôts
 
-La réconciliation publique `project-sync.yml` lit les PR liées de Workbench et
-d'Integration privé. Elle utilise son jeton Project existant pour Workbench et
-un second jeton d'installation de courte durée limité à Integration, avec
-seulement `pull_requests: read` et `checks: read`. Le gate Workbench est
-`ci/required` ; celui d'Integration est `integration/required`. Un jeton ou une
-réponse de dépôt manquante bloque la réconciliation ; un gate absent ou ambigu
-laisse la PR en attente. Les
-données des PR privées ne sont jamais imprimées dans les logs publics, qui ne
-contiennent que des totaux ; leurs références et les blocages détaillés restent
-dans le Project 12 privé. Les changements Integration sont réconciliés par la
-planification existante toutes les quinze minutes ; la synchronisation ne donne
-aucun droit d'écriture ni d'accès au Project dans Integration.
+La réconciliation publique `project-sync.yml` lit les PR explicitement liées de
+Workbench, des cinq dépôts composants privés et d'Integration. Elle utilise
+trois jetons d'installation éphémères séparés : le jeton Project existant pour
+Workbench et `planning-private`, un jeton limité à Integration, puis un jeton
+limité à BackEnd, FrontEnd, DesktopApp, Network et Solana. Les deux derniers
+n'ont que `pull_requests: read` et `checks: read`. Le gate Workbench et celui
+des composants sont `ci/required` ; celui d'Integration est
+`integration/required`. Un jeton ou une réponse de dépôt manquante bloque la
+réconciliation ; un gate absent, en attente, dupliqué ou produit par une autre
+App laisse la PR en cours. Les données des PR privées ne sont jamais imprimées
+dans les logs publics, qui ne contiennent que des totaux ; leurs références et
+les blocages détaillés restent dans le Project 12 privé. La planification
+existante toutes les quinze minutes détecte les PR privées, qui ne déclenchent
+pas directement le workflow public. Le workflow ne clone ni n'exécute le code
+des PR privées et ne reçoit aucun droit d'écriture sur ces dépôts ou sur le
+Project depuis leurs jetons de preuve.
 
 ## Accès aux sources
 

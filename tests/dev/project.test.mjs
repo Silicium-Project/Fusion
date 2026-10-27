@@ -9,6 +9,9 @@ import {
   assertCompleteRelations,
   projectSyncFailureOutput,
   projectSyncOutput,
+  componentRepositories,
+  projectPullRequestRepositories,
+  projectPullRequestToken,
   projectRequiredCheckName,
   projectRequiredCheckConclusion,
 } from '../../tools/lib/project.mjs';
@@ -87,6 +90,26 @@ test('a draft Integration PR keeps a Workbench issue in progress until private q
       pull_requests: [{ ...privatePullRequest, draft: false, ci: 'success' }],
     }),
     'Revue',
+  );
+});
+test('a private component PR stays in progress until its required gate and review are ready', () => {
+  const componentPullRequest = {
+    draft: false,
+    ci: 'pending',
+    changes_requested: false,
+    merged: false,
+    closed: false,
+  };
+  assert.equal(nextStatus({ pull_requests: [componentPullRequest] }), 'En cours');
+  assert.equal(
+    nextStatus({ pull_requests: [{ ...componentPullRequest, ci: 'success' }] }),
+    'Revue',
+  );
+  assert.equal(
+    nextStatus({
+      pull_requests: [{ ...componentPullRequest, ci: 'success', changes_requested: true }],
+    }),
+    'En cours',
   );
 });
 test('HOLD survives CI, merges and closure', () =>
@@ -341,6 +364,29 @@ test('public Project sync output hides private Integration PR references', () =>
   });
   assert.doesNotMatch(JSON.stringify(output), /Integration\/pull|private-branch/);
 });
+test('public Project sync output hides private component PR references and branch names', () => {
+  const output = projectSyncOutput({
+    apply: true,
+    publicWorkflow: true,
+    items: [
+      {
+        issue: 'https://github.com/Silicium-Project/Workbench/issues/210',
+        private_pull_request: 'https://github.com/Silicium-Project/Network/pull/355',
+        private_branch: 'feature/private-network-change',
+        status_changed: true,
+      },
+    ],
+    statusUpdates: 1,
+  });
+  assert.deepEqual(output, {
+    schema_version: 1,
+    apply: true,
+    processed_items: 1,
+    status_updates: 1,
+    blockage_updates: 0,
+  });
+  assert.doesNotMatch(JSON.stringify(output), /Network\/pull|private-network-change/);
+});
 test('failed public Project sync hides private issue and API diagnostics', () => {
   const output = projectSyncFailureOutput({
     apply: true,
@@ -424,22 +470,65 @@ test('public Project sync gates untrusted workflow sources and checks out only m
   );
   const integrationTokenBlock = workflow
     .split('id: integration-token')[1]
-    .split('- name: Reconcile')[0];
+    .split('- name: Create read-only component PR evidence token')[0];
   assert.doesNotMatch(
     integrationTokenBlock,
     /permission-(?:contents|issues|organization-projects|deployments|actions):/,
   );
   assert.equal((integrationTokenBlock.match(/permission-[\w-]+:/g) ?? []).length, 2);
+  assert.match(
+    workflow,
+    /id: component-token[\s\S]*repositories: BackEnd,FrontEnd,DesktopApp,Network,Solana[\s\S]*permission-checks: read[\s\S]*permission-pull-requests: read/,
+  );
+  const componentTokenBlock = workflow
+    .split('id: component-token')[1]
+    .split('- name: Reconcile')[0];
+  assert.doesNotMatch(
+    componentTokenBlock,
+    /permission-(?:contents|issues|organization-projects|deployments|actions):/,
+  );
+  assert.equal((componentTokenBlock.match(/permission-[\w-]+:/g) ?? []).length, 2);
+  assert.match(workflow, /COMPONENT_GH_TOKEN: \$\{\{ steps\.component-token\.outputs\.token \}\}/);
   const sync = readFileSync(new URL('../../tools/ci/project-sync.mjs', import.meta.url), 'utf8');
   assert.match(sync, /if \(!integrationToken\)/);
-  assert.match(
-    sync,
-    /pages\(`repos\/\$\{integrationRepository\}\/pulls\?state=all`, \{ token: integrationToken \}\)/,
-  );
+  assert.match(sync, /if \(!componentToken\)/);
+  assert.match(sync, /projectPullRequestRepositories\.flatMap/);
 });
 test('Project sync selects exactly one repository-specific required check', () => {
   assert.equal(projectRequiredCheckName('Silicium-Project/Workbench'), 'ci/required');
   assert.equal(projectRequiredCheckName('Silicium-Project/Integration'), 'integration/required');
+  assert.deepEqual(componentRepositories, [
+    'Silicium-Project/BackEnd',
+    'Silicium-Project/FrontEnd',
+    'Silicium-Project/DesktopApp',
+    'Silicium-Project/Network',
+    'Silicium-Project/Solana',
+  ]);
+  assert.deepEqual(projectPullRequestRepositories, [
+    'Silicium-Project/Workbench',
+    ...componentRepositories,
+    'Silicium-Project/Integration',
+  ]);
+  assert.equal(projectPullRequestToken('Silicium-Project/Workbench', {}), undefined);
+  assert.equal(
+    projectPullRequestToken('Silicium-Project/Integration', {
+      integrationToken: 'integration-read',
+    }),
+    'integration-read',
+  );
+  assert.equal(
+    projectPullRequestToken('Silicium-Project/Network', { componentToken: 'components-read' }),
+    'components-read',
+  );
+  assert.throws(() => projectPullRequestToken('Silicium-Project/Network'), /component.*token/);
+  for (const repo of componentRepositories) {
+    assert.equal(
+      projectPullRequestToken(repo, { componentToken: 'components-read' }),
+      'components-read',
+    );
+    assert.equal(projectRequiredCheckName(repo), 'ci/required');
+    assert.equal(projectRequiredCheckConclusion([], repo), 'pending');
+  }
   const actions = { slug: 'github-actions' };
   assert.equal(
     projectRequiredCheckConclusion(
@@ -465,7 +554,32 @@ test('Project sync selects exactly one repository-specific required check', () =
     ),
     'pending',
   );
-  assert.throws(() => projectRequiredCheckName('Silicium-Project/BackEnd'), /does not inspect/);
+  for (const repo of componentRepositories)
+    assert.equal(
+      projectRequiredCheckConclusion(
+        [{ name: 'ci/required', conclusion: 'success', app: actions }],
+        repo,
+      ),
+      'success',
+    );
+  assert.equal(
+    projectRequiredCheckConclusion(
+      [{ name: 'ci/required', conclusion: 'success', app: { slug: 'other-app' } }],
+      componentRepositories[0],
+    ),
+    'pending',
+  );
+  assert.equal(
+    projectRequiredCheckConclusion(
+      [
+        { name: 'ci/required', conclusion: 'success', app: actions },
+        { name: 'ci/required', conclusion: 'success', app: actions },
+      ],
+      componentRepositories[0],
+    ),
+    'pending',
+  );
+  assert.throws(() => projectRequiredCheckName('Silicium-Project/Unknown'), /does not inspect/);
 });
 test('abandoned work is not counted as delivered', () =>
   assert.equal(nextStatus({ abandoned: true }), 'Abandonné'));

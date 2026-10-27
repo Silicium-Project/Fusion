@@ -49,10 +49,14 @@ bloque la suite avant toute demande de jeton Source Reader.
 8. Présenter les changements, résultats observés et limites ; laisser la
    décision de revue/acceptation à un humain autorisé.
 
-La synchronisation du Project 12 observe aussi les PR et checks du dépôt privé
-Integration, avec un délai maximal nominal de quinze minutes. Les logs publics
-ne contiennent que des totaux ; un PR privé sans gate requis unique reste en
-attente. Ne saisis pas toi-même un statut comme preuve d'acceptation.
+La synchronisation du Project 12 observe les PR, revues et checks de Workbench,
+des cinq dépôts composants privés et d'Integration, avec un délai maximal
+nominal de quinze minutes pour les dépôts privés. Elle utilise des jetons App
+éphémères en lecture seule limités à `pull_requests` et `checks` pour les
+composants privés ; elle ne récupère ni n'exécute leur code. Les logs publics
+ne contiennent que des totaux. Une PR privée sans gate `ci/required` unique reste
+en attente et ne passe pas en revue. Ne saisis pas toi-même un statut comme
+preuve d'acceptation.
 Dans `dev capabilities --json`, `features.project_automation: available` décrit
 le synchroniseur distant activé dans Workbench. Les commandes locales
 `issue start` et `issue accept` gardent leurs propres exigences de droits, de

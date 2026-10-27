@@ -2,12 +2,37 @@
 import { api, pages, graphql, issueRef, requireWriter, repository } from './github.mjs';
 import { Failure } from './process.mjs';
 import { inspectEvidence, acceptanceChecklistComplete } from './evidence.mjs';
+import { workspaceConfig } from './workspace.mjs';
 
 export const integrationRepository = 'Silicium-Project/Integration';
+export const componentRepositories = Object.freeze(
+  Object.values(workspaceConfig().components).map((component) => component.repository),
+);
+export const projectPullRequestRepositories = Object.freeze([
+  repository,
+  ...componentRepositories,
+  integrationRepository,
+]);
+
+export function projectPullRequestToken(repo, { componentToken, integrationToken } = {}) {
+  if (repo === repository) return undefined;
+  if (repo === integrationRepository) {
+    if (!integrationToken)
+      throw new Failure('The read-only Integration pull-request token is required.', 3);
+    return integrationToken;
+  }
+  if (componentRepositories.includes(repo)) {
+    if (!componentToken)
+      throw new Failure('The read-only component pull-request token is required.', 3);
+    return componentToken;
+  }
+  throw new Failure(`Project sync does not inspect pull requests from ${repo}`, 3);
+}
 
 export function projectRequiredCheckName(repo) {
   if (repo === repository) return 'ci/required';
   if (repo === integrationRepository) return 'integration/required';
+  if (componentRepositories.includes(repo)) return 'ci/required';
   throw new Failure(`Project sync does not inspect pull requests from ${repo}`, 3);
 }
 
