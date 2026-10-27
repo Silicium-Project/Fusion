@@ -23,8 +23,10 @@
 - La PR #326 reste en brouillon. Sa branche a intégré `main` jusqu'au commit
   `a20fcf2`, retire le runtime IA du tree public courant et pointe DesktopApp,
   BackEnd et Network vers les têtes de leurs PR d'export. Cette révision doit
-  encore être publiée et requalifiée ; ces pins ne sont pas des versions
-  acceptées et les trois PR natives restent ouvertes.
+  rester non fusionnée : le run public
+  [40472945639](https://github.com/Silicium-Project/Workbench/actions/runs/40472945639)
+  a réussi sur `e0b103e`, mais `validate` a été ignoré en scope public. Ces pins
+  ne sont pas des versions acceptées et les trois PR natives restent ouvertes.
 - Integration reste privé. Son dernier relevé ne montrait aucune variable
   d'activation ; la dernière capture de facturation fournie signalait les
   2 000 minutes privées incluses consommées. Aucune qualification privée n'a
@@ -182,7 +184,7 @@ unitaires de scripts ne remplacent pas ces preuves.
 Voir [l'activation détaillée](bootstrap.md), [la livraison](delivery.md),
 [la revue d'exposition](exposure-review.md) et [les parcours IA](../ai/README.md).
 
-## Mise à jour vérifiée — 26 octobre 2026
+## Mise à jour vérifiée — 27 octobre 2026
 
 Le dépôt public Workbench contient désormais les cinq sous-modules privés
 Network, BackEnd, FrontEnd, DesktopApp et Solana. Le runtime d'inférence Python
@@ -210,8 +212,10 @@ l'historique public déjà publié. Elle évite seulement que la révision coura
 de Workbench continue de le distribuer. Les contrôles locaux disponibles
 (`dev test --suite docs`, `git diff --check` et les 7 tests Python du runtime)
 sont passés ; les tests Rust/Tauri restent impossibles localement sans Cargo.
-La branche de la PR Workbench #326 a maintenant intégré `main` jusqu'à
-`a20fcf2` ; cette mise à jour locale doit encore être poussée et requalifiée par
-les checks publics. La PR DesktopApp devra ensuite être intégrée séparément et
-recevoir sa qualification lorsque le budget privé le permettra. D'ici là, le
-pin reste un candidat de migration, pas une version acceptée ou déployée.
+La tête publiée `e0b103e` de la PR Workbench #326 a intégré `main` jusqu'à
+`a20fcf2`. Son run public [40472945639](https://github.com/Silicium-Project/Workbench/actions/runs/40472945639)
+a passé les contrôles publics et `ci/required` ; `validate` a été ignoré en scope
+public. Ce résultat ne qualifie pas DesktopApp, BackEnd ou Network, et ne vaut
+pas livraison. La PR #326 reste en brouillon jusqu'à l'acceptation des PR natives
+et à la qualification privée correspondante. Le pin reste un candidat, pas une
+version acceptée ou déployée.
