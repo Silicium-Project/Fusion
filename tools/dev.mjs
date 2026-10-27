@@ -68,11 +68,6 @@ const commands = [
     usage: 'ci inspect --run ID [--repository Silicium-Project/Integration]',
   },
   { command: 'ci metrics', effect: 'read', usage: 'ci metrics [--limit 20] --json' },
-  {
-    command: 'ci authorize-private',
-    effect: 'bounded Actions authorization with --apply; no delivery',
-    usage: 'ci authorize-private [--head SHA] [--minutes 180] [--apply]',
-  },
   { command: 'check', effect: 'local validation', usage: 'check --changed --base origin/main' },
   {
     command: 'test',
@@ -238,13 +233,6 @@ async function main() {
   }
   if (command === 'ci' && subcommand === 'metrics')
     return output(inspectMetrics(Number(o.limit ?? 20)));
-  if (command === 'ci' && subcommand === 'authorize-private') {
-    const result = run(['node', 'tools/admin/qualify-private.mjs', ...process.argv.slice(4)], {
-      timeout: 120_000,
-    });
-    process.stdout.write(result.stdout);
-    return;
-  }
   if (command === 'test') {
     if (!o.suite) throw new Failure('Provide --suite; see capabilities', 2);
     const report = executeSuite(o.suite, {

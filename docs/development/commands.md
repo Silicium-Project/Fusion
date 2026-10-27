@@ -115,11 +115,11 @@ mesure l'attente avant que les jobs existent. `job_queue_and_matrix_wait` part d
 la limitation de matrice et le provisionnement du runner. Ces deux mesures ne
 doivent pas être confondues ; une date absente reste une observation indisponible.
 
-`dev ci authorize-private --head SHA --minutes 180` prépare une fenêtre de
-qualification privée du commit exact. `--apply` exige les droits administratifs,
-un budget Actions à zéro avec arrêt des dépassements, et suspend les anciens
-workflows avant d'autoriser cette seule qualification. Voir
-[la procédure](../operations/bootstrap.md#qualification-ponctuelle-tout-en-restant-privé).
+La qualification complète des composants privés s'exécute uniquement dans le
+dépôt privé [Integration](https://github.com/Silicium-Project/Integration), via
+le workflow manuel **Full private integration**. Vérifier le quota et le budget
+GitHub avant de le lancer ; Workbench ne fournit pas de commande pour ouvrir une
+fenêtre privée. Voir la [procédure d'activation](../operations/bootstrap.md).
 
 `dev ops diagnose --environment dev --json` prépare les observations CPU,
 disque, conteneurs et RPC. `--apply` demande le workflow protégé : voir
