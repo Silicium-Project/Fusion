@@ -66,6 +66,25 @@ appelle `dev test --suite ...` ; un changement de dépendance ou de contrat
 qualifie aussi les consommateurs. Une surface inconnue impose la matrice.
 `dev check --changed --base origin/main` exécute l'ensemble des suites choisies.
 
+`dev workspace status --json` lit le registre versionné des dépôts, leur
+propriétaire, visibilité, branche par défaut et chemin, puis vérifie les pins
+contre `components.lock.json` et `.gitmodules`. Les dépendances vivent dans
+`tools/config/lanes.json`, les consommateurs de contrats dans
+`contracts/catalog.json`, et les versions de livraison dans
+`tools/config/delivery.json`.
+
+`dev ci policy --json` compare les métadonnées publiques de Workbench et le
+ruleset actif `Protect Main` au manifeste versionné. Une divergence échoue ;
+une erreur ou une pagination incomplète de l'API donne `blocked`, jamais un
+rapport propre. Ce contrôle ne lit pas les dépôts privés, le Project, les
+artefacts de release, les acteurs de contournement ou la protection de branche
+classique. La CI l'exécute quand les fichiers de politique concernés changent.
+
+`dev ci public-evidence --sha SHA --json` confirme sans jeton que le SHA
+correspond toujours au `main` courant et que son unique `ci/required` est
+terminé et réussi. Integration l'exécute avant de demander le jeton Source
+Reader ; un résultat absent, ancien ou incomplet bloque l'accès aux sources.
+
 ## Applications
 
 ```sh

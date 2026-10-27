@@ -10,9 +10,33 @@ export const workspaceLock = (directory = root) =>
 
 export function validateWorkspace(config, lock) {
   if (
+    config.$schema !== 'https://silicium.network/contracts/workspace/registry/v1' ||
+    lock.$schema !== 'https://silicium.network/contracts/workspace/pins/v1' ||
     config.schema_version !== 1 ||
     lock.schema_version !== 1 ||
-    lock.repository !== config.repository
+    typeof config.name !== 'string' ||
+    !config.name ||
+    lock.repository !== config.repository ||
+    !Number.isSafeInteger(config.repository_id) ||
+    config.repository_id < 1 ||
+    config.owner !== config.repository?.split('/')[0] ||
+    config.visibility !== 'public' ||
+    config.mode !== 'multi-repo' ||
+    !/^[A-Za-z0-9._-]+$/.test(config.default_branch ?? '') ||
+    !Array.isArray(config.legacy_repositories) ||
+    config.legacy_repositories.some(
+      (repository) => !/^Silicium-Project\/[A-Za-z0-9._-]+$/.test(repository),
+    ) ||
+    !Array.isArray(config.public_suites) ||
+    !config.public_suites.length ||
+    config.public_suites.some((suite) => typeof suite !== 'string' || !suite) ||
+    config.integration?.repository !== config.integration_repository ||
+    !/^Silicium-Project\/[A-Za-z0-9._-]+$/.test(config.integration_repository ?? '') ||
+    config.integration?.owner !== config.integration?.repository?.split('/')[0] ||
+    config.integration?.visibility !== 'private' ||
+    typeof config.integration?.role !== 'string' ||
+    !config.integration.role ||
+    !/^[A-Za-z0-9._-]+$/.test(config.integration?.default_branch ?? '')
   )
     throw new Failure('Unsupported workspace identity or lock schema', 2);
   const paths = new Set();
@@ -24,9 +48,14 @@ export function validateWorkspace(config, lock) {
     if (
       !/^[a-z][a-z0-9-]*$/.test(id) ||
       !/^Silicium-Project\/[A-Za-z0-9._-]+$/.test(entry.repository) ||
+      entry.owner !== entry.repository.split('/')[0] ||
+      !/^[A-Za-z0-9._-]+$/.test(entry.default_branch ?? '') ||
       !/^[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*$/.test(entry.path) ||
       paths.has(entry.path) ||
       entry.visibility !== 'private' ||
+      !Array.isArray(entry.suites) ||
+      !entry.suites.length ||
+      entry.suites.some((suite) => typeof suite !== 'string' || !suite) ||
       !/^[a-f0-9]{40}$/.test(pin.commit ?? '') ||
       pin.repository !== entry.repository ||
       pin.path !== entry.path
@@ -92,7 +121,9 @@ export function workspaceStatus({ directory = root, materialized = false } = {})
     entries.push({
       id,
       repository: component.repository,
+      owner: component.owner,
       path: component.path,
+      default_branch: component.default_branch,
       expected: pin.commit,
       actual,
       state,
@@ -105,6 +136,19 @@ export function workspaceStatus({ directory = root, materialized = false } = {})
     schema_version: 1,
     operation: 'workspace.verify',
     repository: config.repository,
+    registry: {
+      workbench: {
+        repository: config.repository,
+        repository_id: config.repository_id,
+        owner: config.owner,
+        visibility: config.visibility,
+        default_branch: config.default_branch,
+      },
+      integration: { ...config.integration },
+      components: Object.fromEntries(
+        Object.entries(config.components).map(([id, component]) => [id, { ...component }]),
+      ),
+    },
     status: invalid.length ? 'blocked' : 'success',
     materialized,
     components: entries,

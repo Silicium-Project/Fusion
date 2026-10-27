@@ -25,6 +25,7 @@ jobs:
       quick_matrix: ${{ steps.plan.outputs.quick_matrix }}
       integration_matrix: ${{ steps.plan.outputs.integration_matrix }}
       integration_count: ${{ steps.plan.outputs.integration_count }}
+      policy_audit: ${{ steps.plan.outputs.policy_audit }}
     steps:
     - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       with:
@@ -60,7 +61,10 @@ jobs:
 
         const phases=splitMatrix(p);
 
-        for(const [key,value] of Object.entries({quick_matrix:phases.quick,integration_matrix:phases.integration,integration_count:phases.integration_count}))
+        const policyFiles=["tools/config/repository-policy.json","tools/lib/repository-policy.mjs","tests/dev/repository-policy.test.mjs","tools/dev.mjs",".github/workflows/ci.yml"];
+        const policyAudit=p.paths.some(path=>policyFiles.includes(path));
+
+        for(const [key,value] of Object.entries({quick_matrix:phases.quick,integration_matrix:phases.integration,integration_count:phases.integration_count,policy_audit:policyAudit}))
         fs.appendFileSync(process.env.GITHUB_OUTPUT,`${key}=${JSON.stringify(value)}\n`);
 
         fs.writeFileSync(''.artifacts/plan.json'',JSON.stringify(p,null,2));
@@ -151,6 +155,10 @@ jobs:
         SILICIUM_CACHE_NPM: ${{ steps.npm-cache.outputs.cache-hit }}
         SILICIUM_CACHE_RUST: ${{ steps.rust-cache.outputs.cache-hit }}
         SILICIUM_CACHE_GO: ${{ steps.go-toolchain.outputs.cache-hit }}
+    - name: Audit public repository ruleset after policy changes
+      if: ${{ matrix.suite == 'tooling' && needs.changes.outputs.policy_audit == 'true' }}
+      shell: bash
+      run: node tools/dev.mjs ci policy --json
     - name: Check artifact size reservation
       if: ${{ always() }}
       shell: bash

@@ -2,7 +2,7 @@
 
 Décision du propriétaire, 25 octobre 2026 : revenir à des dépôts indépendants,
 renommer Fusion en **Workbench** et conserver son historique public. Cette
- décision remplace l'organisation monorepo ; elle ne change ni le protocole P2P,
+décision remplace l'organisation monorepo ; elle ne change ni le protocole P2P,
 ni les identités installées, ni les autorités Solana.
 
 ## Visibilité et provenance
@@ -36,9 +36,36 @@ Les modifications locales antérieures sont conservées dans leur checkout.
 
 ## Une composition reproductible
 
-`tools/config/workspace.json` déclare les responsabilités et suites.
+`tools/config/workspace.json` est le registre versionné des dépôts, propriétaires,
+visibilité, branches par défaut, chemins et suites ; son contrat strict est
+`contracts/workspace/registry-v1.schema.json`. `components.lock.json` porte son
+propre contrat `contracts/workspace/pins-v1.schema.json`. `tools/config/lanes.json`
+définit les dépendances de validation ; `contracts/catalog.json` définit les
+propriétaires de contrats, consommateurs, versions et suites de compatibilité.
 `components.lock.json` fixe un SHA complet par composant ; `.gitmodules` fixe
-les URL et les gitlinks Git portent exactement ces SHA.
+les URL et les gitlinks Git portent exactement ces SHA. Les versions et règles
+de distribution sont dans `tools/config/delivery.json` et les schémas de
+`contracts/ci/`.
+
+Modifier un dépôt, une branche, un chemin ou une visibilité dans une PR
+Workbench, avec les tests de schéma et la revue des composants affectés. Le
+changement doit mettre à jour les exemples, consommateurs et instructions IA
+qui dépendent du champ. Tout ajout, retrait ou changement de type d'un champ
+exige une nouvelle version du schéma, l'actualisation du document `$id` et la
+migration des consommateurs dans la même séquence de PR. Une période de
+transition peut accepter deux versions, mais chaque consommateur doit déclarer
+explicitement celle qu'il lit ; aucun schéma ne devine ou convertit un champ.
+Un changement de pin modifie ensemble le gitlink et `components.lock.json`. Les
+dépendances et consommateurs sont modifiés dans leur registre propriétaire,
+pas recopiés dans un second fichier. Integration consomme ces sources depuis
+un SHA Workbench exact et en conserve le digest dans le rapport de
+réconciliation.
+
+Les identifiants `owner` et `co_owners` du catalogue des contrats désignent les
+responsables du contenu. Les schémas, le registre, les pins et leurs tests sont
+maintenus avec Workbench ; `.github/CODEOWNERS` doit diriger les changements de
+`contracts/` et `tools/config/` vers les responsables du dépôt. Aucun bot ne
+réécrit les pins ni ne modifie automatiquement une visibilité ou une identité.
 
 - `dev workspace status` vérifie cette cohérence sans accès réseau.
 - `dev workspace init --component ID --apply` récupère le pin déclaré avec les
@@ -53,12 +80,12 @@ les URL et les gitlinks Git portent exactement ces SHA.
 
 Le registre commun conserve les suites applicatives. Les scopes sont :
 
-| Scope | Preuve fournie |
-| --- | --- |
-| `public` | Documentation, outillage, sécurité et PowerShell de Workbench |
-| `component:ID` | Politique commune et suites du composant ; consommateurs différés |
-| `integration` | Toutes les suites PR et vérification des sources des cinq composants |
-| `local` | Routage conservateur des fichiers touchés et des consommateurs |
+| Scope          | Preuve fournie                                                       |
+| -------------- | -------------------------------------------------------------------- |
+| `public`       | Documentation, outillage, sécurité et PowerShell de Workbench        |
+| `component:ID` | Politique commune et suites du composant ; consommateurs différés    |
+| `integration`  | Toutes les suites PR et vérification des sources des cinq composants |
+| `local`        | Routage conservateur des fichiers touchés et des consommateurs       |
 
 Les suites différées sont explicites dans le plan. Elles ne sont pas considérées
 comme réussies. Les rapports portent le SHA Workbench, la politique, le scope et

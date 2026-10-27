@@ -8,6 +8,9 @@ communes ci-dessous restent la référence locale et GitHub.
 
 Workbench est public ; les cinq composants sont des sous-modules privés. Lire
 [la décision](docs/architecture/multi-repo.md). Commencer par `dev workspace status`.
+Le registre `tools/config/workspace.json` et `components.lock.json` sont régis
+par leurs schémas versionnés sous `contracts/workspace/` ; toute évolution de
+format met à jour schéma, validateur, tests, consommateurs et cette procédure.
 Récupérer seulement les sources autorisées avec
 `dev workspace init --component ID --apply`. Préserver les checkouts divergents.
 Ne pas commiter les sources applicatives dans ce dépôt : une PR native, puis
