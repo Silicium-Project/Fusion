@@ -182,3 +182,18 @@ test('release baseline rejects duplicate or unsupported versions and keeps chann
     /inventory is incomplete/,
   );
 });
+
+test('release baseline rejects channel tags that contradict GitHub prerelease metadata', () => {
+  assert.throws(
+    () =>
+      trustedReleaseBaseline(
+        [release('dev-0.3.0-dev.31-aaaaaaaaaaaa', { channel: 'prod' })],
+        'dev',
+      ),
+    /dev release tag contradicts its prerelease metadata/,
+  );
+  assert.throws(
+    () => trustedReleaseBaseline([release('v0.3.0')], 'prod'),
+    /prod release tag contradicts its prerelease metadata/,
+  );
+});

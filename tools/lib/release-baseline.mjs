@@ -27,6 +27,15 @@ export function trustedReleaseBaseline(releases, channel) {
   )
     throw new Failure('The published release inventory is incomplete');
 
+  const mismatchedChannelMetadata = releases.some(
+    (release) =>
+      !release.draft &&
+      releaseVersion(release.tag_name ?? '', channel) !== null &&
+      release.prerelease !== (channel === 'dev'),
+  );
+  if (mismatchedChannelMetadata)
+    throw new Failure(`A published ${channel} release tag contradicts its prerelease metadata`);
+
   const channelReleases = releases
     .filter((release) => !release.draft && release.prerelease === (channel === 'dev'))
     .map((release) => {

@@ -12,6 +12,9 @@ le validateur vérifie d'abord que le document et ses structures imbriquées son
 des objets/listes JSON de la forme attendue. Une forme malformée est refusée
 comme identité invalide avant toute utilisation. Cette validation de structure
 ne remplace jamais la vérification de la signature détachée avec le trust anchor.
+Le tag d'une release doit aussi correspondre à son indicateur GitHub
+`prerelease` pour le canal préparé ; une incohérence bloque la sélection de la
+baseline au lieu de laisser la release hors du contrôle de version.
 
 Les artefacts temporaires de qualification et de livraison portent le numéro
 de tentative du workflow qui les a produits. Les téléchargements, la preuve
