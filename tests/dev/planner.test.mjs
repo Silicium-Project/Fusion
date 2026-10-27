@@ -71,6 +71,11 @@ test('qualification plans carry each suite source list for least-privilege priva
 });
 
 test('Network-to-Solana contracts run only in the cross-repository composition', () => {
+  const localPytest = registry().suites['network-integration'].steps.find(
+    (step) =>
+      step.command[0] === 'python3' && step.command[1] === '-m' && step.command[2] === 'pytest',
+  );
+  assert.ok(localPytest.command.includes('--ignore=tests/test_solana_integration_contract.py'));
   const component = makePlan({ paths: [], scope: 'component:network' });
   assert.ok(!component.suites.includes('network-contract'));
   const integration = makePlan({ paths: [], scope: 'integration' });
