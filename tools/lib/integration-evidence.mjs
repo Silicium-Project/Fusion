@@ -142,6 +142,12 @@ export function privateIntegrationEvidence({
     run.head_repository?.full_name !== integrationRepository
   )
     throw new Failure('The current run is not the trusted private Integration main qualification');
+  if (
+    ![run.actor?.login, run.triggering_actor?.login].every(
+      (login) => typeof login === 'string' && login.trim().length > 0,
+    )
+  )
+    throw new Failure('The run actor and triggering actor identities must both be present');
   const createdAt = Date.parse(run.created_at ?? '');
   if (!Number.isFinite(createdAt) || createdAt > now || now - createdAt > maxRunAgeMs)
     throw new Failure(

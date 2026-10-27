@@ -138,6 +138,8 @@ test('public, pull-request, stale, skipped, or partial evidence fails closed', (
     [(input) => (input.run.event = 'pull_request')],
     [(input) => (input.run.head_branch = 'feature')],
     [(input) => (input.run.head_sha = 'f'.repeat(40))],
+    [(input) => (input.run.actor = null)],
+    [(input) => (input.run.triggering_actor = null)],
     [(input) => (input.jobs[0].conclusion = 'skipped')],
     [(input) => (input.reports = input.reports.slice(1))],
     [(input) => (input.plan.suites = input.plan.suites.slice(1))],
