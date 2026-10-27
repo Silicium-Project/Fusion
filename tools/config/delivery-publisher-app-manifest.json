@@ -1,0 +1,12 @@
+{
+  "name": "Silicium Delivery Publisher",
+  "url": "https://github.com/Silicium-Project/Workbench",
+  "description": "Publishes qualified Silicium candidates to Workbench and dispatches the protected delivery workflow.",
+  "public": false,
+  "default_permissions": {
+    "actions": "write",
+    "contents": "write",
+    "packages": "write"
+  },
+  "default_events": []
+}

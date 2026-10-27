@@ -36,6 +36,30 @@ composant sans modifier un checkout utilisateur. Les métadonnées enregistrent
 les deux SHA originaux. Ce commit n'est ni une version intégrée ni un candidat
 livrable ; il ne doit jamais être poussé.
 
+## App de publication séparée
+
+L'App `Silicium Source Reader` reste strictement en lecture seule. Ne pas ajouter
+de droits d'écriture à cette App pour publier une livraison. Le manifeste de
+préparation `tools/config/delivery-publisher-app-manifest.json` décrit une App
+séparée, sans webhook et installée uniquement sur `Workbench` :
+
+- `contents: write` pour déposer le candidat qualifié et ses éléments immuables ;
+- `packages: write` pour publier les images du candidat dans GHCR ;
+- `actions: write` pour demander le workflow Workbench de déploiement ;
+- aucun droit sur les sources privées, issues, projets, checks, déploiements,
+  membres ou secrets.
+
+Ce fichier prépare la configuration, il ne prouve ni la création de l'App,
+ni son installation, ni la sécurité d'une livraison. Ne pas créer ou installer
+l'App avant que le transfert d'artefacts, la validation de signature et le
+workflow cible soient implémentés et qualifiés. À cette étape seulement, stocker
+son Client ID et sa clé privée comme secrets chiffrés d'Integration. Le workflow
+devra créer un jeton d'installation limité à `Workbench` et aux trois permissions
+ci-dessus, limiter les étapes qui reçoivent ce jeton, ne jamais l'inclure dans
+les rapports ou artefacts, puis laisser les approbations d'environnement
+Workbench décider de toute promotion. Ne pas transférer ces secrets vers
+Workbench, les runners VPS, ou l'App Source Reader.
+
 ## Activation après migration
 
 Les workflows natifs utilisent `SILICIUM_COMPONENT_CI_ENABLED=1`. Integration
