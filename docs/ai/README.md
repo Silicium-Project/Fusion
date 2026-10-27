@@ -35,6 +35,19 @@ le `main` courant et que son contrôle public `ci/required` a réussi :
 publique, sans jeton ; une preuve absente, ancienne, paginée ou non réussie
 bloque la suite avant toute demande de jeton Source Reader.
 
+Pour une PR Workbench, lire aussi `./dev ci plan --scope public --base
+origin/main --head HEAD --json`. Les suites publiques suivent les chemins
+modifiés ; une PR documentaire exécute la validation documentaire, alors que
+les workflows, outils partagés, contrats et chemins inconnus élargissent la
+matrice. Les suites privées différées ne sont pas des réussites : elles exigent
+la qualification Integration avant livraison.
+
+Une CI native n'exécute que les suites de son composant. Elle ne doit pas
+relancer les suites publiques de Workbench : le workflow exige auparavant un
+`ci/required` réussi et une observation de stockage fraîche pour le SHA exact
+de la politique épinglée. Vérifier `not_applicable` et `deferred_suites` pour
+distinguer ces cas ; les autres composants restent à qualifier dans Integration.
+
 ## Implémenter une tranche
 
 1. Lire l'issue, son parent, ses dépendances et la cible de validation du Project.

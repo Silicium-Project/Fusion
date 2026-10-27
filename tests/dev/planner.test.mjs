@@ -7,7 +7,9 @@ import {
   combinePlans,
   splitMatrix,
   makePlan,
+  scopeSelection,
 } from '../../tools/lib/planner.mjs';
+import { workspaceConfig } from '../../tools/lib/workspace.mjs';
 
 test('rename and copy include old and new paths, with spaces preserved', () => {
   assert.deepEqual(
@@ -17,13 +19,8 @@ test('rename and copy include old and new paths, with spaces preserved', () => {
 });
 test('truncated change output fails closed', () =>
   assert.throws(() => parseChanges('R100\0one\0')));
-test('documentation does not compile applications', () =>
-  assert.deepEqual(route(['docs/ai/README.md']).suites, [
-    'docs',
-    'powershell',
-    'security',
-    'tooling',
-  ]));
+test('documentation routes only the documentation suite', () =>
+  assert.deepEqual(route(['docs/ai/README.md']).suites, ['docs']));
 test('unknown paths require the entire registered matrix', () =>
   assert.equal(
     route(['unexpected.file']).suites.length,
@@ -96,6 +93,28 @@ test('a PR cannot silently remove the test command from an unchanged suite', () 
       ),
     /obligations/,
   );
+});
+
+test('public plans target changed suites and expand conservatively for policy or unknown paths', () => {
+  const config = registry();
+  const workspace = workspaceConfig();
+  const publicPlan = (paths) =>
+    scopeSelection(route(paths, config), 'public', config, workspace).suites;
+  assert.deepEqual(publicPlan(['docs/ai/README.md']), ['docs']);
+  assert.deepEqual(publicPlan(['tools/config/lanes.json']), [...workspace.public_suites].sort());
+  assert.deepEqual(publicPlan(['unexpected.file']), [...workspace.public_suites].sort());
+  assert.deepEqual(publicPlan([]), [...workspace.public_suites].sort());
+});
+
+test('component plans run only their own suites and defer only other private components', () => {
+  const plan = makePlan({ paths: ['tools/dev.mjs'], scope: 'component:api' });
+  assert.deepEqual(plan.suites, ['api']);
+  assert.ok(!plan.deferred_suites.some((entry) => ['docs', 'tooling'].includes(entry.suite)));
+  assert.equal(
+    plan.not_applicable.find((entry) => entry.suite === 'docs').reason,
+    'public policy is checked at the exact pinned Workbench SHA',
+  );
+  assert.ok(plan.deferred_suites.some((entry) => entry.suite === 'web'));
 });
 
 test('Solana program and SDK changes qualify the runtime payment consumers', () => {

@@ -44,6 +44,23 @@ Solana ; ne pas réintroduire les anciens chemins du monorepo
 `packages/solana-sdk`. La suite privée reste non qualifiée tant que les Actions
 Integration et son quota sont suspendus.
 
+## Routage des suites publiques
+
+Workbench sélectionne les suites publiques à partir des chemins réellement
+modifiés. Une PR limitée à `docs/` lance la validation documentaire ; les
+changements des workflows, outils partagés, contrats ou chemins inconnus
+élargissent la matrice publique complète. Les fichiers propres à un composant
+privé restent reportés vers Integration. `dev ci plan --scope public --base
+origin/main --head HEAD --json` doit expliquer les chemins, les suites retenues
+et les validations privées différées avant qu'un agent lance les contrôles.
+
+La qualification native ne relance que les suites enregistrées pour le
+composant concerné. Avant tout accès à sa source, le contrôle de budget exige
+également un run Workbench réussi sur le SHA épinglé, avec `ci/required` et la
+vérification de stockage tous deux terminés avec succès. Les suites publiques
+ne sont donc pas reconstruites dans chaque dépôt privé ; Integration reste
+responsable de la matrice complète avant livraison.
+
 Le workflow réutilisable s'exécute dans le contexte d'Integration : son jeton
 reste en lecture seule sur le dépôt appelant et ne gagne aucun droit sur
 Workbench. Le reçu de métadonnées et sa signature détachée restent privés
