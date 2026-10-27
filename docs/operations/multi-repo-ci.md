@@ -81,6 +81,19 @@ provisionner l'App de publication avant validation des scopes, secrets et
 formats publics. Aucun secret de publication ne va sur le runner VPS ou dans
 l'App Source Reader.
 
+L'inventaire public consulté le 27 octobre 2026 contient 47 releases et
+218 assets ; l'API GitHub fournit un digest pour chacun, mais aucune release
+n'a `manifest.json` ou `manifest.json.asc`. Les versions de plusieurs
+releases de développement sont également dupliquées. Les digests GitHub ne
+remplacent pas un manifeste signé qui lie les versions, les pins privés, le
+canal et les assets. Le sélecteur de baseline refuse maintenant les versions
+dupliquées, les tags inconnus et tout candidat dont la release la plus récente
+du canal n'est pas signée, y compris les releases historiques aux anciens
+formats de tags. `contracts/trust/release.gpg` est absent ; la livraison reste
+bloquée jusqu'à la définition humaine d'une baseline et à la provision des
+clés et de l'ancre approuvées. Aucune ancienne release n'est réécrite ou
+déclarée signée rétroactivement.
+
 ## Activation après migration
 
 Les workflows natifs utilisent `SILICIUM_COMPONENT_CI_ENABLED=1`. Integration

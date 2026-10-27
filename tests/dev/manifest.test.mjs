@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { validateManifest, packageVersions, compareVersions } from '../../tools/lib/manifest.mjs';
+import { trustedReleaseBaseline } from '../../tools/lib/release-baseline.mjs';
 const sha = 'a'.repeat(40);
 const candidate = () => ({
   schema_version: 1,
@@ -90,4 +91,74 @@ test('versions retain prerelease ordering and unique Windows sequence', () => {
   assert.equal(packageVersions('0.3.0').windows, '0.3.0.65535');
   for (const v of ['0.3.0+hidden', '0.3.0-dev.0', '0.3.0-dev.65535', '0.3.0-dev.65536', '$(id)'])
     assert.throws(() => packageVersions(v));
+});
+
+function release(tag, { channel = 'dev', signed = false, draft = false } = {}) {
+  return {
+    tag_name: tag,
+    draft,
+    prerelease: channel === 'dev',
+    assets: signed
+      ? [{ name: 'manifest.json' }, { name: 'manifest.json.asc' }]
+      : [
+          {
+            name: 'release-channel.json',
+            digest: `sha256:${'a'.repeat(64)}`,
+          },
+        ],
+  };
+}
+
+test('release baseline selection allows an empty channel but requires the newest existing release to be signed', () => {
+  assert.deepEqual(trustedReleaseBaseline([], 'dev'), {
+    highestPublished: null,
+    previous: null,
+  });
+  const current = release('dev-0.3.0-dev.31-aaaaaaaaaaaa', { signed: true });
+  assert.equal(
+    trustedReleaseBaseline([release('v0.2.9-dev.28'), current], 'dev').previous,
+    current,
+  );
+  assert.throws(
+    () => trustedReleaseBaseline([release('v0.2.9-dev.28')], 'dev'),
+    /newest published dev release has no signed manifest/,
+  );
+  assert.throws(
+    () =>
+      trustedReleaseBaseline(
+        [
+          release('dev-0.3.0-dev.31-aaaaaaaaaaaa', { signed: true }),
+          release('dev-0.3.0-dev.32-bbbbbbbbbbbb'),
+        ],
+        'dev',
+      ),
+    /newest published dev release has no signed manifest/,
+  );
+});
+
+test('release baseline rejects duplicate or unsupported versions and keeps channels separate', () => {
+  assert.deepEqual(trustedReleaseBaseline([release('v0.2.17', { channel: 'prod' })], 'dev'), {
+    highestPublished: null,
+    previous: null,
+  });
+  assert.throws(
+    () =>
+      trustedReleaseBaseline(
+        [
+          release('dev-0.3.0-dev.31-aaaaaaaaaaaa', { signed: true }),
+          release('dev-0.3.0-dev.31-bbbbbbbbbbbb', { signed: true }),
+        ],
+        'dev',
+      ),
+    /duplicate versions/,
+  );
+  assert.throws(
+    () => trustedReleaseBaseline([release('dev-latest')], 'dev'),
+    /unsupported version tag/,
+  );
+  assert.throws(
+    () =>
+      trustedReleaseBaseline([{ tag_name: 'dev-0.3.0-dev.31-aaaaaaaaaaaa', draft: false }], 'dev'),
+    /inventory is incomplete/,
+  );
 });
