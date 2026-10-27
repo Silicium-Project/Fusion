@@ -4,6 +4,24 @@ import { Failure, run, readJson } from './process.mjs';
 import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
+const MAX_REPORT_BYTES_PER_RUN = 16 * 1024 ** 2;
+export const MAX_REPORT_DOWNLOAD_BYTES = 64 * 1024 ** 2;
+export function fitsReportDownloadBudget(
+  reservedBytes,
+  nextRunBytes,
+  limitBytes = MAX_REPORT_DOWNLOAD_BYTES,
+) {
+  return (
+    Number.isSafeInteger(reservedBytes) &&
+    reservedBytes >= 0 &&
+    Number.isSafeInteger(nextRunBytes) &&
+    nextRunBytes >= 0 &&
+    Number.isSafeInteger(limitBytes) &&
+    limitBytes >= 0 &&
+    reservedBytes <= limitBytes &&
+    nextRunBytes <= limitBytes - reservedBytes
+  );
+}
 export function cacheMetrics(reports) {
   let hits = 0,
     misses = 0,
@@ -180,9 +198,15 @@ export function inspectMetrics(limit = 20) {
   };
   const temp = mkdtempSync(resolve(tmpdir(), 'silicium-ci-metrics-'));
   const reports = [];
-  let unavailable = 0;
+  let unavailable = 0,
+    oversized = 0,
+    reportBytesReserved = 0,
+    reportRunsDownloaded = 0,
+    runsSkippedForBudget = 0;
   try {
-    for (const { run: record } of rows.filter((row) => row.run.status === 'completed')) {
+    const completedRuns = rows.filter((row) => row.run.status === 'completed');
+    for (let index = 0; index < completedRuns.length; index++) {
+      const { run: record } = completedRuns[index];
       const available = collectArtifactPages((page) =>
         api(`repos/${repository}/actions/runs/${record.id}/artifacts?per_page=100&page=${page}`),
       );
@@ -193,11 +217,24 @@ export function inspectMetrics(limit = 20) {
         unavailable++;
         continue;
       }
-      if (
-        reportArtifacts.reduce((sum, artifact) => sum + artifact.size_in_bytes, 0) >
-        16 * 1024 ** 2
-      )
-        throw new Failure('Metric reports exceed their bounded download size', 4);
+      const runBytes = reportArtifacts.reduce((sum, artifact) => {
+        if (!Number.isSafeInteger(artifact.size_in_bytes) || artifact.size_in_bytes < 0)
+          throw new Failure('Metric report artifact has an invalid size', 4);
+        const total = sum + artifact.size_in_bytes;
+        if (!Number.isSafeInteger(total))
+          throw new Failure('Metric report artifacts have an invalid total size', 4);
+        return total;
+      }, 0);
+      if (runBytes > MAX_REPORT_BYTES_PER_RUN) {
+        unavailable++;
+        oversized++;
+        continue;
+      }
+      if (!fitsReportDownloadBudget(reportBytesReserved, runBytes)) {
+        runsSkippedForBudget = completedRuns.length - index;
+        break;
+      }
+      reportBytesReserved += runBytes;
       const folder = resolve(temp, String(record.id));
       const result = run(
         [
@@ -218,12 +255,21 @@ export function inspectMetrics(limit = 20) {
         unavailable++;
         continue;
       }
+      reportRunsDownloaded++;
       for (const file of readdirSync(folder, { recursive: true }).filter((file) =>
         file.endsWith('.json'),
       ))
         reports.push(readJson(resolve(folder, file)));
     }
-    summary.caches = { ...cacheMetrics(reports), runs_without_report_evidence: unavailable };
+    summary.caches = {
+      ...cacheMetrics(reports),
+      runs_without_report_evidence: unavailable,
+      report_runs_downloaded: reportRunsDownloaded,
+      report_bytes_reserved: reportBytesReserved,
+      report_download_limit_bytes: MAX_REPORT_DOWNLOAD_BYTES,
+      oversized_report_runs: oversized,
+      runs_skipped_for_download_budget: runsSkippedForBudget,
+    };
   } finally {
     rmSync(temp, { recursive: true, force: true });
   }

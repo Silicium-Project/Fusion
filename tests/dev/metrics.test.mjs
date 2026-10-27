@@ -5,6 +5,8 @@ import {
   distribution,
   summarizeRuns,
   cacheMetrics,
+  fitsReportDownloadBudget,
+  MAX_REPORT_DOWNLOAD_BYTES,
 } from '../../tools/lib/metrics.mjs';
 test('metrics retain sample counts and exclude missing or negative observations', () => {
   assert.deepEqual(distribution([]), { samples: 0, median_seconds: null, p95_seconds: null });
@@ -24,6 +26,14 @@ test('cache evidence distinguishes disabled or missing observations from a miss'
     { hits: 1, misses: 1, hit_ratio: 0.5, disabled_reports: 1, unavailable_reports: 1 },
   );
   assert.equal(cacheMetrics([]).hit_ratio, null);
+});
+test('cache report downloads have a cumulative size bound and reject invalid sizes', () => {
+  assert.equal(fitsReportDownloadBudget(0, MAX_REPORT_DOWNLOAD_BYTES), true);
+  assert.equal(fitsReportDownloadBudget(MAX_REPORT_DOWNLOAD_BYTES - 1, 1), true);
+  assert.equal(fitsReportDownloadBudget(MAX_REPORT_DOWNLOAD_BYTES, 1), false);
+  assert.equal(fitsReportDownloadBudget(-1, 1), false);
+  assert.equal(fitsReportDownloadBudget(0, Number.MAX_SAFE_INTEGER), false);
+  assert.equal(fitsReportDownloadBudget(0, 1, Number.NaN), false);
 });
 test('artifact pagination reads every page and reports a complete byte inventory', () => {
   const requested = [];

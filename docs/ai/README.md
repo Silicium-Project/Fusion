@@ -66,6 +66,8 @@ ni repli sur un runner VPS n'est autorisé.
 `dev ci metrics --limit 20 --json` donne les distributions et le nombre
 d'observations. Vérifier le SHA des runs avant de comparer ; ne pas présenter
 une absence de rapport ou un cache désactivé comme un gain de performance.
+Le téléchargement des rapports est borné à 64 Mio au total ; consulter
+`runs_skipped_for_download_budget` avant d'interpréter les métriques de cache.
 Lire séparément `workflow_start_wait` (création du run jusqu'au démarrage du
 workflow) et `job_queue_and_matrix_wait` (création du job jusqu'à sa première
 étape). Si le premier est élevé et le second bas, l'attente précède les jobs ;
