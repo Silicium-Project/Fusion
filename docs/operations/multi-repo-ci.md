@@ -58,6 +58,25 @@ download-artifact v8 et cache v6.1.0. `setup-node` désactive son cache implicit
 seules les clés et frontières de confiance explicitement définies dans le
 workflow contrôlent les caches.
 
+## Audit public des règles du dépôt
+
+`tools/config/workspace.json` fixe l'identité, la visibilité et la branche par
+défaut attendues de Workbench ; `tools/config/repository-policy.json` décrit le
+ruleset `Protect Main`. `dev ci policy --json` relit le dépôt et le ruleset via
+l'API GitHub sans jeton ni secret, après avoir vérifié le registre local et les
+pins. Le rapport contient le SHA de politique, l'heure locale de vérification,
+les horodatages `Date` retournés par chaque réponse API, les écarts et les
+limites de couverture. `contracts/ci/repository-policy-report-v1.schema.json`
+fixe son format. Une réponse API refusée, limitée, invalide, sans horodatage ou
+incomplète produit `blocked`, jamais un rapport propre.
+
+La CI requise appelle ce contrôle lorsque le manifeste, son code, ses tests, le
+lanceur ou le workflow CI changent ; les autres PR ne déclenchent pas cet appel
+réseau. L'audit ne couvre que les métadonnées et règles visibles publiquement :
+GitHub masque les acteurs de contournement et l'API de protection classique
+exige une lecture administrative. Les dépôts privés, le Project et les
+artefacts de release restent à vérifier par la réconciliation privée CI-09.
+
 ## Publication séparée
 
 L'App `Silicium Source Reader` reste strictement en lecture seule. Ne pas ajouter
@@ -90,7 +109,12 @@ l'intégration de leurs nouveaux workflows et la disponibilité du quota privé.
 Un workflow suspendu ou ignoré ne constitue jamais une qualification.
 
 Avant un lancement privé, exécuter le workflow CI de Workbench sur `main` et
-attendre sa réussite. Le job protégé `budget` observe tous les dépôts avec
+attendre sa réussite. Integration vérifie automatiquement, avant de demander
+le jeton Source Reader, que `main` porte encore le SHA retenu et que son unique
+`ci/required` est terminé et réussi. Le contrôle public correspondant est
+disponible localement avec `dev ci public-evidence --sha SHA --json` ; il ne
+présente aucun jeton et bloque sur une preuve ancienne, absente ou incomplète.
+Le job protégé `budget` observe tous les dépôts avec
 l'App existante ; il vérifie une réserve de 392 Mio : 203 Mio d'archives de
 livraison, 16 Mio pour le plan et les rapports privés, 1 Mio pour le reçu de
 qualification, 64 Kio pour sa signature détachée, 1 Mio pour l'identité de candidat, jusqu'à 120 Mio pour

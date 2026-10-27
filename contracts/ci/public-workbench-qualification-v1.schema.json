@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://silicium.network/contracts/ci/public-workbench-qualification/v1",
+  "title": "Public Workbench required CI evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "operation",
+    "status",
+    "repository",
+    "ref",
+    "source_sha",
+    "check_name",
+    "check_run_id",
+    "check_status",
+    "conclusion",
+    "app_slug",
+    "api_timestamp",
+    "error"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "operation": { "const": "ci.public-workbench-qualification" },
+    "status": { "enum": ["success", "blocked"] },
+    "repository": { "const": "Silicium-Project/Workbench" },
+    "ref": { "const": "refs/heads/main" },
+    "source_sha": {
+      "oneOf": [
+        { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+        { "type": "null" }
+      ]
+    },
+    "check_name": { "const": "ci/required" },
+    "check_run_id": { "type": ["integer", "null"], "minimum": 1 },
+    "check_status": { "type": ["string", "null"] },
+    "conclusion": { "type": ["string", "null"] },
+    "app_slug": { "type": ["string", "null"] },
+    "api_timestamp": {
+      "oneOf": [
+        { "type": "string", "format": "date-time" },
+        { "type": "null" }
+      ]
+    },
+    "error": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message"],
+          "properties": {
+            "code": { "type": "string", "pattern": "^public_ci_[a-z_]+$" },
+            "message": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    }
+  }
+}
