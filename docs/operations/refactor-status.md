@@ -1,5 +1,34 @@
 # Refonte : état de référence et conditions d'activation
 
+## Mise à jour opérationnelle — 27 octobre 2026
+
+État vérifié sur Workbench `main` au commit `cc5e7a1cfadc73ca910264aad28e5658a311069b` :
+
+- Les PR #332, #322 et #323 sont fusionnées. Le CI du nouveau `main` a réussi ;
+  les suites publiques sont qualifiées et les suites privées restent réservées
+  à Integration.
+- La PR #325 a été actualisée puis fusionnée dans le commit
+  `96c9067371d73c4d3fb46ffdb055e877904bc753` ; ses suites publiques et
+  `ci/required` ont réussi au run [40469466715](https://github.com/Silicium-Project/Workbench/actions/runs/40469466715).
+  La PR #324 est en cours de réintégration sur le `main` courant.
+- La synchronisation du Project est active. Le premier apply
+  [40469270941](https://github.com/Silicium-Project/Workbench/actions/runs/40469270941)
+  a modifié 9 statuts et 139 champs de blocage sur les 139 issues Workbench ;
+  les éléments de `planning-private` restent exclus. Le dry-run de contrôle
+  [40471477621](https://github.com/Silicium-Project/Workbench/actions/runs/40471477621)
+  a ensuite prévu zéro changement après la qualification de #325 ; les journaux
+  restent agrégés et ne révèlent pas les issues privées.
+- Integration reste privé. Son dernier relevé ne montrait aucune variable
+  d'activation ; la dernière capture de facturation fournie signalait les
+  2 000 minutes privées incluses consommées. Aucune qualification privée n'a
+  été lancée et aucun runner VPS n'est utilisé.
+- `SILICIUM_DELIVERY_ENABLED=0` et `SILICIUM_DIAGNOSTICS_ENABLED=0` ; aucun
+  déploiement n'a été déclenché. La PR privée Integration #4 reste à qualifier
+  après vérification humaine du quota.
+
+Les sections suivantes conservent le rapport détaillé antérieur et ses preuves
+historiques ; leurs nombres et états ne décrivent pas tous le `main` courant.
+
 La [PR centrale #317](https://github.com/Silicium-Project/Fusion/pull/317) a été
 intégrée le 25 octobre 2026, après réussite de la qualification de sa révision
 `24c7590c`. Son squash a conservé le code qualifié, mais pas l'ascendance des

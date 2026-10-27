@@ -52,6 +52,12 @@ réessaient au maximum trois fois les erreurs réseau, timeouts et réponses HTT
 d'autorisation 4xx échouent immédiatement. Le jeton `GITHUB_TOKEN` reste
 éphémère et aucune réponse API ou valeur du jeton n'est journalisée.
 
+Les actions GitHub sont épinglées par SHA immuable et alignées sur le registre
+`tools/config/actions.json` : checkout v5, setup-node v6, upload-artifact v7,
+download-artifact v8 et cache v6.1.0. `setup-node` désactive son cache implicite ;
+seules les clés et frontières de confiance explicitement définies dans le
+workflow contrôlent les caches.
+
 ## Publication séparée
 
 L'App `Silicium Source Reader` reste strictement en lecture seule. Ne pas ajouter
