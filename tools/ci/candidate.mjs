@@ -2,38 +2,68 @@
 import { readdirSync, readFileSync, appendFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { root, run, readJson, writeJson, Failure } from '../lib/process.mjs';
-import { verifiedRun, api, repository } from '../lib/github.mjs';
+import { publicApi, publicPages, repository } from '../lib/github.mjs';
 import { sha256, requireManifest, compareVersions } from '../lib/manifest.mjs';
+import { writePreviousInstallBaseline } from '../lib/candidate-installation.mjs';
 const operation = process.argv[2];
 const dir = resolve(root, '.artifacts/candidate');
 mkdirSync(dir, { recursive: true });
-if (operation === 'prepare') {
-  const id = process.env.QUALIFICATION_RUN;
-  const qualified = verifiedRun(id);
+if (operation === 'prepare-private') {
+  if (
+    process.env.GITHUB_ACTIONS !== 'true' ||
+    process.env.GITHUB_REPOSITORY !== 'Silicium-Project/Integration' ||
+    process.env.GITHUB_EVENT_NAME !== 'workflow_run' ||
+    process.env.GITHUB_REF !== 'refs/heads/main'
+  )
+    throw new Failure(
+      'Private candidate preparation is restricted to completed Integration main runs',
+    );
+  const verified = readJson(resolve(root, '.artifacts/private-integration/verified-input.json'));
   const source = run(['git', 'rev-parse', 'HEAD']).stdout.trim();
-  if (source !== qualified.head_sha) throw new Failure('Checkout does not match qualified source');
+  const qualification = verified.qualification;
+  if (
+    verified.status !== 'verified' ||
+    qualification?.repository !== 'Silicium-Project/Integration' ||
+    qualification.workbench_sha !== source ||
+    qualification.run_id !== process.env.QUALIFICATION_RUN_ID ||
+    qualification.run_attempt !== Number(process.env.QUALIFICATION_ATTEMPT) ||
+    qualification.run_number !== Number(process.env.QUALIFICATION_RUN_NUMBER) ||
+    !qualification.integration_sha ||
+    !verified.component_pins ||
+    Object.keys(verified.component_pins).sort().join() !== 'api,network,node,solana,web'
+  )
+    throw new Failure('Private candidate identity differs from the verified qualification');
   const channel = process.env.RELEASE_CHANNEL ?? 'dev';
-  const artifactRows = api(
-    `repos/${repository}/actions/runs/${id}/artifacts?per_page=100`,
-  ).artifacts;
-  const artifacts = new Set(artifactRows.filter((x) => !x.expired).map((x) => x.name));
-  const required = {
-    api: 'api-binary',
-    web: 'web-output',
-    network: 'network-binaries',
-    node: 'node-ui-output',
-  };
-  const changed = Object.keys(required).filter((c) => artifacts.has(required[c]));
-  if (!changed.length) throw new Failure('No deliverable changed; this CI requires no release', 4);
-  let previous = null;
-  const releases = api(`repos/${repository}/releases?per_page=100`);
-  const prior = releases.find(
-    (r) =>
-      !r.draft &&
-      new RegExp(`^${channel}-[0-9]+\\.[0-9]+\\.[0-9]+(?:-dev\\.[0-9]+)?-[a-f0-9]{12}$`).test(
-        r.tag_name,
-      ),
+  const qualificationNumber = Number(process.env.QUALIFICATION_RUN_NUMBER);
+  if (!['dev', 'prod'].includes(channel)) throw new Failure('Explicit release channel required');
+  if (!Number.isSafeInteger(qualificationNumber) || qualificationNumber < 1)
+    throw new Failure('The completed qualification run number is required');
+  const releases = publicPages(`repos/${repository}/releases`);
+  const releasePattern = new RegExp(
+    `^${channel}-(\\d+\\.\\d+\\.\\d+(?:-dev\\.\\d+)?)-[a-f0-9]{12}$`,
   );
+  const releaseVersions = releases
+    .filter((release) => !release.draft)
+    .map((release) => ({ release, version: release.tag_name.match(releasePattern)?.[1] }))
+    .filter(({ version }) => version);
+  const highestPublished = releaseVersions.reduce(
+    (highest, row) =>
+      !highest || compareVersions(row.version, highest.version) > 0 ? row : highest,
+    null,
+  );
+  const highestSigned = releaseVersions
+    .filter(
+      ({ release }) =>
+        release.assets?.some((asset) => asset.name === 'manifest.json') &&
+        release.assets?.some((asset) => asset.name === 'manifest.json.asc'),
+    )
+    .reduce(
+      (highest, row) =>
+        !highest || compareVersions(row.version, highest.version) > 0 ? row : highest,
+      null,
+    );
+  const prior = highestSigned?.release;
+  let previous = null;
   if (prior) {
     const previousDir = resolve(dir, 'previous');
     mkdirSync(previousDir, { recursive: true });
@@ -49,7 +79,6 @@ if (operation === 'prepare') {
       '--pattern',
       'manifest.json*',
     ]);
-    // The trust anchor is installed during the reviewed signing-key migration.
     run([
       'gpgv',
       '--keyring',
@@ -60,79 +89,84 @@ if (operation === 'prepare') {
     previous = requireManifest(readJson(resolve(previousDir, 'manifest.json')));
     if (previous.channel !== channel || previous.release_id !== prior.tag_name)
       throw new Failure('Previous signed candidate identity mismatch');
-    if (
-      run(['git', 'merge-base', '--is-ancestor', previous.source_sha, source], {
-        allowFailure: true,
-      }).status
-    )
-      throw new Failure('Publication would cross unrelated or older source history');
-    writeJson(resolve(dir, 'previous.json'), previous);
-    if (!changed.includes('node')) {
-      run([
-        'gh',
-        'release',
-        'download',
-        prior.tag_name,
-        '--repo',
-        repository,
-        '--dir',
-        resolve(root, '.artifacts/publish'),
-        '--pattern',
-        'packages.tar.gz',
-      ]);
-      const asset = previous.assets.find((a) => a.name === 'packages.tar.gz');
-      if (
-        !asset ||
-        sha256(readFileSync(resolve(root, '.artifacts/publish/packages.tar.gz'))) !== asset.sha256
-      )
-        throw new Failure('Previous package snapshot digest mismatch');
-    }
+    const ancestry = publicApi(`repos/${repository}/compare/${previous.source_sha}...${source}`);
+    if (!['ahead', 'identical'].includes(ancestry.status))
+      throw new Failure('Publication would cross unrelated or older Workbench history');
   }
-  if (!previous && changed.length < 4)
-    throw new Failure('First integration candidate requires every component output');
-  writeJson(resolve(dir, 'inputs.json'), {
-    changed,
-    artifacts: Object.fromEntries(changed.map((c) => [c, required[c]])),
-    previous,
-  });
-  appendFileSync(process.env.GITHUB_OUTPUT, `node_changed=${changed.includes('node')}\n`);
-
   const version =
     channel === 'dev'
-      ? `${readJson(resolve(root, 'tools/config/delivery.json')).base_version}-dev.${process.env.GITHUB_RUN_NUMBER}`
+      ? `${readJson(resolve(root, 'tools/config/delivery.json')).base_version}-dev.${qualification.run_number}`
       : process.env.RELEASE_VERSION;
   if (channel === 'prod' && !/^\d+\.\d+\.\d+$/.test(version ?? ''))
     throw new Failure('Production version must be explicit');
   if (previous && compareVersions(version, previous.version) <= 0)
     throw new Failure('Candidate version must be newer than the preceding signed release');
+  if (highestPublished && compareVersions(version, highestPublished.version) <= 0)
+    throw new Failure(
+      'Candidate version must be newer than every published release in its channel',
+    );
+  writePreviousInstallBaseline(dir, previous);
   const release_id = `${channel}-${version}-${source.slice(0, 12)}`;
-  const existing = run(
-    ['gh', 'release', 'view', release_id, '--repo', repository, '--json', 'tagName'],
-    { allowFailure: true },
+  const existing = publicApi(
+    `repos/${repository}/releases/tags/${encodeURIComponent(release_id)}`,
+    { allowMissing: true },
   );
-  if (!existing.status)
+  if (existing)
     throw new Failure(
       'Candidate already published; promote the existing identity rather than replacing assets',
     );
+  const changed = ['api', 'web', 'network', 'node'];
+  const artifactNames = Object.fromEntries(
+    verified.artifacts.map((artifact) => [artifact.suite, artifact.name]),
+  );
+  for (const suite of ['api', 'web', 'network', 'node_ui'])
+    if (!artifactNames[suite]) throw new Failure(`Qualified ${suite} delivery artifact is missing`);
+  writeJson(resolve(dir, 'inputs.json'), {
+    changed,
+    artifacts: {
+      api: artifactNames.api,
+      web: artifactNames.web,
+      network: artifactNames.network,
+      node: artifactNames.node_ui,
+    },
+    component_pins: verified.component_pins,
+    policy_digest: verified.policy_digest,
+    previous,
+  });
   writeJson(resolve(dir, 'identity.json'), {
     schema_version: 1,
     source_sha: source,
     channel,
     version,
     release_id,
-    qualification: { source_sha: source, status: 'success', run_id: Number(id) },
+    qualification: {
+      repository: 'Silicium-Project/Integration',
+      workflow: '.github/workflows/qualification.yml',
+      source_sha: source,
+      workbench_sha: source,
+      status: 'success',
+      run_id: Number(qualification.run_id),
+      run_attempt: Number(qualification.run_attempt),
+      run_number: Number(qualification.run_number),
+      integration_sha: qualification.integration_sha,
+      policy_workflow_sha: qualification.policy_workflow_sha,
+      policy_digest: verified.policy_digest,
+      component_pins: verified.component_pins,
+    },
   });
   appendFileSync(
     process.env.GITHUB_OUTPUT,
-    `source_sha=${source}\nrelease_id=${release_id}\nversion=${version}\nchannel=${channel}\n`,
+    `source_sha=${source}\nrelease_id=${release_id}\nversion=${version}\nchannel=${channel}\nqualification_attempt=${qualification.run_attempt}\nqualification_run=${qualification.run_id}\nnode_changed=true\n`,
   );
 } else if (operation === 'images') {
   const identity = readJson(resolve(dir, 'identity.json'));
   const inputs = readJson(resolve(dir, 'inputs.json'));
   const components = { ...(inputs.previous?.components ?? {}) };
   for (const component of ['api', 'web', 'network'].filter((c) => inputs.changed.includes(c))) {
-    const pkg = api(`orgs/Silicium-Project/packages/container/${component}`);
-    if (pkg.visibility !== 'public')
+    const pkg = publicApi(`orgs/Silicium-Project/packages/container/${component}`, {
+      allowMissing: true,
+    });
+    if (!pkg || pkg.visibility !== 'public')
       throw new Failure(
         'GHCR package must be public before publication; private storage is forbidden by the budget policy',
       );
@@ -174,7 +208,7 @@ if (operation === 'prepare') {
     if (!/^sha256:[a-f0-9]{64}$/.test(digest ?? ''))
       throw new Failure('Missing immutable image digest');
     components[component] = {
-      source_sha: identity.source_sha,
+      source_sha: inputs.component_pins?.[component]?.commit ?? identity.source_sha,
       image: `ghcr.io/silicium-project/${component}@${digest}`,
       platform: 'linux-x86_64',
       qualification_run: identity.qualification.run_id,
@@ -184,6 +218,24 @@ if (operation === 'prepare') {
 } else if (operation === 'manifest') {
   const identity = readJson(resolve(dir, 'identity.json'));
   const assetsDir = resolve(root, '.artifacts/publish');
+  const verified = readJson(resolve(root, '.artifacts/private-integration/verified-input.json'));
+  writeJson(resolve(assetsDir, 'qualification.json'), {
+    schema_version: 1,
+    evidence_type: 'silicium.private-integration-summary',
+    status: 'success',
+    integration: {
+      run_id: identity.qualification.run_id,
+      run_attempt: identity.qualification.run_attempt,
+      commit: identity.qualification.integration_sha,
+    },
+    workbench: {
+      source_sha: identity.source_sha,
+      policy_workflow_sha: identity.qualification.policy_workflow_sha,
+      policy_digest: identity.qualification.policy_digest,
+      required_suites: verified.required_suites,
+      component_pins: identity.qualification.component_pins,
+    },
+  });
   const assets = readdirSync(assetsDir)
     .filter((n) => n !== 'manifest.json' && n !== 'manifest.json.asc')
     .map((name) => {
@@ -194,14 +246,19 @@ if (operation === 'prepare') {
   const components = readJson(resolve(dir, 'components.json'));
   if (nodeInput.changed.includes('node'))
     components.node = {
-      source_sha: identity.source_sha,
+      source_sha: nodeInput.component_pins.node.commit,
       version: identity.version,
       channel: identity.channel,
       platforms: ['linux-x86_64', 'windows-x86_64'],
       qualification_run: identity.qualification.run_id,
     };
+  components.solana = {
+    source_sha: nodeInput.component_pins.solana.commit,
+    qualification_run: identity.qualification.run_id,
+  };
   const m = requireManifest({
     ...identity,
+    policy_digest: identity.qualification.policy_digest,
     created_at: new Date().toISOString(),
     compatibility: { data_schema: 1, rollback: 'application-only', program_upgrade: false },
     components,
@@ -230,15 +287,11 @@ if (operation === 'prepare') {
       '--title',
       m.release_id,
       '--notes',
-      `Candidat qualifié : ${m.source_sha}\nCI : https://github.com/${repository}/actions/runs/${m.qualification.run_id}`,
+      `Candidat qualifié : ${m.source_sha}\nQualification Integration : run ${m.qualification.run_id}, tentative ${m.qualification.run_attempt}`,
       ...(m.channel === 'dev' ? ['--prerelease'] : []),
       ...files,
     ],
     { timeout: 600_000 },
   );
-  // This event is explicit: GITHUB_TOKEN release events do not recursively trigger Actions.
-  api(`repos/${repository}/actions/workflows/deploy.yml/dispatches`, {
-    method: 'POST',
-    body: { ref: 'main', inputs: { release_id: m.release_id, environment: m.channel } },
-  });
-} else throw new Failure('Expected prepare|images|manifest|publish', 2);
+  // The publisher App token causes the release event to trigger the protected Workbench deploy.
+} else throw new Failure('Expected prepare-private|images|manifest|publish', 2);

@@ -52,13 +52,14 @@ jobs:
         console.log(JSON.stringify({pull_request:Number(number),same_repository:true,permission:permission.permission}));
 
         JS'
-    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         fetch-depth: 0
         persist-credentials: 'false'
-    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
       with:
         node-version: 22.23.4
+        package-manager-cache: false
     - name: Verify bounded private qualification authorization
       if: ${{ github.event.repository.private }}
       env:
@@ -105,9 +106,9 @@ jobs:
         JS
 
         '
-    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
-        name: qualification-plan
+        name: qualification-plan-${{ github.run_attempt }}
         path: .artifacts/plan.json
         include-hidden-files: 'true'
         if-no-files-found: error
@@ -130,13 +131,14 @@ jobs:
       RUSTUP_TOOLCHAIN: ${{ matrix.suite == 'solana' && '1.89.0' || '1.98.0' }}
       CARGO_BUILD_JOBS: '4'
     steps: &id002
-    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         fetch-depth: 0
         persist-credentials: 'false'
-    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
       with:
         node-version: ${{ needs.changes.outputs.node }}
+        package-manager-cache: false
     - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
       if: ${{ matrix.suite == 'api' }}
       with:
@@ -148,7 +150,7 @@ jobs:
       if: ${{ contains(fromJSON('["network-integration","infrastructure"]'), matrix.suite) }}
       with:
         python-version: 3.11.17
-    - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
       if: ${{ !github.event.repository.private && contains(fromJSON('["web","node-ui","solana","tooling"]'), matrix.suite) }}
       with:
         path: ~/.npm
@@ -167,10 +169,11 @@ jobs:
         cache-on-failure: 'false'
         cache-targets: ${{ matrix.suite != 'solana' }}
       id: rust-cache
-    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+    - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
       with:
-        name: qualification-plan
+        name: qualification-plan-${{ github.run_attempt }}
         path: .artifacts
+        digest-mismatch: error
     - name: Prepare runner
       shell: bash
       run: node tools/ci/bootstrap.mjs "${{ matrix.suite }}"
@@ -186,10 +189,10 @@ jobs:
       if: ${{ always() }}
       shell: bash
       run: node tools/ci/artifact-size.mjs ".artifacts/reports/${{ matrix.suite }}.json" 1048576
-    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       if: ${{ always() }}
       with:
-        name: report-${{ matrix.suite }}
+        name: report-${{ matrix.suite }}-${{ github.run_attempt }}
         path: .artifacts/reports/${{ matrix.suite }}.json
         include-hidden-files: 'true'
         if-no-files-found: error
@@ -198,10 +201,10 @@ jobs:
       if: ${{ success() && contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' && matrix.suite == 'web' }}
       shell: bash
       run: node tools/ci/artifact-size.mjs "apps/web/.output" 41943040
-    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       if: ${{ success() && contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' && matrix.suite == 'web' }}
       with:
-        name: web-output
+        name: web-output-${{ github.run_attempt }}
         path: apps/web/.output
         include-hidden-files: 'true'
         if-no-files-found: error
@@ -210,10 +213,10 @@ jobs:
       if: ${{ success() && contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' && matrix.suite == 'node-ui' }}
       shell: bash
       run: node tools/ci/artifact-size.mjs "apps/node/dist" 2097152
-    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       if: ${{ success() && contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' && matrix.suite == 'node-ui' }}
       with:
-        name: node-ui-output
+        name: node-ui-output-${{ github.run_attempt }}
         path: apps/node/dist
         if-no-files-found: error
         retention-days: 1
@@ -221,10 +224,10 @@ jobs:
       if: ${{ success() && contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' && matrix.suite == 'api' }}
       shell: bash
       run: node tools/ci/artifact-size.mjs ".artifacts/build/api" 50331648
-    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       if: ${{ success() && contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' && matrix.suite == 'api' }}
       with:
-        name: api-binary
+        name: api-binary-${{ github.run_attempt }}
         path: .artifacts/build/api
         include-hidden-files: true
         if-no-files-found: error
@@ -233,10 +236,10 @@ jobs:
       if: ${{ success() && contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' && matrix.suite == 'network-integration' }}
       shell: bash
       run: node tools/ci/artifact-size.mjs ".artifacts/build/network" 117440512
-    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       if: ${{ success() && contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' && matrix.suite == 'network-integration' }}
       with:
-        name: network-binaries
+        name: network-binaries-${{ github.run_attempt }}
         path: .artifacts/build/network
         include-hidden-files: true
         if-no-files-found: error
@@ -267,21 +270,24 @@ jobs:
         if(values.PLANNER_RESULT!==''success''||values.QUICK_RESULT!==''success''||(values.INTEGRATION_COUNT===''0''?values.EXECUTION_RESULT!==''skipped'':values.EXECUTION_RESULT!==''success''))process.exit(1);
 
         JS'
-    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: 'false'
-    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
       with:
         node-version: 22.23.4
-    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        package-manager-cache: false
+    - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
       with:
-        name: qualification-plan
+        name: qualification-plan-${{ github.run_attempt }}
         path: .artifacts
-    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        digest-mismatch: error
+    - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
       with:
-        pattern: report-*
+        pattern: report-*-${{ github.run_attempt }}
         path: .artifacts/reports
         merge-multiple: 'true'
+        digest-mismatch: error
     - name: Require every planned execution
       env:
         PLANNER_RESULT: ${{ needs.changes.result }}
@@ -304,14 +310,15 @@ jobs:
     - name: PR qualification has no binary upload reservation
       if: ${{ github.event_name == 'pull_request' }}
       run: echo 'Only qualification plan and bounded reports are transferred; no delivery or binary upload.'
-    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         ref: main
         persist-credentials: false
       if: ${{ contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' }}
-    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
       with:
         node-version: 22.23.4
+        package-manager-cache: false
       if: ${{ contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' }}
     - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
       id: budget-token
@@ -327,7 +334,7 @@ jobs:
         SILICIUM_BUDGET_INSTALLATION_ID: ${{ steps.budget-token.outputs.installation-id }}
         SILICIUM_BUDGET_APP_CLIENT_ID: ${{ secrets.PROJECT_APP_CLIENT_ID }}
         SILICIUM_BUDGET_APP_PRIVATE_KEY: ${{ secrets.PROJECT_APP_PRIVATE_KEY }}
-        SILICIUM_INCOMING_BYTES: '220200960'
+        SILICIUM_INCOMING_BYTES: '411041792'
       run: node tools/ci/storage-budget.mjs
       if: ${{ contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' }}
   quick:

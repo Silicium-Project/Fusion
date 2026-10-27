@@ -1,5 +1,5 @@
 /** Channel-specific installer; reuse the tested UI, compile each native target once. */
-import { mkdirSync, readdirSync, cpSync, readFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, cpSync, existsSync, chmodSync } from 'node:fs';
 import { resolve, basename } from 'node:path';
 import { run, root, readJson, writeJson, Failure } from '../lib/process.mjs';
 import { packageVersions } from '../lib/manifest.mjs';
@@ -9,35 +9,49 @@ if (!['dev', 'prod'].includes(channel)) throw new Failure('Explicit channel requ
 const versions = packageVersions(version);
 const app = resolve(root, 'apps/node');
 const runtime = resolve(app, 'src-tauri/resources/runtime');
+const networkArtifacts = resolve(root, '.artifacts/build/network');
 mkdirSync(runtime, { recursive: true });
 const suffix = process.platform === 'win32' ? '.exe' : '';
-run(
-  [
-    'cargo',
-    'build',
-    '--release',
-    '--locked',
-    '--manifest-path',
-    'network/Cargo.toml',
-    '-p',
-    'p2p_node',
-    '-p',
-    'compute_daemon',
-    '-p',
-    'silicium-raytracer',
-  ],
-  { timeout: 3_600_000 },
-);
-mkdirSync(resolve(runtime, 'Network/bin/raytracer'), { recursive: true });
-for (const name of ['p2p_node', 'compute_daemon'])
-  cpSync(
-    resolve(root, `network/target/release/${name}${suffix}`),
-    resolve(runtime, `Network/bin/${name}${suffix}`),
+if (process.platform === 'win32')
+  run(
+    [
+      'cargo',
+      'build',
+      '--release',
+      '--locked',
+      '--manifest-path',
+      'network/Cargo.toml',
+      '-p',
+      'p2p_node',
+      '-p',
+      'compute_daemon',
+      '-p',
+      'silicium-raytracer',
+    ],
+    { timeout: 3_600_000 },
   );
-cpSync(
-  resolve(root, `network/target/release/silicium-raytracer${suffix}`),
-  resolve(runtime, `Network/bin/raytracer/silicium-raytracer${suffix}`),
-);
+else if (
+  !['p2p_node', 'compute_daemon', 'silicium-raytracer'].every((name) =>
+    existsSync(resolve(networkArtifacts, name)),
+  )
+)
+  throw new Failure('Linux packaging must reuse the binaries from the qualified network artifact');
+
+function networkBinary(name) {
+  return process.platform === 'win32'
+    ? resolve(root, 'network/target/release', `${name}${suffix}`)
+    : resolve(networkArtifacts, name);
+}
+
+mkdirSync(resolve(runtime, 'Network/bin/raytracer'), { recursive: true });
+for (const name of ['p2p_node', 'compute_daemon']) {
+  const destination = resolve(runtime, `Network/bin/${name}${suffix}`);
+  cpSync(networkBinary(name), destination);
+  if (process.platform !== 'win32') chmodSync(destination, 0o755);
+}
+const raytracerDestination = resolve(runtime, `Network/bin/raytracer/silicium-raytracer${suffix}`);
+cpSync(networkBinary('silicium-raytracer'), raytracerDestination);
+if (process.platform !== 'win32') chmodSync(raytracerDestination, 0o755);
 const config = {
   version,
   build: { beforeBuildCommand: '' },
