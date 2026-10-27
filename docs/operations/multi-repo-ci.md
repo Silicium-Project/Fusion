@@ -82,7 +82,8 @@ sont désactivés pendant la migration.
 Les suites `api`, `web`, `node-ui` et `network-integration` téléversent aussi
 leurs sorties de compilation privées sous `delivery-<suite>-<run_attempt>`.
 Le vérificateur de Workbench exige les quatre noms exacts, enregistre leurs
-identifiants GitHub, digests SHA-256 et tailles dans le reçu privé, et rejette
+identifiants GitHub, digests SHA-256 et tailles dans le reçu privé ; le nom
+du reçu inclut lui aussi le numéro de tentative. Il rejette
 un artefact manquant, expiré, dupliqué ou hors budget. Le reçu ne contient pas
 les binaires ; ceux-ci restent dans Integration une journée. Aucun transfert
 vers Workbench ni publication n'est encore implémenté.

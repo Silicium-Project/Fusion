@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { privateIntegrationEvidence } from '../../tools/lib/integration-evidence.mjs';
 import { registry } from '../../tools/lib/planner.mjs';
 import { workspaceConfig, workspaceLock } from '../../tools/lib/workspace.mjs';
@@ -180,6 +181,14 @@ test('private delivery outputs must be exact-attempt, bounded, live, and hashed'
   const boundedArchiveOverhead = structuredClone(base());
   boundedArchiveOverhead.deliveryArtifacts[0].size_in_bytes = 48 * 1024 ** 2 + 256 * 1024;
   assert.doesNotThrow(() => privateIntegrationEvidence(boundedArchiveOverhead));
+});
+
+test('the private evidence receipt is retained under its exact workflow attempt', () => {
+  const workflow = readFileSync(
+    new URL('../../.github/workflows/private-integration-evidence.yml', import.meta.url),
+    'utf8',
+  );
+  assert.match(workflow, /name: private-integration-evidence-\$\{\{ github\.run_attempt \}\}/);
 });
 
 test('qualification evidence expires after 24 hours', () => {
