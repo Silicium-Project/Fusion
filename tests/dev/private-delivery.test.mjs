@@ -51,6 +51,7 @@ function base() {
   const run = {
     id: Number(runId),
     run_attempt: attempt,
+    run_number: 31,
     status: 'completed',
     conclusion: 'success',
     event: 'workflow_dispatch',

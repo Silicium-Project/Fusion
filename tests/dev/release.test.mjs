@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { assertDeliveryGate, releasePlan } from '../../tools/lib/release.mjs';
 
 const sha = 'a'.repeat(40);
@@ -39,4 +40,16 @@ test('deployment gate accepts only the explicit qualified private bridge marker'
     }),
     undefined,
   );
+});
+
+test('published releases trigger only the protected, disabled-by-default Workbench deploy', () => {
+  const workflow = readFileSync(
+    new URL('../../.github/workflows/deploy.yml', import.meta.url),
+    'utf8',
+  );
+  assert.match(workflow, /release:\s+types:\s*-\s*published/);
+  assert.match(workflow, /vars\.SILICIUM_DELIVERY_ENABLED == '1'/);
+  assert.match(workflow, /vars\.SILICIUM_DELIVERY_CONTRACT == 'private-integration-v1'/);
+  assert.match(workflow, /github\.event\.release\.prerelease/);
+  assert.match(workflow, /environment: .*'production'/);
 });

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import {
   isQualifiedArtifactFromAttempt,
   qualifiedBuildArtifacts,
@@ -32,29 +32,26 @@ test('artifact naming rejects invalid attempts and names', () => {
   assert.throws(() => releaseArtifactName('../candidate', 1), /artifact name/);
 });
 
-test('the bridge pins receipt and private outputs to the producing Integration attempt', () => {
+test('public Workbench verifies private evidence without receiving private build artifacts', () => {
   const ci = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
-  const release = readFileSync(
-    new URL('../../.github/workflows/release.yml', import.meta.url),
+  const evidence = readFileSync(
+    new URL('../../.github/workflows/private-integration-evidence.yml', import.meta.url),
     'utf8',
   );
   assert.match(ci, /name: qualification-plan-\$\{\{ github\.run_attempt \}\}/);
   assert.match(ci, /name: report-\$\{\{ matrix\.suite \}\}-\$\{\{ github\.run_attempt \}\}/);
   assert.match(ci, /pattern: report-\*-\$\{\{ github\.run_attempt \}\}/);
-  for (const base of ['web-output', 'node-ui-output', 'api-binary', 'network-binaries'])
-    assert.ok(
-      ci.includes('name: ' + base + '-${{ github.run_attempt }}'),
-      `${base} attempt suffix`,
-    );
-  assert.match(
-    release,
-    /name: private-integration-evidence-\$\{\{ inputs\.qualification_attempt \}\}/,
+  assert.match(evidence, /workflow_call:/);
+  assert.match(evidence, /integration\/evidence/);
+  assert.match(evidence, /private-integration-evidence-\$\{\{ github\.run_attempt \}\}/);
+  assert.equal((evidence.match(/actions\/download-artifact@/g) ?? []).length, 2);
+  assert.equal((evidence.match(/digest-mismatch: error/g) ?? []).length, 2);
+  assert.doesNotMatch(evidence, /delivery-(?:api|web|network|node-ui)-/);
+  assert.equal(existsSync(new URL('../../.github/workflows/release.yml', import.meta.url)), false);
+  assert.equal(
+    existsSync(
+      new URL('../../tools/config/integration-artifact-reader-app-manifest.json', import.meta.url),
+    ),
+    false,
   );
-  for (const base of ['delivery-api', 'delivery-web', 'delivery-network', 'delivery-node-ui'])
-    assert.ok(
-      release.includes('name: ' + base + '-${{ inputs.qualification_attempt }}'),
-      `${base} attempt suffix`,
-    );
-  assert.equal((release.match(/digest-mismatch: error/g) ?? []).length, 5);
-  assert.doesNotMatch(release, /actions\/upload-artifact@/);
 });

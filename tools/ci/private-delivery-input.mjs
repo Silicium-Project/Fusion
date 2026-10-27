@@ -2,11 +2,12 @@
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { appendFileSync, existsSync } from 'node:fs';
-import { Failure, inside, readJson, root, run, writeJson } from '../lib/process.mjs';
+import { Failure, inside, readJson, root, writeJson } from '../lib/process.mjs';
 import { registry } from '../lib/planner.mjs';
 import { workspaceConfig, workspaceLock } from '../lib/workspace.mjs';
 import { treeSize } from './artifact-size.mjs';
 import { validatePrivateDeliveryEvidence } from '../lib/private-delivery.mjs';
+import { stagePrivateDelivery } from '../lib/private-delivery-stage.mjs';
 
 const integration = 'Silicium-Project/Integration';
 const repository = 'Silicium-Project/Workbench';
@@ -23,31 +24,49 @@ function required(name, pattern) {
   return value;
 }
 
-function github(path, token) {
-  if (!token) throw new Failure('A short-lived GitHub App token is required for evidence lookup');
-  const response = run(['gh', 'api', path], { env: { GH_TOKEN: token }, allowFailure: true });
-  if (response.status)
-    throw new Failure(`GitHub evidence lookup failed with status ${response.status}`);
+async function github(path, token, { publicResource = false } = {}) {
+  if (!token && !publicResource)
+    throw new Failure('A short-lived GitHub Actions token is required for private evidence lookup');
+  let response;
   try {
-    return JSON.parse(response.stdout);
+    response = await fetch(`https://api.github.com/${path}`, {
+      headers: {
+        accept: 'application/vnd.github+json',
+        'x-github-api-version': '2026-03-10',
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch {
+    throw new Failure('GitHub evidence lookup failed before receiving a response');
+  }
+  if (!response.ok) throw new Failure(`GitHub evidence lookup failed with HTTP ${response.status}`);
+  try {
+    return await response.json();
   } catch {
     throw new Failure('GitHub returned invalid evidence JSON');
   }
 }
 
-function main() {
+async function main() {
   if (
     process.env.GITHUB_ACTIONS !== 'true' ||
-    process.env.GITHUB_REPOSITORY !== repository ||
+    process.env.GITHUB_REPOSITORY !== integration ||
+    process.env.GITHUB_EVENT_NAME !== 'workflow_run' ||
     process.env.GITHUB_REF !== 'refs/heads/main'
   )
-    throw new Failure('Private Integration outputs can be opened only by Workbench main delivery');
+    throw new Failure(
+      'Private delivery inputs can be opened only by the Integration main release workflow',
+    );
   const runId = required('QUALIFICATION_RUN_ID', /^[1-9][0-9]{0,18}$/);
   const attemptText = required('QUALIFICATION_ATTEMPT', /^[1-9][0-9]{0,6}$/);
   const attempt = Number(attemptText);
   const workbenchSha = required('WORKBENCH_SHA', /^[a-f0-9]{40}$/);
-  if (workbenchSha !== process.env.GITHUB_SHA)
-    throw new Failure('Delivery must use the exact Workbench commit qualified by Integration');
+  if (
+    runId !== process.env.SOURCE_QUALIFICATION_RUN_ID ||
+    attemptText !== process.env.SOURCE_QUALIFICATION_ATTEMPT
+  )
+    throw new Failure('Delivery inputs must identify the exact completed workflow_run event');
   const rootPath = inside(
     process.env.PRIVATE_DELIVERY_ARTIFACT_ROOT ?? '.artifacts/private-integration',
   );
@@ -55,46 +74,53 @@ function main() {
   if (!existsSync(receiptPath))
     throw new Failure('The private Integration receipt was not downloaded');
 
-  const integrationToken = process.env.INTEGRATION_GH_TOKEN;
+  const integrationToken = process.env.INTEGRATION_GH_TOKEN ?? process.env.GITHUB_TOKEN;
   const workbenchToken = process.env.WORKBENCH_GH_TOKEN;
-  const integrationRepository = github(`repos/${integration}`, integrationToken);
-  const workbenchRepository = github(`repos/${repository}`, workbenchToken);
-  const run = github(`repos/${integration}/actions/runs/${runId}`, integrationToken);
-  const jobsResponse = github(
+  const integrationRepository = await github(`repos/${integration}`, integrationToken);
+  const workbenchRepository = await github(`repos/${repository}`, workbenchToken, {
+    publicResource: true,
+  });
+  const qualificationRun = await github(
+    `repos/${integration}/actions/runs/${runId}`,
+    integrationToken,
+  );
+  const jobsResponse = await github(
     `repos/${integration}/actions/runs/${runId}/jobs?per_page=100`,
     integrationToken,
   );
-  const artifactsResponse = github(
+  const artifactsResponse = await github(
     `repos/${integration}/actions/runs/${runId}/artifacts?per_page=100`,
     integrationToken,
   );
   if (!Array.isArray(jobsResponse.jobs) || !Array.isArray(artifactsResponse.artifacts))
     throw new Failure('GitHub did not return complete Integration run evidence');
-  const workbenchCompare = github(
+  const workbenchCompare = await github(
     `repos/${repository}/compare/${workbenchSha}...main`,
     workbenchToken,
+    { publicResource: true },
   );
-  const policyRef = (run.referenced_workflows ?? []).find((entry) =>
+  const policyRef = (qualificationRun.referenced_workflows ?? []).find((entry) =>
     entry.path?.startsWith(
       'Silicium-Project/Workbench/.github/workflows/private-integration-evidence.yml@',
     ),
   );
   if (!policyRef?.sha)
     throw new Failure('The Integration run does not identify its Workbench policy');
-  const policyCompare = github(
+  const policyCompare = await github(
     `repos/${repository}/compare/${policyRef.sha}...main`,
     workbenchToken,
+    { publicResource: true },
   );
   const receipt = readJson(receiptPath);
   const inputs = validatePrivateDeliveryEvidence({
-    run,
+    run: qualificationRun,
     integrationRepository,
     workbenchRepository,
     jobs: jobsResponse.jobs,
     jobsTotalCount: jobsResponse.total_count,
     artifacts: artifactsResponse.artifacts,
     artifactsTotalCount: artifactsResponse.total_count,
-    referencedWorkflows: run.referenced_workflows,
+    referencedWorkflows: qualificationRun.referenced_workflows,
     receipt,
     expectedRunId: runId,
     expectedAttempt: attempt,
@@ -119,6 +145,12 @@ function main() {
 
   const result = { ...inputs, downloaded };
   writeJson(resolve(rootPath, 'verified-input.json'), result);
+  if (process.env.STAGE_PRIVATE_DELIVERY === '1')
+    result.staged = stagePrivateDelivery({
+      artifactRoot: rootPath,
+      workspace: root,
+      artifacts: result.artifacts,
+    });
   if (process.env.GITHUB_OUTPUT) {
     appendFileSync(
       process.env.GITHUB_OUTPUT,
@@ -141,7 +173,7 @@ function main() {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href)
   try {
-    main();
+    await main();
   } catch (error) {
     console.error(error.message);
     process.exitCode = error.exitCode ?? 1;

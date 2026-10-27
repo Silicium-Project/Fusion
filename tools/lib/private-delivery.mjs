@@ -98,6 +98,8 @@ export function validatePrivateDeliveryEvidence({
     !run ||
     String(run.id) !== String(expectedRunId) ||
     Number(run.run_attempt) !== attempt ||
+    !Number.isSafeInteger(run.run_number) ||
+    run.run_number < 1 ||
     run.status !== 'completed' ||
     run.conclusion !== 'success' ||
     run.event !== 'workflow_dispatch' ||
@@ -248,10 +250,14 @@ export function validatePrivateDeliveryEvidence({
       repository: 'Silicium-Project/Integration',
       run_id: String(expectedRunId),
       run_attempt: attempt,
+      run_number: run.run_number,
       integration_sha: run.head_sha,
       workbench_sha: workbenchSha,
       policy_workflow_sha: policy.sha,
     },
+    policy_digest: policyDigest,
+    component_pins: expectedPins,
+    required_suites: required,
     receipt_artifact: {
       id: receiptArtifact.id,
       name: receiptArtifact.name,

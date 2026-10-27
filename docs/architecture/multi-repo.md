@@ -86,11 +86,9 @@ autorisation. Le gate ne transforme pas l'ancienne qualification monorepo en
 preuve des futurs composants privés.
 
 Les anciens workflows publics de construction et campagnes applicatives restent
-inactifs. La chaîne de livraison n'est pas encore reliée à `Integration` :
-`release.yml` réagit aux runs de Workbench et son garde-fou exige pourtant
-Integration. Le correctif et les critères de qualification sont suivis dans
-[CI-10](https://github.com/Silicium-Project/Workbench/issues/331). Les workflows
-doivent rester désactivés jusqu'à la qualification des artefacts privés, des
-signatures, des contrôles d'installation et du rollback. La production conserve
-ses approbations humaines. Les services déjà installés ne sont pas redémarrés
-par cette migration.
+inactifs. L'ancien `release.yml` Workbench, qui mélangeait la réception
+d'artefacts privés et le contexte public, a été retiré. Une prévalidation
+Integration liée à la qualification privée est proposée, mais les builds,
+signatures, contrôles d'installation et rollbacks restent à qualifier. Les
+verrous de livraison restent fermés ; la production conserve ses approbations
+humaines. Les services déjà installés ne sont pas redémarrés par cette migration.

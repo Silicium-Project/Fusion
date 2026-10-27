@@ -28,31 +28,31 @@ opérationnelle après la séparation de Workbench et des cinq dépôts privés.
 - `Integration` dispose d'une qualification privée manuelle. La PR Integration
   #4 propose les quatre artefacts de compilation bornés et l'appel au vérificateur
   Workbench ; elle reste en brouillon et aucun run privé n'a été effectué.
-- `Workbench/.github/workflows/release.yml` a été remplacé par une réception
-  manuelle verrouillée : elle demande le run, la tentative et le SHA Workbench,
-  télécharge les sorties privées depuis Integration avec un lecteur `Actions:
-  read`, vérifie le reçu et les digests, puis efface ces fichiers avec le runner.
-  Le code n'envoie pas les binaires vers les artefacts publics de Workbench.
-  Le workflow reste désactivé et n'a pas été exécuté ; aucune livraison ne
-  démarre après cette vérification.
-- Les scripts de candidat existants vérifient encore des runs et artefacts dans
-  `Silicium-Project/Workbench`. Ils ne consomment pas encore la preuve privée
-  `integration/required` ni ses cinq pins ; le nouveau pont de réception ne
-  construit pas encore de candidat.
-- `SILICIUM_DELIVERY_ENABLED` n'est pas configuré dans Workbench ; le verrou
-  manque donc et aucun transfert ne démarre. Dans Integration,
-  `SILICIUM_DELIVERY_ENABLED` est à `0` et `SILICIUM_INTEGRATION_ENABLED` n'est
-  pas configuré. Aucun run privé, déploiement dev ou déploiement prod n'est
+- Le récepteur Workbench qui téléchargeait les sorties privées depuis Integration
+  a été retiré. La politique réutilisable Workbench ne reçoit que le plan, les
+  rapports et un reçu limité aux métadonnées. Le staging des sorties privées
+  appartient à un workflow Integration protégé ; elles ne transitent pas par
+  un runner public.
+- La PR Integration #4 ajoute le préflight `workflow_run`, fermé par défaut.
+  Après une qualification manuelle réussie, il lie le reçu à l'événement,
+  télécharge les quatre sorties depuis le même dépôt privé, revérifie IDs,
+  digests et tailles avec la politique Workbench, puis matérialise les cinq
+  pins avec le Source Reader. Il n'est pas fusionné, son verrou
+  `SILICIUM_DELIVERY_PREFLIGHT_ENABLED` est absent et aucun run n'a été lancé.
+- Les scripts `prepare-private` et de staging lient un candidat aux IDs/digests
+  de la qualification, au SHA Workbench et aux cinq pins. Le flux complet de
+  construction, signature des dépôts, validation d'installation et publication
+  reste à raccorder dans Integration ; aucun candidat n'est livré.
+- `SILICIUM_DELIVERY_ENABLED=0` dans Workbench et son marqueur de contrat est
+  absent. Dans Integration, `SILICIUM_INTEGRATION_ENABLED`,
+  `SILICIUM_DELIVERY_PREFLIGHT_ENABLED` et le marqueur de contrat sont absents.
+  Aucun run privé, préflight, déploiement dev ou déploiement prod n'est
   autorisé par cet état. Le budget privé Actions était épuisé lors de la
   vérification du 26 octobre ; il faut vérifier le solde avant tout run, sans
   dépassement facturé ni runner VPS.
-- La réception privée requiert l'App décrite dans
-  `tools/config/integration-artifact-reader-app-manifest.json`, installée
-  uniquement sur Integration avec `Actions: read`. Ses clés doivent être
-  enregistrées dans les secrets de l'environnement Workbench
-  `project-automation` sous `INTEGRATION_ARTIFACT_READER_APP_CLIENT_ID` et
-  `INTEGRATION_ARTIFACT_READER_APP_PRIVATE_KEY`. L'App et ces secrets ne sont
-  pas encore configurés ; l'App Source Reader ne doit pas être élargie.
+- L'App Source Reader est installée uniquement sur les cinq dépôts privés et ses
+  deux secrets chiffrés existent dans Integration. Elle garde `contents: read`
+  seulement ; elle ne télécharge pas les artefacts et ne publie rien.
 - Le marqueur `SILICIUM_DELIVERY_CONTRACT=private-integration-v1` n'est pas
   configuré. Le CLI et les jobs GitHub exigent à la fois ce marqueur et le
   drapeau d'activation ; leur absence bloque aujourd'hui le dispatch. Ces deux
@@ -64,11 +64,12 @@ opérationnelle après la séparation de Workbench et des cinq dépôts privés.
   Integration ; aucun run privé n'a validé ce raccordement. Le reçu temporaire
   n'est pas signé et ne qualifie pas une livraison.
 - Les environnements Workbench de signature et de déploiement n'ont aucun
-  secret ni variable d'environnement configuré. Les workflows attendent entre
-  autres des clés de signature et `DEPLOY_SSH_HOST` / `DEPLOY_SSH_KNOWN_HOSTS` /
-  `DEPLOY_SSH_KEY`; ils ne sont pas configurés. Les environnements Windows de
-  signature sont également vides. Ne pas remplacer ces identités dédiées par
-  les secrets `VPS_*` d'autres automatismes.
+  secret configuré. Les fingerprints APT/RPM sont présents dans les contrats,
+  mais les clés privées APT/RPM/release et le trust anchor public release sont
+  absents. Les secrets SSH dédiés aux environnements `development` et
+  `production` sont également absents. Les environnements Windows de signature
+  sont vides. Ne pas remplacer ces identités par les secrets `VPS_*` d'autres
+  automatismes.
 - L'environnement de production possède une règle de réviseurs, mais cela ne
   prouve pas que la chaîne privée de qualification appelle cet environnement.
 
@@ -90,11 +91,14 @@ les droits de lecture des sources, de publication, de signature et de
 déploiement, et passer explicitement uniquement les secrets requis. `secrets:
 inherit` et l'App Source Reader en écriture sont interdits.
 
-Avant d'implémenter l'appel, fixer la destination de chaque sortie (rapport
-privé, artefact temporaire, image, paquet, manifeste signé) et vérifier que
-les binaires ne révèlent pas une source privée non autorisée à la publication.
-Un transfert public ou un jeton d'App plus puissant ne doit pas être choisi
-implicitement.
+Les rapports, reçus et sorties de compilation restent privés dans Integration.
+Seuls les paquets, images ou manifestes explicitement définis comme livrables
+publics peuvent quitter ce dépôt. La publication dans Workbench utilisera une
+App distincte avec `contents: write`; le droit `Actions: write` est évité en
+déclenchant le déploiement protégé par l'événement de publication. GHCR doit
+être publié avec le `GITHUB_TOKEN` du dépôt Integration et un accès de paquet
+compatible ; une App GitHub n'est pas un substitut au jeton de registre accepté
+par GitHub Packages. Aucun de ces chemins n'est activé actuellement.
 
 ## Chaîne
 

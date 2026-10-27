@@ -1,5 +1,8 @@
 name: Deploy
 'on':
+  release:
+    types:
+    - published
   workflow_dispatch:
     inputs:
       release_id:
@@ -18,10 +21,10 @@ concurrency:
   cancel-in-progress: false
 jobs:
   apply:
-    if: ${{ !github.event.repository.private && vars.SILICIUM_DELIVERY_ENABLED == '1' && vars.SILICIUM_DELIVERY_CONTRACT == 'private-integration-v1' && github.ref == 'refs/heads/main' }}
+    if: ${{ !github.event.repository.private && vars.SILICIUM_DELIVERY_ENABLED == '1' && vars.SILICIUM_DELIVERY_CONTRACT == 'private-integration-v1' && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'release' && !github.event.release.draft)) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    environment: ${{ inputs.environment == 'dev' && 'development' || 'production' }}
+    environment: ${{ (github.event_name == 'release' && github.event.release.prerelease) || (github.event_name == 'workflow_dispatch' && inputs.environment == 'dev') && 'development' || 'production' }}
     permissions:
       contents: read
       actions: read
@@ -38,8 +41,8 @@ jobs:
     - name: Verify and apply the exact candidate
       env:
         GH_TOKEN: ${{ github.token }}
-        RELEASE_ID: ${{ inputs.release_id }}
-        RELEASE_CHANNEL: ${{ inputs.environment }}
+        RELEASE_ID: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_id }}
+        RELEASE_CHANNEL: ${{ github.event_name == 'release' && (github.event.release.prerelease && 'dev' || 'prod') || inputs.environment }}
         DEPLOY_SSH_HOST: ${{ vars.DEPLOY_SSH_HOST }}
         DEPLOY_SSH_USER: silicium-deploy
         DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}

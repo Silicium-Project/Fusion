@@ -4,9 +4,7 @@
   "description": "Publishes qualified Silicium candidates to Workbench and dispatches the protected delivery workflow.",
   "public": false,
   "default_permissions": {
-    "actions": "write",
-    "contents": "write",
-    "packages": "write"
+    "contents": "write"
   },
   "default_events": []
 }

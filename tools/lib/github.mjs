@@ -33,6 +33,49 @@ export function pages(path) {
     if (values.length < 100) return result;
   }
 }
+export function publicApi(path, { allowMissing = false } = {}) {
+  const url = new URL(path, 'https://api.github.com/');
+  if (url.origin !== 'https://api.github.com')
+    throw new Failure('Invalid public GitHub API path', 2);
+  const response = run(
+    [
+      'curl',
+      '--silent',
+      '--show-error',
+      '--max-time',
+      '15',
+      '--header',
+      'Accept: application/vnd.github+json',
+      '--header',
+      'X-GitHub-Api-Version: 2026-03-10',
+      '--write-out',
+      '\\n%{http_code}',
+      url.toString(),
+    ],
+    { allowFailure: true },
+  );
+  if (response.status) throw new Failure('Public GitHub API request failed');
+  const match = response.stdout.match(/\n([0-9]{3})$/);
+  if (!match) throw new Failure('Public GitHub API returned an invalid response');
+  const status = Number(match[1]);
+  if (status === 404 && allowMissing) return null;
+  if (status < 200 || status >= 300)
+    throw new Failure(`Public GitHub API request failed with HTTP ${status}`);
+  try {
+    return JSON.parse(response.stdout.slice(0, match.index));
+  } catch {
+    throw new Failure('Public GitHub API returned invalid JSON');
+  }
+}
+export function publicPages(path) {
+  const result = [];
+  for (let page = 1; ; page++) {
+    const values = publicApi(`${path}?per_page=100&page=${page}`);
+    if (!Array.isArray(values)) throw new Failure('Expected a public GitHub collection', 3);
+    result.push(...values);
+    if (values.length < 100) return result;
+  }
+}
 export function issueRef(value) {
   const url = new URL(value);
   const match = url.pathname.match(

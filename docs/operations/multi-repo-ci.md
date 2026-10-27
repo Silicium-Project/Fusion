@@ -16,11 +16,10 @@ Lire [la décision](../architecture/multi-repo.md) et les
    sur `main`, avec le SHA complet de Workbench. Le workflow vérifie que le
    commit appartient à `main`, récupère exactement les cinq pins, puis exécute
    toutes les suites du registre. `integration/required` exige chaque rapport.
-   Le job suivant à relier dans Integration appellera, par SHA Workbench
-   complet, le workflow public `private-integration-evidence.yml`. Celui-ci
-   revérifie le run privé via l'API GitHub, le gate, le plan, les rapports et
-   les cinq pins du SHA exact.
-6. Conserver ces preuves privées. Les résultats publics de Workbench restent
+   Après le gate, Integration appelle par SHA complet le workflow public
+   `private-integration-evidence.yml`. Celui-ci revérifie via l'API GitHub le
+   run privé, le gate, le plan, les rapports et les cinq pins du SHA exact.
+5. Conserver ces preuves privées. Les résultats publics de Workbench restent
    des preuves de ses seuls fichiers publics. Ne pas activer une publication
    à partir de ce seul gate.
 
@@ -36,29 +35,28 @@ composant sans modifier un checkout utilisateur. Les métadonnées enregistrent
 les deux SHA originaux. Ce commit n'est ni une version intégrée ni un candidat
 livrable ; il ne doit jamais être poussé.
 
-## App de publication séparée
+## Publication séparée
 
 L'App `Silicium Source Reader` reste strictement en lecture seule. Ne pas ajouter
-de droits d'écriture à cette App pour publier une livraison. Le manifeste de
-préparation `tools/config/delivery-publisher-app-manifest.json` décrit une App
-séparée, sans webhook et installée uniquement sur `Workbench` :
+de droits d'écriture à cette App pour publier une livraison. Le manifeste
+`tools/config/delivery-publisher-app-manifest.json` décrit une App séparée,
+sans webhook et installée uniquement sur `Workbench` :
 
-- `contents: write` pour déposer le candidat qualifié et ses éléments immuables ;
-- `packages: write` pour publier les images du candidat dans GHCR ;
-- `actions: write` pour demander le workflow Workbench de déploiement ;
+- `contents: write` pour publier les seuls assets explicitement publics dans
+  une release Workbench ;
 - aucun droit sur les sources privées, issues, projets, checks, déploiements,
   membres ou secrets.
 
-Ce fichier prépare la configuration, il ne prouve ni la création de l'App,
-ni son installation, ni la sécurité d'une livraison. Ne pas créer ou installer
-l'App avant que le transfert d'artefacts, la validation de signature et le
-workflow cible soient implémentés et qualifiés. À cette étape seulement, stocker
-son Client ID et sa clé privée comme secrets chiffrés d'Integration. Le workflow
-devra créer un jeton d'installation limité à `Workbench` et aux trois permissions
-ci-dessus, limiter les étapes qui reçoivent ce jeton, ne jamais l'inclure dans
-les rapports ou artefacts, puis laisser les approbations d'environnement
-Workbench décider de toute promotion. Ne pas transférer ces secrets vers
-Workbench, les runners VPS, ou l'App Source Reader.
+Ce fichier prépare la configuration ; l'App n'est pas créée ni installée. Le
+déploiement protégé s'appuiera sur l'événement de publication d'une release,
+sans donner à l'App le droit `Actions: write`. Les images GHCR sont publiées par
+le `GITHUB_TOKEN` à portée du dépôt Integration avec `packages: write`, après
+configuration d'un accès de paquet compatible. Les GitHub Apps ne remplacent
+pas le jeton de registre accepté par GitHub Packages. Les clés APT/RPM/release
+et le trust anchor public manquent encore : ne pas activer le chemin ni
+provisionner l'App de publication avant validation des scopes, secrets et
+formats publics. Aucun secret de publication ne va sur le runner VPS ou dans
+l'App Source Reader.
 
 ## Activation après migration
 
@@ -87,15 +85,14 @@ du reçu inclut lui aussi le numéro de tentative. Il rejette
 un artefact manquant, expiré, dupliqué ou hors budget. Le reçu ne contient pas
 les binaires ; ceux-ci restent dans Integration une journée.
 
-Le workflow Workbench `release.yml` fournit maintenant le premier raccordement
-de réception : il télécharge le reçu et les quatre artefacts de l'exécution
-Integration explicitement indiquée, utilise une App limitée à `Actions: read`
-sur Integration, puis exige l'égalité des IDs, digests et tailles du reçu et
-de l'API GitHub. Chaque extraction impose `digest-mismatch: error` et une
-seconde limite vérifie la taille décompressée. Les fichiers ne sont ni versés
-dans un artefact Workbench public ni conservés après la fin du runner. Le
-workflow reste bloqué par défaut et n'a pas encore été exécuté ; il ne crée
-pas encore de candidat, de signature ou de publication.
+La tentative de réception dans Workbench a été supprimée : même un runner
+temporaire public ne doit pas manipuler les sorties privées. Le workflow privé
+Integration doit télécharger les artefacts de son propre run, revérifier le
+reçu par la politique Workbench, puis les extraire et les assembler dans le
+même dépôt privé. Le staging refuse les chemins inattendus, les liens
+symboliques, les réécritures et les identités d'artefact incomplètes. La
+construction du candidat et la signature/publication restent des étapes
+distinctes et non activées.
 
 Le budget Actions de l'organisation doit rester à zéro avec blocage du
 dépassement. Les runners standards des dépôts privés consomment le quota
