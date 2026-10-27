@@ -1,4 +1,5 @@
 {
+  "$schema": "https://silicium.network/contracts/workspace/registry/v1",
   "schema_version": 1,
   "name": "Workbench",
   "repository": "Silicium-Project/Workbench",

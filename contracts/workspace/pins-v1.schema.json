@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://silicium.network/contracts/workspace/pins/v1",
+  "title": "Silicium workspace component pins v1",
+  "description": "Immutable source commit pins paired with the workspace registry; path and repository must match the declared component.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "repository", "components"],
+  "properties": {
+    "$schema": {
+      "const": "https://silicium.network/contracts/workspace/pins/v1"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "repository": {
+      "type": "string",
+      "pattern": "^Silicium-Project/[A-Za-z0-9._-]+$"
+    },
+    "components": {
+      "type": "object",
+      "minProperties": 1,
+      "patternProperties": {
+        "^[a-z][a-z0-9-]*$": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["repository", "path", "commit"],
+          "properties": {
+            "repository": {
+              "type": "string",
+              "pattern": "^Silicium-Project/[A-Za-z0-9._-]+$"
+            },
+            "path": {
+              "type": "string",
+              "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(/|$))[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*$"
+            },
+            "commit": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{40}$"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

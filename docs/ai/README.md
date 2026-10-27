@@ -15,6 +15,13 @@ politique et utiliser son lanceur `dev`. Sa qualification crée une composition
 temporaire dont les rapports enregistrent le SHA source et celui de la politique.
 Ne jamais pousser ce commit synthétique de qualification.
 
+Pour toute modification du registre ou des pins, lire les schémas
+`contracts/workspace/registry-v1.schema.json` et
+`contracts/workspace/pins-v1.schema.json`. Mettre à jour les schémas versionnés,
+le validateur, les tests et les procédures IA dans la même PR ; conserver la
+cohérence entre propriétaire, dépôt, sous-module et SHA. Ne jamais ajuster les
+pins, la visibilité ou les identités par automatisation.
+
 La CI publique `--scope public` ne qualifie pas les applications. La qualification
 privée `--scope integration` doit couvrir les cinq pins avant livraison. Un
 quota privé épuisé reste un blocage. Lire `deferred_suites` et rapporter toutes

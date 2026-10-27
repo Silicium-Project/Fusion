@@ -64,9 +64,11 @@ workflow contrôlent les caches.
 défaut attendues de Workbench ; `tools/config/repository-policy.json` décrit le
 ruleset `Protect Main`. `dev ci policy --json` relit le dépôt et le ruleset via
 l'API GitHub sans jeton ni secret, après avoir vérifié le registre local et les
-pins. Le rapport contient le SHA de politique, l'heure de vérification, les
-écarts et les limites de couverture. Une réponse API refusée, limitée, invalide
-ou incomplète produit `blocked`, jamais un rapport propre.
+pins. Le rapport contient le SHA de politique, l'heure locale de vérification,
+les horodatages `Date` retournés par chaque réponse API, les écarts et les
+limites de couverture. `contracts/ci/repository-policy-report-v1.schema.json`
+fixe son format. Une réponse API refusée, limitée, invalide, sans horodatage ou
+incomplète produit `blocked`, jamais un rapport propre.
 
 La CI requise appelle ce contrôle lorsque le manifeste, son code, ses tests, le
 lanceur ou le workflow CI changent ; les autres PR ne déclenchent pas cet appel

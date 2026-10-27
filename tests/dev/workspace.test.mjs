@@ -37,11 +37,16 @@ function fixture(t, materialized = false) {
     git(path, 'config', 'user.email', 'fixture@silicium.invalid');
   }
   const config = {
+    $schema: 'https://silicium.network/contracts/workspace/registry/v1',
     schema_version: 1,
+    name: 'Workbench',
     repository: 'Silicium-Project/Workbench',
+    repository_id: 1304063299,
     owner: 'Silicium-Project',
     visibility: 'public',
     default_branch: 'main',
+    legacy_repositories: ['Silicium-Project/Fusion'],
+    mode: 'multi-repo',
     integration_repository: 'Silicium-Project/Integration',
     integration: {
       repository: 'Silicium-Project/Integration',
@@ -50,6 +55,7 @@ function fixture(t, materialized = false) {
       default_branch: 'main',
       role: 'private cross-repository qualification',
     },
+    public_suites: ['docs'],
     components: {
       api: {
         repository: 'Silicium-Project/BackEnd',
@@ -57,6 +63,7 @@ function fixture(t, materialized = false) {
         path: 'apps/api',
         default_branch: 'main',
         visibility: 'private',
+        suites: ['api'],
       },
     },
   };
@@ -70,6 +77,7 @@ function fixture(t, materialized = false) {
   git(source, 'commit', '--quiet', '-m', 'fixture source');
   const sha = git(source, 'rev-parse', 'HEAD');
   const lock = {
+    $schema: 'https://silicium.network/contracts/workspace/pins/v1',
     schema_version: 1,
     repository: config.repository,
     components: {
@@ -127,6 +135,15 @@ test('workspace pins reject missing components, floating refs, traversal and nes
     },
     (c) => {
       c.default_branch = '';
+    },
+    (c) => {
+      delete c.$schema;
+    },
+    (c) => {
+      c.repository_id = 0;
+    },
+    (c) => {
+      c.components.api.suites = [];
     },
     (c) => {
       c.integration.repository = 'other/Integration';

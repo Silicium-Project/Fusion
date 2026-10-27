@@ -116,11 +116,21 @@ async function requestJson(url, fetchImpl, wait) {
     } catch {
       throw new AuditFailure('invalid_json', 'Public GitHub API returned invalid JSON');
     }
-    return { data, link: response.headers?.get('link') ?? null };
+    const rawApiTimestamp = response.headers?.get('date') ?? null;
+    if (!rawApiTimestamp || !Number.isFinite(Date.parse(rawApiTimestamp)))
+      throw new AuditFailure(
+        'missing_api_timestamp',
+        'Public GitHub API response omitted its Date timestamp',
+      );
+    return {
+      data,
+      link: response.headers?.get('link') ?? null,
+      apiTimestamp: new Date(Date.parse(rawApiTimestamp)).toISOString(),
+    };
   }
 }
 
-async function collection(url, fetchImpl, wait) {
+async function collection(url, fetchImpl, wait, observe) {
   const values = [],
     visited = new Set();
   let current = url;
@@ -128,7 +138,8 @@ async function collection(url, fetchImpl, wait) {
     if (page >= 20 || visited.has(current))
       throw new AuditFailure('incomplete_pagination', 'GitHub API pagination is incomplete');
     visited.add(current);
-    const { data, link } = await requestJson(current, fetchImpl, wait);
+    const { data, link, apiTimestamp } = await requestJson(current, fetchImpl, wait);
+    observe({ resource: 'repository.rulesets', page: page + 1, api_timestamp: apiTimestamp });
     if (!Array.isArray(data))
       throw new AuditFailure('invalid_collection', 'GitHub API returned an incomplete collection');
     values.push(...data);
@@ -280,7 +291,12 @@ export async function auditRepositoryPolicy({
     registry: localRegistry,
     coverage: ['public repository metadata', 'active default-branch ruleset'],
     not_publicly_verifiable: policy?.not_publicly_verifiable ?? [],
+    api_observations: [],
+    repository_metadata: null,
+    ruleset: null,
+    drift: [],
   };
+  const drifts = base.drift;
   try {
     validatePolicy(policy, workspace);
     try {
@@ -302,8 +318,31 @@ export async function auditRepositoryPolicy({
       );
     const [owner, name] = workspace.repository.split('/');
     const repositoryPath = `${apiRoot}/repos/${owner}/${name}`;
-    const { data: metadata } = await requestJson(repositoryPath, fetchImpl, wait);
-    const drifts = [];
+    const metadataResult = await requestJson(repositoryPath, fetchImpl, wait);
+    base.api_observations.push({
+      resource: 'repository.metadata',
+      api_timestamp: metadataResult.apiTimestamp,
+    });
+    const metadata = metadataResult.data;
+    if (
+      !metadata ||
+      !Number.isSafeInteger(metadata.id) ||
+      metadata.id < 1 ||
+      typeof metadata.full_name !== 'string' ||
+      !['public', 'private'].includes(metadata.visibility) ||
+      typeof metadata.default_branch !== 'string' ||
+      !metadata.default_branch
+    )
+      throw new AuditFailure(
+        'invalid_repository_metadata',
+        'GitHub repository metadata is incomplete',
+      );
+    base.repository_metadata = {
+      id: metadata.id,
+      full_name: metadata.full_name,
+      visibility: metadata.visibility,
+      default_branch: metadata.default_branch,
+    };
     const metadataCheck = (path, expected, actual) => {
       if (!equalValue(actual, expected)) drifts.push({ path, expected, actual: actual ?? null });
     };
@@ -316,7 +355,14 @@ export async function auditRepositoryPolicy({
       `${repositoryPath}/rulesets?per_page=100&page=1`,
       fetchImpl,
       wait,
+      (observation) => base.api_observations.push(observation),
     );
+    if (
+      listed.some(
+        (item) => !Number.isSafeInteger(item?.id) || item.id < 1 || typeof item.name !== 'string',
+      )
+    )
+      throw new AuditFailure('invalid_ruleset_collection', 'GitHub ruleset metadata is incomplete');
     const matches = listed.filter((item) => item.name === policy.ruleset.name);
     if (matches.length !== 1) {
       drifts.push({
@@ -327,13 +373,6 @@ export async function auditRepositoryPolicy({
       return {
         ...base,
         status: drifts.length ? 'drift' : 'success',
-        repository_metadata: {
-          id: metadata.id,
-          full_name: metadata.full_name,
-          visibility: metadata.visibility,
-          default_branch: metadata.default_branch,
-        },
-        ruleset: null,
         drift: drifts,
       };
     }
@@ -342,17 +381,27 @@ export async function auditRepositoryPolicy({
       fetchImpl,
       wait,
     );
+    base.api_observations.push({
+      resource: 'repository.ruleset',
+      api_timestamp: details.apiTimestamp,
+    });
+    if (
+      !details.data ||
+      !Number.isSafeInteger(details.data.id) ||
+      typeof details.data.name !== 'string' ||
+      typeof details.data.source_type !== 'string' ||
+      typeof details.data.source !== 'string' ||
+      typeof details.data.target !== 'string' ||
+      typeof details.data.enforcement !== 'string' ||
+      !Array.isArray(details.data.rules) ||
+      details.data.rules.some((rule) => !rule || typeof rule.type !== 'string')
+    )
+      throw new AuditFailure('invalid_ruleset_response', 'GitHub ruleset details are incomplete');
     const observedRuleset = compareRuleset(policy, matches[0], details.data, drifts);
+    base.ruleset = observedRuleset;
     return {
       ...base,
       status: drifts.length ? 'drift' : 'success',
-      repository_metadata: {
-        id: metadata.id,
-        full_name: metadata.full_name,
-        visibility: metadata.visibility,
-        default_branch: metadata.default_branch,
-      },
-      ruleset: observedRuleset,
       drift: drifts,
     };
   } catch (error) {

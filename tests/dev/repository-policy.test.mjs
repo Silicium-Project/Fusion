@@ -1,26 +1,38 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
 import { readJson } from '../../tools/lib/process.mjs';
 import { auditRepositoryPolicy } from '../../tools/lib/repository-policy.mjs';
+import { root } from '../../tools/lib/process.mjs';
 import { workspaceConfig, workspaceLock } from '../../tools/lib/workspace.mjs';
 
 const policy = readJson(new URL('../../tools/config/repository-policy.json', import.meta.url));
 const workspace = workspaceConfig();
 const lock = workspaceLock();
+const require = createRequire(resolve(root, 'tools/quality/package.json'));
+const Ajv = require('ajv');
+const validateReport = new Ajv({ allErrors: true }).compile(
+  readJson(new URL('../../contracts/ci/repository-policy-report-v1.schema.json', import.meta.url)),
+);
 const repositoryUrl = 'https://api.github.com/repos/Silicium-Project/Workbench';
 const rulesetsUrl = `${repositoryUrl}/rulesets?per_page=100&page=1`;
 const rulesetUrl = `${repositoryUrl}/rulesets/23931183`;
+const apiDate = 'Tue, 27 Oct 2026 12:00:00 GMT';
 const fixed = {
   checkedAt: '2026-10-27T12:00:00.000Z',
   sourceSha: 'a'.repeat(40),
   executionRepository: 'Silicium-Project/Workbench',
 };
 
-function response(data, { status = 200, link = null } = {}) {
+function response(data, { status = 200, link = null, date = apiDate } = {}) {
   return {
     ok: status >= 200 && status < 300,
     status,
-    headers: { get: (name) => (name.toLowerCase() === 'link' ? link : null) },
+    headers: {
+      get: (name) =>
+        name.toLowerCase() === 'link' ? link : name.toLowerCase() === 'date' ? date : null,
+    },
     json: async () => data,
   };
 }
@@ -85,6 +97,7 @@ test('public ruleset audit proves the checked Workbench SHA and timestamp withou
     fetchImpl: mockFetch(liveResponses(), requests),
   });
   assert.equal(report.status, 'success');
+  assert.equal(validateReport(report), true, validateReport.errors);
   assert.equal(report.repository_metadata.default_branch, 'main');
   assert.equal(report.ruleset.id, 23931183);
   assert.equal(report.checked_at, fixed.checkedAt);
@@ -93,6 +106,14 @@ test('public ruleset audit proves the checked Workbench SHA and timestamp withou
   assert.equal(report.registry.integration.repository, 'Silicium-Project/Integration');
   assert.equal(report.registry.components.api.commit, lock.components.api.commit);
   assert.ok(report.not_publicly_verifiable.includes('ruleset bypass actors'));
+  assert.deepEqual(
+    report.api_observations.map((observation) => observation.resource),
+    ['repository.metadata', 'repository.rulesets', 'repository.ruleset'],
+  );
+  assert.ok(report.api_observations.every((observation) => observation.api_timestamp));
+  assert.ok(
+    report.api_observations.every((observation) => observation.api_timestamp.endsWith('Z')),
+  );
   assert.equal(requests.length, 3);
   assert.ok(
     requests.every(
@@ -127,6 +148,7 @@ test('visibility, branch, enforcement and merge-method drift are reported togeth
     fetchImpl: mockFetch(responses),
   });
   assert.equal(report.status, 'drift');
+  assert.equal(validateReport(report), true, validateReport.errors);
   const paths = report.drift.map((item) => item.path);
   assert.ok(paths.includes('repository.visibility'));
   assert.ok(paths.includes('repository.default_branch'));
@@ -156,7 +178,31 @@ test('ruleset list pagination is followed and duplicate named rulesets fail visi
   });
   assert.equal(report.status, 'drift');
   assert.deepEqual(report.drift, [{ path: 'ruleset.named_count', expected: 1, actual: 2 }]);
+  assert.deepEqual(
+    report.api_observations
+      .filter((observation) => observation.resource === 'repository.rulesets')
+      .map((observation) => observation.page),
+    [1, 2],
+  );
   assert.ok(requests.some((request) => request.url === next));
+});
+
+test('an API response without its server timestamp blocks the audit and preserves prior evidence', async () => {
+  const responses = liveResponses();
+  responses.set(rulesetsUrl, { data: [], options: { date: null } });
+  const report = await auditRepositoryPolicy({
+    ...fixed,
+    policy,
+    fetchImpl: mockFetch(responses),
+  });
+  assert.equal(report.status, 'blocked');
+  assert.equal(validateReport(report), true, validateReport.errors);
+  assert.equal(report.error.code, 'missing_api_timestamp');
+  assert.deepEqual(
+    report.api_observations.map((item) => item.resource),
+    ['repository.metadata'],
+  );
+  assert.equal(report.repository_metadata.full_name, 'Silicium-Project/Workbench');
 });
 
 test('API authorization or rate-limit failure blocks the report without exposing response text', async () => {
