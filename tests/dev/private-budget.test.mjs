@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { requireBudgetProof, privateBudget } from '../../tools/ci/private-budget.mjs';
+import { readFileSync } from 'node:fs';
+import {
+  privateIntegrationArtifactReservation,
+  requireBudgetProof,
+  privateBudget,
+} from '../../tools/ci/private-budget.mjs';
 const now = Date.parse('2026-10-25T12:00:00Z');
 const record = {
   id: 1,
@@ -25,7 +30,14 @@ const jobs = [
   },
 ];
 test('private budget proof requires the actual protected organization check', () => {
-  assert.equal(requireBudgetProof(record, jobs, now).run_id, 1);
+  const proof = requireBudgetProof(record, jobs, now);
+  assert.equal(proof.run_id, 1);
+  assert.equal(proof.incoming_bytes_reserved, privateIntegrationArtifactReservation);
+  assert.equal(privateIntegrationArtifactReservation, 224 * 1024 ** 2);
+  const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  assert.ok(workflow.includes("SILICIUM_INCOMING_BYTES: '234881024'"));
+  const integrationArtifacts = 203 * 1024 ** 2 + 16 * 1024 ** 2 + 1 * 1024 ** 2;
+  assert.equal(privateIntegrationArtifactReservation - integrationArtifacts, 4 * 1024 ** 2);
   for (const changes of [
     { event: 'pull_request' },
     { head_branch: 'topic' },

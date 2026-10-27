@@ -54,6 +54,18 @@ const reports = suites.map((suite) => ({
   })),
 }));
 const reportDigests = suites.map((suite) => ({ suite, sha256: 'd'.repeat(64) }));
+const deliveryArtifacts = [
+  ['api', 'delivery-api-1'],
+  ['web', 'delivery-web-1'],
+  ['network', 'delivery-network-1'],
+  ['node_ui', 'delivery-node-ui-1'],
+].map(([suite, name], index) => ({
+  id: index + 101,
+  name,
+  expired: false,
+  size_in_bytes: 1024,
+  digest: `sha256:${String(index + 1).repeat(64)}`,
+}));
 const run = {
   id: 741852,
   run_attempt: 1,
@@ -92,6 +104,7 @@ const base = () => ({
   reports,
   planDigest: 'e'.repeat(64),
   reportDigests,
+  deliveryArtifacts,
   workspace,
   lock,
   lanes,
@@ -110,6 +123,11 @@ test('private evidence binds a complete main run to Workbench policy and all exa
     receipt.artifacts.reports.map((entry) => entry.suite),
     suites,
   );
+  assert.deepEqual(
+    receipt.artifacts.delivery.map((entry) => entry.suite),
+    ['api', 'network', 'node_ui', 'web'],
+  );
+  assert.equal(receipt.artifacts.delivery[0].digest, deliveryArtifacts[0].digest);
 });
 
 test('public, pull-request, stale, skipped, or partial evidence fails closed', () => {
@@ -145,6 +163,23 @@ test('workflow references, policy digests, suite reports, and artifact digests a
     mutate(input);
     assert.throws(() => privateIntegrationEvidence(input));
   }
+});
+
+test('private delivery outputs must be exact-attempt, bounded, live, and hashed', () => {
+  for (const mutate of [
+    (input) => input.deliveryArtifacts.pop(),
+    (input) => (input.deliveryArtifacts[0].name = 'delivery-api-2'),
+    (input) => (input.deliveryArtifacts[1].expired = true),
+    (input) => (input.deliveryArtifacts[2].digest = ''),
+    (input) => (input.deliveryArtifacts[3].size_in_bytes = 2 * 1024 ** 2 + 256 * 1024 + 1),
+  ]) {
+    const input = structuredClone(base());
+    mutate(input);
+    assert.throws(() => privateIntegrationEvidence(input), /artifact|attempt|deliverable/i);
+  }
+  const boundedArchiveOverhead = structuredClone(base());
+  boundedArchiveOverhead.deliveryArtifacts[0].size_in_bytes = 48 * 1024 ** 2 + 256 * 1024;
+  assert.doesNotThrow(() => privateIntegrationEvidence(boundedArchiveOverhead));
 });
 
 test('qualification evidence expires after 24 hours', () => {

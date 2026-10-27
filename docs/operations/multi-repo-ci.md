@@ -70,12 +70,22 @@ Un workflow suspendu ou ignoré ne constitue jamais une qualification.
 
 Avant un lancement privé, exécuter le workflow CI de Workbench sur `main` et
 attendre sa réussite. Le job protégé `budget` observe tous les dépôts avec
-l'App existante ; il vérifie la marge de stockage avec une réserve de 210 Mio.
+l'App existante ; il vérifie la marge de stockage avec une réserve de 224 Mio
+pour les binaires de livraison (202 Mio de contenu, 203 Mio d'archives), le
+plan/rapports (16 Mio) et le reçu (1 Mio), avec une marge de 4 Mio.
 Les workflows privés exigent que cette étape exacte ait réussi depuis moins
 de quinze minutes. Il s'agit d'une observation bornée, pas d'un verrou global
 de stockage entre tous les dépôts. Les campagnes complètes sont sérialisées,
 les rapports limités à 1 Mio et expirent après un jour ; les caches privés
 sont désactivés pendant la migration.
+
+Les suites `api`, `web`, `node-ui` et `network-integration` téléversent aussi
+leurs sorties de compilation privées sous `delivery-<suite>-<run_attempt>`.
+Le vérificateur de Workbench exige les quatre noms exacts, enregistre leurs
+identifiants GitHub, digests SHA-256 et tailles dans le reçu privé, et rejette
+un artefact manquant, expiré, dupliqué ou hors budget. Le reçu ne contient pas
+les binaires ; ceux-ci restent dans Integration une journée. Aucun transfert
+vers Workbench ni publication n'est encore implémenté.
 
 Le budget Actions de l'organisation doit rester à zéro avec blocage du
 dépassement. Les runners standards des dépôts privés consomment le quota

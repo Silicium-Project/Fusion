@@ -4,6 +4,8 @@ import { resolve } from 'node:path';
 import { api, repository, canonicalRepository } from '../lib/github.mjs';
 import { Failure } from '../lib/process.mjs';
 
+export const privateIntegrationArtifactReservation = 224 * 1024 ** 2;
+
 export function requireBudgetProof(record, jobs, now = Date.now()) {
   const budget = jobs.find((job) => job.name === 'budget');
   const step = budget?.steps?.find((item) => item.name === 'Check organization artifact headroom');
@@ -32,7 +34,7 @@ export function requireBudgetProof(record, jobs, now = Date.now()) {
     source_sha: record.head_sha,
     checked_at: step.completed_at,
     expires_at: new Date(completed + 15 * 60_000).toISOString(),
-    incoming_bytes_reserved: 220200960,
+    incoming_bytes_reserved: privateIntegrationArtifactReservation,
   };
 }
 

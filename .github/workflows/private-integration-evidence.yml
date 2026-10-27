@@ -48,6 +48,9 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           WORKBENCH_SHA: ${{ inputs.workbench_sha }}
         run: node tools/ci/private-integration-evidence.mjs
+      - name: Bound private metadata receipt
+        working-directory: workspace
+        run: node tools/ci/artifact-size.mjs .artifacts/private-integration-evidence.json 1048576
       - name: Retain the private metadata receipt briefly
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:

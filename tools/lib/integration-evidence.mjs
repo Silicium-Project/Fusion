@@ -11,6 +11,22 @@ const qualificationWorkflow = '.github/workflows/qualification.yml';
 const shaPattern = /^[a-f0-9]{40}$/;
 const digestPattern = /^[a-f0-9]{64}$/;
 const maxRunAgeMs = 24 * 60 * 60 * 1000;
+const deliveryArtifactLimits = Object.freeze({
+  api: 48 * 1024 ** 2,
+  web: 40 * 1024 ** 2,
+  network: 112 * 1024 ** 2,
+  node_ui: 2 * 1024 ** 2,
+});
+const deliveryArtifactNames = Object.freeze({
+  api: 'delivery-api',
+  web: 'delivery-web',
+  network: 'delivery-network',
+  node_ui: 'delivery-node-ui',
+});
+const deliveryArchiveOverheadBytes = 256 * 1024;
+const maxDeliveryArtifactBytes =
+  Object.values(deliveryArtifactLimits).reduce((sum, bytes) => sum + bytes, 0) +
+  Object.keys(deliveryArtifactLimits).length * deliveryArchiveOverheadBytes;
 
 const stable = (value) => {
   if (Array.isArray(value)) return value.map(stable);
@@ -24,6 +40,56 @@ const stable = (value) => {
 };
 const same = (left, right) => JSON.stringify(stable(left)) === JSON.stringify(stable(right));
 const trustedPermission = (permission) => ['admin', 'maintain', 'write'].includes(permission);
+
+export function validatePrivateDeliveryArtifacts(artifacts, runAttempt) {
+  const attempt = Number(runAttempt);
+  if (!Number.isSafeInteger(attempt) || attempt < 1)
+    throw new Failure('A positive Integration run attempt is required');
+  if (!Array.isArray(artifacts) || artifacts.length > 100)
+    throw new Failure('Could not inspect the complete Integration artifact list');
+  const expected = new Map(
+    Object.entries(deliveryArtifactNames).map(([suite, base]) => [
+      `${base}-${attempt}`,
+      { suite, limit: deliveryArtifactLimits[suite] },
+    ]),
+  );
+  const selected = artifacts.filter((artifact) => expected.has(artifact?.name));
+  if (
+    selected.length !== expected.size ||
+    new Set(selected.map((x) => x.name)).size !== expected.size
+  )
+    throw new Failure(
+      'Every deliverable suite must upload exactly one artifact for this run attempt',
+    );
+  let total = 0;
+  const validated = selected
+    .map((artifact) => {
+      const requirement = expected.get(artifact.name);
+      const size = artifact.size_in_bytes;
+      if (
+        !Number.isSafeInteger(artifact.id) ||
+        artifact.id < 1 ||
+        artifact.expired !== false ||
+        !Number.isSafeInteger(size) ||
+        size < 1 ||
+        size > requirement.limit + deliveryArchiveOverheadBytes ||
+        !/^sha256:[a-f0-9]{64}$/.test(artifact.digest ?? '')
+      )
+        throw new Failure(`Invalid, expired, oversized, or unhashed ${requirement.suite} artifact`);
+      total += size;
+      return {
+        suite: requirement.suite,
+        id: artifact.id,
+        name: artifact.name,
+        digest: artifact.digest,
+        size_bytes: size,
+      };
+    })
+    .sort((a, b) => a.suite.localeCompare(b.suite));
+  if (total > maxDeliveryArtifactBytes)
+    throw new Failure('Private delivery artifacts exceed their combined size reservation');
+  return validated;
+}
 
 /**
  * Build a private, metadata-only receipt after checking GitHub's run record and
@@ -46,6 +112,7 @@ export function privateIntegrationEvidence({
   reports,
   planDigest,
   reportDigests,
+  deliveryArtifacts,
   workspace,
   lock,
   lanes,
@@ -157,6 +224,11 @@ export function privateIntegrationEvidence({
   )
     throw new Failure('The report digests do not match the complete required suite set');
 
+  const validatedDeliveryArtifacts = validatePrivateDeliveryArtifacts(
+    deliveryArtifacts,
+    run.run_attempt,
+  );
+
   return {
     schema_version: 1,
     evidence_type: 'silicium.private-integration',
@@ -184,6 +256,7 @@ export function privateIntegrationEvidence({
     artifacts: {
       plan_sha256: planDigest,
       reports: sortedDigests,
+      delivery: validatedDeliveryArtifacts,
     },
     gate: { status: 'success', required_suites: requiredSuites },
   };

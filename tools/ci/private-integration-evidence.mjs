@@ -53,6 +53,14 @@ async function main() {
   if (!Array.isArray(jobsResponse.jobs) || jobsResponse.total_count !== jobsResponse.jobs.length)
     throw new Failure('Could not inspect the complete Integration job list');
   const requiredJobs = jobsResponse.jobs.filter((job) => job.name === 'integration/required');
+  const artifactResponse = await github(
+    `repos/${integration}/actions/runs/${runId}/artifacts?per_page=100`,
+  );
+  if (
+    !Array.isArray(artifactResponse.artifacts) ||
+    artifactResponse.total_count !== artifactResponse.artifacts.length
+  )
+    throw new Failure('Could not inspect the complete Integration artifact list');
   const actors = [...new Set([run.actor?.login, run.triggering_actor?.login].filter(Boolean))];
   const actorPermissions = await Promise.all(
     actors.map(async (actor) => {
@@ -117,6 +125,7 @@ async function main() {
       suite: reports[index].suite,
       sha256: sha256(readFileSync(path)),
     })),
+    deliveryArtifacts: artifactResponse.artifacts,
     workspace: workspaceConfig(root),
     lock: workspaceLock(root),
     lanes: registry(),

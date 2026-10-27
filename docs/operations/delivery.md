@@ -25,9 +25,11 @@ signé précédent du canal, et son source doit en descendre.
 La chaîne décrite ci-dessous est la **cible** ; elle n'est pas encore
 opérationnelle après la séparation de Workbench et des cinq dépôts privés.
 
-- `Integration` ne contient qu'une qualification privée manuelle. Son
-  `integration/required` valide les rapports, mais ne construit ni ne publie un
-  candidat et n'appelle pas la livraison.
+- `Integration` dispose d'une qualification privée manuelle. La PR Integration
+  #4 propose aussi des artefacts de compilation bornés et un appel au vérificateur
+  Workbench ; elle est encore en brouillon et aucun run n'a été effectué. Elle
+  ne construit pas encore un paquet candidat, ne transfère rien vers Workbench,
+  et n'appelle pas la livraison.
 - `Workbench/.github/workflows/release.yml` écoute les fins du workflow `CI`
   de Workbench, puis exige dans son job `prepare` que le run appartienne au
   dépôt privé `Integration`. Un run public Workbench ne peut donc pas satisfaire
@@ -46,9 +48,10 @@ opérationnelle après la séparation de Workbench et des cinq dépôts privés.
   drapeau d'activation ; leur absence bloque aujourd'hui le dispatch. Ces deux
   valeurs sont des verrous d'activation, pas une preuve de qualification. La
   PR #332 ajoute un workflow réutilisable qui vérifie le run privé, le SHA de
-  politique, les cinq pins et les rapports. Il doit encore être fusionné et
-  appelé depuis Integration ; aucun run privé n'a validé ce raccordement. Le
-  reçu temporaire n'est pas signé et ne qualifie pas une livraison.
+  politique, les cinq pins, les rapports et les quatre artefacts de compilation
+  exacts avec leurs digests. Elle doit encore être fusionnée et appelée depuis
+  Integration ; aucun run privé n'a validé ce raccordement. Le reçu temporaire
+  n'est pas signé et ne qualifie pas une livraison.
 - Les environnements Workbench de signature et de déploiement n'ont aucun
   secret ni variable d'environnement configuré. Les workflows attendent entre
   autres des clés de signature et `DEPLOY_SSH_HOST` / `DEPLOY_SSH_KNOWN_HOSTS` /
