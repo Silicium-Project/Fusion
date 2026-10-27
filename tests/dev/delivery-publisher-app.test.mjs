@@ -12,6 +12,7 @@ const manifest = JSON.parse(readFileSync(fileURLToPath(manifestPath), 'utf8'));
 test('delivery publisher is separate, private, webhook-free, and narrowly permissioned', () => {
   assert.equal(manifest.name, 'Silicium Delivery Publisher');
   assert.equal(manifest.url, 'https://github.com/Silicium-Project/Workbench');
+  assert.match(manifest.description, /release event/);
   assert.equal(manifest.public, false);
   assert.deepEqual(manifest.default_events, []);
   assert.deepEqual(manifest.default_permissions, { contents: 'write' });
