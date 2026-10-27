@@ -1,6 +1,12 @@
 /** Read-only, public audit of Workbench metadata and its active main ruleset. */
 import { resolve } from 'node:path';
 import { readJson, root } from './process.mjs';
+import {
+  validateWorkspace,
+  workspaceConfig,
+  workspaceLock,
+  workspaceStatus,
+} from './workspace.mjs';
 
 const apiRoot = 'https://api.github.com';
 const apiHeaders = {
@@ -17,14 +23,12 @@ class AuditFailure extends Error {
   }
 }
 
-function validatePolicy(policy) {
+function validatePolicy(policy, workspace) {
   if (
     policy?.schema_version !== 1 ||
+    policy.repository_source !== 'tools/config/workspace.json' ||
     !/^Silicium-Project\/[A-Za-z0-9._-]+$/.test(policy.repository ?? '') ||
-    !Number.isSafeInteger(policy.repository_id) ||
-    policy.repository_id < 1 ||
-    policy.visibility !== 'public' ||
-    !/^[A-Za-z0-9._-]+$/.test(policy.default_branch ?? '') ||
+    policy.repository !== workspace?.repository ||
     !policy.ruleset ||
     typeof policy.ruleset.name !== 'string' ||
     typeof policy.ruleset.source_type !== 'string' ||
@@ -238,6 +242,9 @@ function compareRuleset(policy, repository, ruleset, drifts) {
  */
 export async function auditRepositoryPolicy({
   policy = readJson(resolve(root, 'tools/config/repository-policy.json')),
+  workspace = workspaceConfig(),
+  lock = workspaceLock(),
+  inspectWorkspace = workspaceStatus,
   fetchImpl = globalThis.fetch,
   wait = (milliseconds) =>
     new Promise((resolveWait) => {
@@ -247,38 +254,63 @@ export async function auditRepositoryPolicy({
   sourceSha = process.env.GITHUB_SHA ?? 'unknown',
   executionRepository = process.env.GITHUB_REPOSITORY,
 } = {}) {
+  const localRegistry = {
+    workbench: {
+      repository: workspace?.repository ?? null,
+      repository_id: workspace?.repository_id ?? null,
+      owner: workspace?.owner ?? null,
+      visibility: workspace?.visibility ?? null,
+      default_branch: workspace?.default_branch ?? null,
+    },
+    integration: workspace?.integration ?? null,
+    components: Object.fromEntries(
+      Object.entries(workspace?.components ?? {}).map(([id, component]) => [
+        id,
+        { ...component, commit: lock?.components?.[id]?.commit ?? null },
+      ]),
+    ),
+  };
   const base = {
     schema_version: 1,
     operation: 'ci.repository-policy',
-    repository: policy?.repository ?? null,
+    repository: workspace?.repository ?? null,
     policy_schema_version: policy?.schema_version ?? null,
     checked_at: checkedAt,
     source_sha: sourceSha,
+    registry: localRegistry,
     coverage: ['public repository metadata', 'active default-branch ruleset'],
     not_publicly_verifiable: policy?.not_publicly_verifiable ?? [],
   };
   try {
-    validatePolicy(policy);
+    validatePolicy(policy, workspace);
+    try {
+      validateWorkspace(workspace, lock);
+    } catch {
+      throw new AuditFailure('invalid_registry', 'Repository registry or pins are invalid');
+    }
+    const workspaceReport = inspectWorkspace();
+    if (workspaceReport.status !== 'success')
+      throw new AuditFailure('workspace_drift', 'Workbench gitlinks do not match their registry');
     if (!/^[a-f0-9]{40}$/.test(sourceSha ?? ''))
       throw new AuditFailure('missing_source_sha', 'A complete policy source SHA is required');
     if (!Number.isFinite(Date.parse(checkedAt)))
       throw new AuditFailure('invalid_timestamp', 'A valid API check timestamp is required');
-    if (executionRepository && executionRepository !== policy.repository)
+    if (executionRepository && executionRepository !== workspace.repository)
       throw new AuditFailure(
         'wrong_repository',
-        `This audit is restricted to ${policy.repository}`,
+        `This audit is restricted to ${workspace.repository}`,
       );
-    const [owner, name] = policy.repository.split('/');
+    const [owner, name] = workspace.repository.split('/');
     const repositoryPath = `${apiRoot}/repos/${owner}/${name}`;
     const { data: metadata } = await requestJson(repositoryPath, fetchImpl, wait);
     const drifts = [];
     const metadataCheck = (path, expected, actual) => {
       if (!equalValue(actual, expected)) drifts.push({ path, expected, actual: actual ?? null });
     };
-    metadataCheck('repository.id', policy.repository_id, metadata.id);
-    metadataCheck('repository.full_name', policy.repository, metadata.full_name);
-    metadataCheck('repository.visibility', policy.visibility, metadata.visibility);
-    metadataCheck('repository.default_branch', policy.default_branch, metadata.default_branch);
+    metadataCheck('repository.id', workspace.repository_id, metadata.id);
+    metadataCheck('repository.full_name', workspace.repository, metadata.full_name);
+    metadataCheck('repository.visibility', workspace.visibility, metadata.visibility);
+    metadataCheck('repository.default_branch', workspace.default_branch, metadata.default_branch);
 
     const listed = await collection(
       `${repositoryPath}/rulesets?per_page=100&page=1`,

@@ -3,38 +3,58 @@
   "name": "Workbench",
   "repository": "Silicium-Project/Workbench",
   "repository_id": 1304063299,
+  "owner": "Silicium-Project",
+  "visibility": "public",
+  "default_branch": "main",
   "legacy_repositories": ["Silicium-Project/Fusion"],
   "mode": "multi-repo",
   "integration_repository": "Silicium-Project/Integration",
+  "integration": {
+    "repository": "Silicium-Project/Integration",
+    "owner": "Silicium-Project",
+    "visibility": "private",
+    "default_branch": "main",
+    "role": "private cross-repository qualification"
+  },
   "public_suites": ["docs", "powershell", "security", "tooling"],
   "components": {
     "api": {
       "repository": "Silicium-Project/BackEnd",
+      "owner": "Silicium-Project",
       "path": "apps/api",
+      "default_branch": "main",
       "visibility": "private",
       "suites": ["api"]
     },
     "web": {
       "repository": "Silicium-Project/FrontEnd",
+      "owner": "Silicium-Project",
       "path": "apps/web",
+      "default_branch": "main",
       "visibility": "private",
       "suites": ["web"]
     },
     "node": {
       "repository": "Silicium-Project/DesktopApp",
+      "owner": "Silicium-Project",
       "path": "apps/node",
+      "default_branch": "main",
       "visibility": "private",
       "suites": ["node-ui", "node-native", "node-windows"]
     },
     "network": {
       "repository": "Silicium-Project/Network",
+      "owner": "Silicium-Project",
       "path": "network",
+      "default_branch": "main",
       "visibility": "private",
       "suites": ["network", "network-integration", "network-wasm"]
     },
     "solana": {
       "repository": "Silicium-Project/Solana",
+      "owner": "Silicium-Project",
       "path": "chain",
+      "default_branch": "main",
       "visibility": "private",
       "suites": ["solana"]
     }

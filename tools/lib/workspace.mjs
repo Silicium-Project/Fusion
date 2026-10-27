@@ -12,7 +12,14 @@ export function validateWorkspace(config, lock) {
   if (
     config.schema_version !== 1 ||
     lock.schema_version !== 1 ||
-    lock.repository !== config.repository
+    lock.repository !== config.repository ||
+    config.owner !== config.repository?.split('/')[0] ||
+    config.visibility !== 'public' ||
+    !/^[A-Za-z0-9._-]+$/.test(config.default_branch ?? '') ||
+    config.integration?.repository !== config.integration_repository ||
+    config.integration?.owner !== config.integration?.repository?.split('/')[0] ||
+    config.integration?.visibility !== 'private' ||
+    !/^[A-Za-z0-9._-]+$/.test(config.integration?.default_branch ?? '')
   )
     throw new Failure('Unsupported workspace identity or lock schema', 2);
   const paths = new Set();
@@ -24,6 +31,8 @@ export function validateWorkspace(config, lock) {
     if (
       !/^[a-z][a-z0-9-]*$/.test(id) ||
       !/^Silicium-Project\/[A-Za-z0-9._-]+$/.test(entry.repository) ||
+      entry.owner !== entry.repository.split('/')[0] ||
+      !/^[A-Za-z0-9._-]+$/.test(entry.default_branch ?? '') ||
       !/^[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*$/.test(entry.path) ||
       paths.has(entry.path) ||
       entry.visibility !== 'private' ||
@@ -92,7 +101,9 @@ export function workspaceStatus({ directory = root, materialized = false } = {})
     entries.push({
       id,
       repository: component.repository,
+      owner: component.owner,
       path: component.path,
+      default_branch: component.default_branch,
       expected: pin.commit,
       actual,
       state,
@@ -105,6 +116,19 @@ export function workspaceStatus({ directory = root, materialized = false } = {})
     schema_version: 1,
     operation: 'workspace.verify',
     repository: config.repository,
+    registry: {
+      workbench: {
+        repository: config.repository,
+        repository_id: config.repository_id,
+        owner: config.owner,
+        visibility: config.visibility,
+        default_branch: config.default_branch,
+      },
+      integration: { ...config.integration },
+      components: Object.fromEntries(
+        Object.entries(config.components).map(([id, component]) => [id, { ...component }]),
+      ),
+    },
     status: invalid.length ? 'blocked' : 'success',
     materialized,
     components: entries,

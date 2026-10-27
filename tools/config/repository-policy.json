@@ -1,9 +1,7 @@
 {
   "schema_version": 1,
   "repository": "Silicium-Project/Workbench",
-  "repository_id": 1304063299,
-  "visibility": "public",
-  "default_branch": "main",
+  "repository_source": "tools/config/workspace.json",
   "ruleset": {
     "name": "Protect Main",
     "source_type": "Repository",

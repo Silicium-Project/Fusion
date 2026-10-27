@@ -2,8 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readJson } from '../../tools/lib/process.mjs';
 import { auditRepositoryPolicy } from '../../tools/lib/repository-policy.mjs';
+import { workspaceConfig, workspaceLock } from '../../tools/lib/workspace.mjs';
 
 const policy = readJson(new URL('../../tools/config/repository-policy.json', import.meta.url));
+const workspace = workspaceConfig();
+const lock = workspaceLock();
 const repositoryUrl = 'https://api.github.com/repos/Silicium-Project/Workbench';
 const rulesetsUrl = `${repositoryUrl}/rulesets?per_page=100&page=1`;
 const rulesetUrl = `${repositoryUrl}/rulesets/23931183`;
@@ -86,6 +89,9 @@ test('public ruleset audit proves the checked Workbench SHA and timestamp withou
   assert.equal(report.ruleset.id, 23931183);
   assert.equal(report.checked_at, fixed.checkedAt);
   assert.equal(report.source_sha, fixed.sourceSha);
+  assert.equal(report.registry.workbench.default_branch, 'main');
+  assert.equal(report.registry.integration.repository, 'Silicium-Project/Integration');
+  assert.equal(report.registry.components.api.commit, lock.components.api.commit);
   assert.ok(report.not_publicly_verifiable.includes('ruleset bypass actors'));
   assert.equal(requests.length, 3);
   assert.ok(
@@ -247,5 +253,44 @@ test('wrong repository, unsupported manifest and incomplete provenance fail clos
   });
   assert.equal(missingSha.status, 'blocked');
   assert.equal(missingSha.error.code, 'missing_source_sha');
+  assert.equal(requests, 0);
+});
+
+test('public API audit is bound to the versioned registry and exact local pins', async () => {
+  let requests = 0;
+  const fetchImpl = async () => {
+    requests++;
+    return response({});
+  };
+  const invalidOwner = await auditRepositoryPolicy({
+    ...fixed,
+    policy,
+    workspace: { ...workspace, owner: 'Unrelated-Organization' },
+    lock,
+    fetchImpl,
+  });
+  assert.equal(invalidOwner.status, 'blocked');
+  assert.equal(invalidOwner.error.code, 'invalid_registry');
+
+  const mismatchedPolicy = await auditRepositoryPolicy({
+    ...fixed,
+    policy: { ...policy, repository: 'Silicium-Project/Other' },
+    workspace,
+    lock,
+    fetchImpl,
+  });
+  assert.equal(mismatchedPolicy.status, 'blocked');
+  assert.equal(mismatchedPolicy.error.code, 'invalid_policy');
+
+  const localDrift = await auditRepositoryPolicy({
+    ...fixed,
+    policy,
+    workspace,
+    lock,
+    inspectWorkspace: () => ({ status: 'blocked' }),
+    fetchImpl,
+  });
+  assert.equal(localDrift.status, 'blocked');
+  assert.equal(localDrift.error.code, 'workspace_drift');
   assert.equal(requests, 0);
 });

@@ -36,9 +36,22 @@ Les modifications locales antérieures sont conservées dans leur checkout.
 
 ## Une composition reproductible
 
-`tools/config/workspace.json` déclare les responsabilités et suites.
+`tools/config/workspace.json` est le registre versionné des dépôts, propriétaires,
+visibilité, branches par défaut, chemins et suites. `tools/config/lanes.json`
+définit les dépendances de validation ; `contracts/catalog.json` définit les
+propriétaires de contrats, consommateurs, versions et suites de compatibilité.
 `components.lock.json` fixe un SHA complet par composant ; `.gitmodules` fixe
-les URL et les gitlinks Git portent exactement ces SHA.
+les URL et les gitlinks Git portent exactement ces SHA. Les versions et règles
+de distribution sont dans `tools/config/delivery.json` et les schémas de
+`contracts/ci/`.
+
+Modifier un dépôt, une branche, un chemin ou une visibilité dans une PR
+Workbench, avec les tests de schéma et la revue des composants affectés. Un
+changement de pin modifie ensemble le gitlink et `components.lock.json`. Les
+dépendances et consommateurs sont modifiés dans leur registre propriétaire,
+pas recopiés dans un second fichier. Integration consomme ces sources depuis
+un SHA Workbench exact et en conserve le digest dans le rapport de
+réconciliation.
 
 - `dev workspace status` vérifie cette cohérence sans accès réseau.
 - `dev workspace init --component ID --apply` récupère le pin déclaré avec les

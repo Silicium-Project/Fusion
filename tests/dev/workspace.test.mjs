@@ -39,8 +39,25 @@ function fixture(t, materialized = false) {
   const config = {
     schema_version: 1,
     repository: 'Silicium-Project/Workbench',
+    owner: 'Silicium-Project',
+    visibility: 'public',
+    default_branch: 'main',
+    integration_repository: 'Silicium-Project/Integration',
+    integration: {
+      repository: 'Silicium-Project/Integration',
+      owner: 'Silicium-Project',
+      visibility: 'private',
+      default_branch: 'main',
+      role: 'private cross-repository qualification',
+    },
     components: {
-      api: { repository: 'Silicium-Project/BackEnd', path: 'apps/api', visibility: 'private' },
+      api: {
+        repository: 'Silicium-Project/BackEnd',
+        owner: 'Silicium-Project',
+        path: 'apps/api',
+        default_branch: 'main',
+        visibility: 'private',
+      },
     },
   };
   writeJson(resolve(source, '.silicium-component.json'), {
@@ -102,6 +119,21 @@ test('workspace pins reject missing components, floating refs, traversal and nes
       c.components.nested = { ...c.components.api, path: 'apps/api/nested' };
       l.components.nested = { ...l.components.api, path: 'apps/api/nested' };
     },
+    (c) => {
+      c.components.api.owner = 'Other-Organization';
+    },
+    (c) => {
+      c.components.api.default_branch = '../main';
+    },
+    (c) => {
+      c.default_branch = '';
+    },
+    (c) => {
+      c.integration.repository = 'other/Integration';
+    },
+    (c) => {
+      c.integration.default_branch = '';
+    },
   ]) {
     const c = structuredClone(config),
       l = structuredClone(lock);
@@ -112,7 +144,11 @@ test('workspace pins reject missing components, floating refs, traversal and nes
 
 test('public verification accepts absent private sources but materialized verification blocks', (t) => {
   const { directory } = fixture(t);
-  assert.equal(workspaceStatus({ directory }).status, 'success');
+  const status = workspaceStatus({ directory });
+  assert.equal(status.status, 'success');
+  assert.equal(status.registry.workbench.default_branch, 'main');
+  assert.equal(status.registry.integration.visibility, 'private');
+  assert.equal(status.registry.components.api.default_branch, 'main');
   assert.equal(workspaceStatus({ directory, materialized: true }).status, 'blocked');
   const preview = initializeWorkspace({ directory });
   assert.equal(preview.status, 'planned');
