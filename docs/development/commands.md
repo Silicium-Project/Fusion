@@ -95,18 +95,25 @@ toujours requise. `dev deploy request` prépare ou lance un workflow GitHub ;
 l'application est bloquée tant que le raccordement CI-10 et ses marqueurs ne
 sont pas en place. Les étapes de production et d'acceptation sont humaines.
 
-`dev ci metrics --limit 20 --json` mesure les durées médianes et p95, le retour
-des contrôles rapides, l'attente des jobs, les échecs et les observations de
-cache disponibles. La commande lit les métadonnées GitHub et télécharge les
-petits rapports dans un répertoire temporaire supprimé après lecture. Elle ne
+`dev ci metrics --limit 20 --json` (schéma 2) mesure les durées médianes et p95,
+le retour des contrôles rapides, l'attente avant démarrage des workflows, l'attente
+des jobs, les échecs et les observations de cache disponibles. La commande lit
+les métadonnées GitHub et télécharge les petits rapports dans un répertoire
+temporaire supprimé après lecture. Ces téléchargements sont plafonnés à 16 Mio
+par run et 64 Mio au total ; les runs les plus récents sont traités en premier.
+La sortie indique le budget réservé et le nombre de runs ignorés si le plafond
+est atteint ; un lot supérieur à 16 Mio par run est ignoré et signalé. Elle ne
 relance aucun job. Les échantillons manquants et les caches désactivés restent
-distincts des valeurs nulles ou des échecs de cache ; le volume d'artefacts
-affiché porte sur Workbench, avec une indication de pagination incomplète.
+distincts des valeurs nulles ou des échecs de cache. Les
+artefacts Workbench sont paginés jusqu'à 10 000 entrées ;
+si le relevé reste incomplet ou change pendant la pagination, `bytes` vaut `null`
+et `bytes_observed` ne donne que le sous-total effectivement lu.
 
-L'attente part de `job.created_at` jusqu'à la première étape exécutée : elle
-inclut la file, la limitation de matrice et le provisionnement. `started_at`
-seul arrive trop tard pour mesurer cette attente. Une date de création absente
-est une observation indisponible.
+`workflow_start_wait` part de la création du run jusqu'à `run_started_at` : il
+mesure l'attente avant que les jobs existent. `job_queue_and_matrix_wait` part de
+`job.created_at` jusqu'à la première étape exécutée : il inclut ensuite la file,
+la limitation de matrice et le provisionnement du runner. Ces deux mesures ne
+doivent pas être confondues ; une date absente reste une observation indisponible.
 
 `dev ci authorize-private --head SHA --minutes 180` prépare une fenêtre de
 qualification privée du commit exact. `--apply` exige les droits administratifs,
