@@ -26,7 +26,16 @@ name: Project sync
     - completed
   schedule:
   - cron: '*/15 * * * *'
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Reconcile the private Project without writing, or apply changes after the feature flag is enabled
+        required: true
+        type: choice
+        options:
+        - dry-run
+        - apply
+        default: dry-run
 permissions:
   contents: read
 concurrency:
@@ -37,8 +46,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: project-automation
-    if: ${{ !github.event.repository.private && vars.SILICIUM_PROJECT_AUTOMATION_ENABLED == '1' && (github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name
-      == github.repository) }}
+    if: ${{ !github.event.repository.private && (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main')
+      && (vars.SILICIUM_PROJECT_AUTOMATION_ENABLED == '1' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'dry-run'))
+      && (github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository)
+      && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) }}
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
@@ -56,7 +67,21 @@ jobs:
         private-key: ${{ secrets.PROJECT_APP_PRIVATE_KEY }}
         owner: Silicium-Project
         repositories: Workbench,planning-private
+        permission-actions: read
+        permission-checks: read
+        permission-contents: read
+        permission-deployments: read
+        permission-issues: read
+        permission-organization-projects: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'dry-run' && 'read' || 'write' }}
+        permission-pull-requests: read
     - name: Reconcile trusted metadata
       env:
         GH_TOKEN: ${{ steps.token.outputs.token }}
-      run: node tools/ci/project-sync.mjs --apply
+        APPLY: ${{ github.event_name != 'workflow_dispatch' || inputs.mode == 'apply' }}
+      shell: bash
+      run: |
+        if [[ "$APPLY" == "true" ]]; then
+          node tools/ci/project-sync.mjs --apply
+        else
+          node tools/ci/project-sync.mjs
+        fi
