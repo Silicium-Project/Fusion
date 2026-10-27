@@ -28,8 +28,8 @@
   `a20fcf2`, retire le runtime IA du tree public courant et pointe DesktopApp,
   BackEnd et Network vers les têtes de leurs PR d'export. Cette révision doit
   rester non fusionnée : le run public
-  [40472945639](https://github.com/Silicium-Project/Workbench/actions/runs/40472945639)
-  a réussi sur `e0b103e`, mais `validate` a été ignoré en scope public. Ces pins
+  [40473850471](https://github.com/Silicium-Project/Workbench/actions/runs/40473850471)
+  a réussi sur `91c6e29`, mais `validate` a été ignoré en scope public. Ces pins
   ne sont pas des versions acceptées et les trois PR natives restent ouvertes.
 - Integration reste privé. Son dernier relevé ne montrait aucune variable
   d'activation ; la dernière capture de facturation fournie signalait les
@@ -216,8 +216,8 @@ l'historique public déjà publié. Elle évite seulement que la révision coura
 de Workbench continue de le distribuer. Les contrôles locaux disponibles
 (`dev test --suite docs`, `git diff --check` et les 7 tests Python du runtime)
 sont passés ; les tests Rust/Tauri restent impossibles localement sans Cargo.
-La tête publiée `e0b103e` de la PR Workbench #326 a intégré `main` jusqu'à
-`a20fcf2`. Son run public [40472945639](https://github.com/Silicium-Project/Workbench/actions/runs/40472945639)
+La tête publiée `91c6e29` de la PR Workbench #326 a intégré `main` jusqu'à
+`a20fcf2`. Son run public [40473850471](https://github.com/Silicium-Project/Workbench/actions/runs/40473850471)
 a passé les contrôles publics et `ci/required` ; `validate` a été ignoré en scope
 public. Ce résultat ne qualifie pas DesktopApp, BackEnd ou Network, et ne vaut
 pas livraison. La PR #326 reste en brouillon jusqu'à l'acceptation des PR natives
