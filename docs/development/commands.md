@@ -89,8 +89,11 @@ localnet et des clés jetables ; Devnet est une opération explicite distincte.
 `--repository Silicium-Project/Integration` (ou le dépôt natif déclaré) pour
 une exécution privée avec les droits du compte GitHub courant. `dev issue start URL`
 prépare une transition du Project ; `--apply` la réalise après contrôle du WIP.
-`dev release plan` prépare un candidat ; `dev deploy request` prépare ou lance
-un workflow GitHub. Les étapes de production et d'acceptation sont humaines.
+`dev release plan` prépare un candidat et renvoie le schéma 2 : une CI publique
+Workbench réussie reste distincte de la qualification privée Integration,
+toujours requise. `dev deploy request` prépare ou lance un workflow GitHub ;
+l'application est bloquée tant que le raccordement CI-10 et ses marqueurs ne
+sont pas en place. Les étapes de production et d'acceptation sont humaines.
 
 `dev ci metrics --limit 20 --json` (schéma 2) mesure les durées médianes et p95,
 le retour des contrôles rapides, l'attente avant démarrage des workflows, l'attente

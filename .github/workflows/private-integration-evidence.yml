@@ -1,0 +1,64 @@
+name: Verify private Integration evidence
+'on':
+  workflow_call:
+    inputs:
+      workbench_sha:
+        description: Exact Workbench source commit already included in Workbench main
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify:
+    name: integration/evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Check out the exact public Workbench policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: Silicium-Project/Workbench
+          ref: ${{ inputs.workbench_sha }}
+          path: workspace
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Set up pinned Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22.23.4
+          package-manager-cache: false
+      - name: Download private qualification plan
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
+        with:
+          name: qualification-plan-${{ github.run_attempt }}
+          path: workspace/.artifacts
+          digest-mismatch: error
+      - name: Download private suite reports
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
+        with:
+          pattern: report-*-${{ github.run_attempt }}
+          path: workspace/.artifacts/reports
+          merge-multiple: true
+          digest-mismatch: error
+      - name: Verify caller run, policy, pins, jobs and reports
+        id: evidence
+        working-directory: workspace
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          WORKBENCH_SHA: ${{ inputs.workbench_sha }}
+        run: node tools/ci/private-integration-evidence.mjs
+      - name: Bound private metadata receipt
+        working-directory: workspace
+        run: node tools/ci/artifact-size.mjs .artifacts/private-integration-evidence.json 1048576
+      - name: Retain the private metadata receipt briefly
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: private-integration-evidence-${{ github.run_attempt }}
+          path: workspace/.artifacts/private-integration-evidence.json
+          include-hidden-files: true
+          retention-days: 1
+          if-no-files-found: error
