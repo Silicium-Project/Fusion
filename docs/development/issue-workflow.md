@@ -52,7 +52,16 @@ décision humaine d'acceptation des issues ne sont pas supprimées.
 
 Après fusion, l'issue reste en `Validation`. Ni un ancien événement CI, ni une
 fusion ne suffisent à la déclarer terminée. La réconciliation consulte les
-preuves actuelles ; les événements répétés ne créent pas de doublon.
+preuves actuelles ; les événements répétés ne créent pas de doublon. Le champ
+`Blocage` conserve les motifs saisis par un mainteneur et les distingue des
+résumés de synchronisation marqués `[auto]`. La réconciliation recalcule et
+remplace uniquement ses propres résumés ; elle n'efface jamais un motif manuel
+tel qu'un quota épuisé ou un accès externe manquant. Les résumés automatiques
+pointent vers les dépendances, sous-tâches, contrôles, revues ou preuves
+manquantes. Les trois messages simples produits par l'ancien synchroniseur sont
+retirés lors de la migration. Le préfixe `[auto]` est réservé aux messages
+générés. Une issue fermée sans preuve d'acceptation vérifiée reste en
+`Validation`, même si GitHub la marque comme terminée.
 
 ## Accepter
 
@@ -82,6 +91,45 @@ HOLD exigent un arbitrage individuel dans l'espace privé.
 
 ## Activation de l'automatisation
 
-Les champs sont créés. Le moteur et le workflow de réconciliation sont fournis.
-Leur exécution reste désactivée avant la création/installation de l'App dédiée
-et la qualification de ses droits. Voir [l'activation](../operations/bootstrap.md).
+Le workflow `Project sync` est actif depuis le 27 octobre 2026 avec
+`SILICIUM_PROJECT_AUTOMATION_ENABLED=1`. Son premier apply GitHub
+([40469270941](https://github.com/Silicium-Project/Workbench/actions/runs/40469270941))
+a traité les 139 issues Workbench et écrit 9 changements de statut et 139
+résumés de blocage. Il exclut les éléments du dépôt privé `planning-private`
+et les cartes sans issue. Le Project 12 reste privé.
+
+Le déclenchement manuel `workflow_dispatch` utilise `mode=dry-run` par défaut,
+uniquement depuis `main`. Il utilise un jeton App avec les droits du Project en
+lecture seule et n'affiche que le nombre d'items et les changements prévus, sans
+URL d'issue ni texte de blocage. Ce mode reste disponible même si le flag vaut
+`0`. Le mode `apply`, les événements d'issue/PR/CI et le rapprochement périodique
+toutes les quinze minutes exigent tous le flag à `1`.
+
+L'automatisation modifie seulement les champs `Status` et `Blocage` du Project.
+Elle ne crée, ne ferme, n'assigne et ne commente aucune issue. Elle ignore les
+issues `HOLD` ou `Arbitrage`. La règle de statut est :
+
+- issue en attente de qualification ou de préparation : `À qualifier` ou
+  `Backlog` ; une issue préparée, assignée et sans dépendance ouverte peut
+  passer à `Prêt` ;
+- PR liée brouillon, CI en attente/échec ou demande de changement : `En cours` ;
+- toutes les PR liées actives prêtes, `ci/required` réussi et aucune demande de
+  changement : `Revue` ;
+- fusion d'une PR ou fermeture manuelle comme terminée sans preuve complète :
+  `Validation` ;
+- `Terminé` exige l'acceptation humaine, une preuve de la cible et les
+  dépendances, sous-tâches et PR acceptées ; l'automatisation ne clôt pas l'issue ;
+- abandon explicitement indiqué dans GitHub : `Abandonné`.
+
+Le champ `Blocage` conserve les motifs manuels. Les motifs générés sont marqués
+`[auto]`, remplacés à chaque réconciliation, et décrivent les dépendances, les
+contrôles, la revue ou les preuves manquantes. Les journaux publics Workbench
+n'exposent que des compteurs agrégés. Le dry-run de vérification
+[40471477621](https://github.com/Silicium-Project/Workbench/actions/runs/40471477621)
+a traité les 139 issues avec zéro changement prévu après l'événement CI de #325.
+Voir [l'activation](../operations/bootstrap.md).
+
+Les lectures REST et les requêtes GraphQL réessaient au plus deux fois après
+une erreur réseau transitoire identifiée, avec une attente bornée. Les mutations
+ne sont jamais rejouées automatiquement ; les réponses de limitation GitHub
+restent visibles et attendent une exécution ultérieure.

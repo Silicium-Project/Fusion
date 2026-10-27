@@ -66,6 +66,14 @@ ni repli sur un runner VPS n'est autorisé.
 `dev ci metrics --limit 20 --json` donne les distributions et le nombre
 d'observations. Vérifier le SHA des runs avant de comparer ; ne pas présenter
 une absence de rapport ou un cache désactivé comme un gain de performance.
+Le téléchargement des rapports est borné à 64 Mio au total ; consulter
+`runs_skipped_for_download_budget` avant d'interpréter les métriques de cache.
+Lire séparément `workflow_start_wait` (création du run jusqu'au démarrage du
+workflow) et `job_queue_and_matrix_wait` (création du job jusqu'à sa première
+étape). Si le premier est élevé et le second bas, l'attente précède les jobs ;
+les métadonnées seules ne prouvent pas sa cause. Pour les artefacts, ne présenter
+`bytes` comme total que si `complete` vaut `true` ; sinon `bytes_observed` n'est
+qu'un sous-total.
 
 Pour un service : préparer `dev ops diagnose --environment dev --json`, puis
 utiliser `--apply` si l'automatisation est configurée et autorisée. Lire
@@ -79,6 +87,13 @@ Qualifier les deux côtés et la compatibilité avec les données existantes.
 Pour Solana : garder ID de programme, autorités et clés hors du changement
 sauf demande explicite distincte ; localnet est l'oracle de CI.
 
+Avant d’affirmer qu’un résultat P2P ou Solana est vérifié, final, indépendant
+du site ou sûr pendant une partition, lire [les frontières de confiance et les
+états de finalité](../architecture/trust-boundaries.md). Ce document sépare les
+observations aux SHA étudiés des invariants visés et liste les limites encore
+ouvertes ; ne pas présenter une signature, un hash, une copie locale ou un vote
+comme preuve plus forte que son contrat.
+
 ## Qualification privée
 
 Lire [le runbook multi-dépôts](../operations/multi-repo-ci.md). Les workflows
@@ -91,9 +106,18 @@ restent à qualifier ; ne pas accepter une fonctionnalité sur le seul gate publ
 ## Publier et déployer
 
 Lire [le runbook](../operations/delivery.md). Utiliser un SHA exact, le canal
-explicite et le manifeste qualifié. Préparer avec `dev release plan` et
-`dev deploy request`. L'option `--apply` demande l'action GitHub ; elle ne
-permet pas de contourner les protections ou l'approbation production.
+explicite et le manifeste qualifié. `dev release plan` distingue maintenant
+le succès public Workbench de la qualification privée requise ; il ne marque
+pas le public comme livraison qualifiée. C'est une commande de
+préparation. Au 27 octobre 2026, le raccordement de la qualification privée à la
+release et au déploiement n'est pas opérationnel (issue
+[CI-10](https://github.com/Silicium-Project/Workbench/issues/331)). Ne lance
+pas `dev deploy request --apply`, ne change pas les variables de livraison et
+ne traite pas une CI publique verte comme qualification des cinq dépôts. Les
+tests privés restent suspendus tant que quota et plafond à zéro ne sont pas
+vérifiés. Après acceptation de CI-10, l'option `--apply` demandera l'action
+GitHub autorisée ; elle ne contournera pas les protections ni l'approbation
+production.
 
 ## Utiliser les fonctions produit existantes
 

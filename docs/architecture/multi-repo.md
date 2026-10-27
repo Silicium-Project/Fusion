@@ -104,7 +104,9 @@ autorisation. Le gate ne transforme pas l'ancienne qualification monorepo en
 preuve des futurs composants privés.
 
 Les anciens workflows publics de construction et campagnes applicatives restent
-inactifs. La reprise de livraison par artefacts privés, signatures et contrôles
-d'installation devra être qualifiée avant activation. La production conserve
-ses approbations humaines. Les services déjà installés ne sont pas redémarrés
-par cette migration.
+inactifs. L'ancien `release.yml` Workbench, qui mélangeait la réception
+d'artefacts privés et le contexte public, a été retiré. Une prévalidation
+Integration liée à la qualification privée est proposée, mais les builds,
+signatures, contrôles d'installation et rollbacks restent à qualifier. Les
+verrous de livraison restent fermés ; la production conserve ses approbations
+humaines. Les services déjà installés ne sont pas redémarrés par cette migration.
