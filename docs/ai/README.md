@@ -53,6 +53,10 @@ La synchronisation du Project 12 observe aussi les PR et checks du dépôt priv�
 Integration, avec un délai maximal nominal de quinze minutes. Les logs publics
 ne contiennent que des totaux ; un PR privé sans gate requis unique reste en
 attente. Ne saisis pas toi-même un statut comme preuve d'acceptation.
+Dans `dev capabilities --json`, `features.project_automation: available` décrit
+le synchroniseur distant activé dans Workbench. Les commandes locales
+`issue start` et `issue accept` gardent leurs propres exigences de droits, de
+preuves et d'approbation humaine.
 
 ### Faire intégrer une PR
 

@@ -142,7 +142,7 @@ async function main() {
         private_integration: 'configuration_required',
         validation: 'available',
         signed_delivery: 'configuration_required',
-        project_automation: 'configuration_required',
+        project_automation: 'available',
         worker_rolling_update: 'planned',
       },
       suites: Object.keys(registry().suites),
