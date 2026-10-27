@@ -53,3 +53,11 @@ test('published releases trigger only the protected, disabled-by-default Workben
   assert.match(workflow, /github\.event\.release\.prerelease/);
   assert.match(workflow, /environment: .*'production'/);
 });
+
+test('delivery packaging targets the approved GitHub-hosted runner matrix', () => {
+  const delivery = JSON.parse(
+    readFileSync(new URL('../../tools/config/delivery.json', import.meta.url), 'utf8'),
+  );
+  assert.equal(delivery.linux_packaging_runner, 'ubuntu-24.04');
+  assert.deepEqual(delivery.platforms, ['linux-x86_64', 'windows-x86_64']);
+});
