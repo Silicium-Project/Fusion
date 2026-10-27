@@ -5,6 +5,7 @@ import {
   nextStatus,
   projectBlockage,
   dependencyAccepted,
+  issueStartBlockers,
   assertCompleteRelations,
   projectSyncFailureOutput,
   projectSyncOutput,
@@ -17,6 +18,45 @@ const ready = {
   owner: 'member',
   size: 'S',
 };
+test('issue start accepts a fully prepared, assigned issue without open blockers', () => {
+  assert.deepEqual(
+    issueStartBlockers({
+      fields: {
+        Status: 'Prêt',
+        Préparation: 'Validée',
+        'Validation cible': 'CI',
+        Size: 'S',
+      },
+      issue: { state: 'OPEN', assignees: { nodes: [{ login: 'member' }] } },
+      viewerLogin: 'member',
+    }),
+    [],
+  );
+});
+test('issue start reports every missing preparation, dependency, ownership and WIP condition', () => {
+  const blockers = issueStartBlockers({
+    fields: {
+      Status: 'Backlog',
+      Préparation: 'À compléter',
+      'Validation cible': 'Inconnue',
+      Size: '',
+      Phase: 'HOLD',
+    },
+    issue: { state: 'CLOSED', assignees: { nodes: [] } },
+    viewerLogin: 'Luis1454',
+    dependencies: [{ url: 'https://github.com/Silicium-Project/Workbench/issues/41' }],
+    busyItems: [{ content: { url: 'https://github.com/Silicium-Project/Workbench/issues/42' } }],
+  });
+  assert.match(blockers.join('; '), /Validation cible/);
+  assert.match(blockers.join('; '), /Status must be Prêt/);
+  assert.match(blockers.join('; '), /Préparation must be Validée/);
+  assert.match(blockers.join('; '), /Size must be set/);
+  assert.match(blockers.join('; '), /HOLD requires explicit arbitration/);
+  assert.match(blockers.join('; '), /Issue must be OPEN/);
+  assert.match(blockers.join('; '), /issues\/41/);
+  assert.match(blockers.join('; '), /Assign this issue to @Luis1454/);
+  assert.match(blockers.join('; '), /issues\/42/);
+});
 test('readiness requires preparation and dependencies', () => {
   assert.equal(nextStatus(ready), 'Prêt');
   assert.equal(nextStatus({ ...ready, dependencies_complete: false }), 'Backlog');

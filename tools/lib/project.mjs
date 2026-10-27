@@ -126,6 +126,43 @@ export function dependencyAccepted(child, itemsById) {
     fieldValues(item).Status === 'Terminé'
   );
 }
+export function issueStartBlockers({
+  fields,
+  issue,
+  viewerLogin,
+  dependencies = [],
+  busyItems = [],
+}) {
+  const blockers = [];
+  const show = (value) => (value == null || value === '' ? '(missing)' : String(value));
+  const validTargets = ['Documentation', 'CI', 'Dev', 'Prod'];
+  if (!validTargets.includes(fields['Validation cible']))
+    blockers.push(
+      `Validation cible must be one of ${validTargets.join(', ')} (found ${show(fields['Validation cible'])})`,
+    );
+  if (fields.Status !== 'Prêt') blockers.push(`Status must be Prêt (found ${show(fields.Status)})`);
+  if (fields['Préparation'] !== 'Validée')
+    blockers.push(`Préparation must be Validée (found ${show(fields['Préparation'])})`);
+  if (!fields.Size) blockers.push('Size must be set');
+  if (fields.Phase === 'HOLD') blockers.push('HOLD requires explicit arbitration');
+  if (issue.state !== 'OPEN') blockers.push(`Issue must be OPEN (found ${show(issue.state)})`);
+
+  const links = (items) => {
+    const urls = items.map((item) => item.url).filter(Boolean);
+    const shown = urls.slice(0, 3);
+    const remaining = urls.length - shown.length;
+    return `${shown.join(', ') || '(issue URL unavailable)'}${remaining > 0 ? ` (+${remaining})` : ''}`;
+  };
+  if (dependencies.length)
+    blockers.push(`Dependencies need accepted completion: ${links(dependencies)}`);
+  if (!issue.assignees.nodes.some((assignee) => assignee.login === viewerLogin))
+    blockers.push(`Assign this issue to @${viewerLogin} before starting it`);
+  if (busyItems.length)
+    blockers.push(
+      `WIP limit reached; active tranche(s): ${links(busyItems.map((item) => item.content ?? {}))}`,
+    );
+  return blockers;
+}
 export function assertCompleteRelations(items) {
   for (const item of items.filter((item) => item.content?.url))
     for (const name of ['blockedBy', 'subIssues'])
@@ -400,30 +437,26 @@ export function startIssue(url, apply = false) {
   if (!item) throw new Failure('Issue is not in Project 12', 3);
   const f = fieldValues(item),
     issue = item.content;
-  if (
-    !['Documentation', 'CI', 'Dev', 'Prod'].includes(f['Validation cible']) ||
-    f.Status !== 'Prêt' ||
-    f['Préparation'] !== 'Validée' ||
-    !f.Size ||
-    f.Phase === 'HOLD' ||
-    issue.state !== 'OPEN'
-  )
-    throw new Failure('Issue is not prepared and ready', 3);
   const itemsById = new Map(
     project.items.filter((x) => x.content?.id).map((x) => [x.content.id, x]),
   );
-  if (!issue.blockedBy.nodes.every((child) => dependencyAccepted(child, itemsById)))
-    throw new Failure('Dependencies require accepted completion in the Project', 3);
-  if (!issue.assignees.nodes.some((x) => x.login === viewer.login))
-    throw new Failure('Assign the issue to the contributor before starting it', 3);
   const busy = project.items.filter(
     (x) =>
       x.id !== item.id &&
       fieldValues(x).Status === 'En cours' &&
       x.content?.assignees?.nodes.some((a) => a.login === viewer.login),
   );
-  if (busy.length)
-    throw new Failure('WIP limit reached: finish or explicitly arbitrate the active tranche', 3);
+  const dependencies = issue.blockedBy.nodes.filter(
+    (child) => !dependencyAccepted(child, itemsById),
+  );
+  const blockers = issueStartBlockers({
+    fields: f,
+    issue,
+    viewerLogin: viewer.login,
+    dependencies,
+    busyItems: busy,
+  });
+  if (blockers.length) throw new Failure(`Issue is not ready: ${blockers.join('; ')}`, 3);
   if (apply) setField(project, item.id, 'Status', 'En cours');
   return {
     schema_version: 1,
