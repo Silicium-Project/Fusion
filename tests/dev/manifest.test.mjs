@@ -8,7 +8,29 @@ const candidate = () => ({
   channel: 'dev',
   version: '0.3.0-dev.1',
   release_id: `dev-0.3.0-dev.1-${sha.slice(0, 12)}`,
-  qualification: { source_sha: sha, status: 'success', run_id: 123 },
+  qualification: {
+    repository: 'Silicium-Project/Integration',
+    workflow: '.github/workflows/qualification.yml',
+    source_sha: sha,
+    workbench_sha: sha,
+    status: 'success',
+    run_id: 123,
+    run_attempt: 1,
+    run_number: 31,
+    integration_sha: 'b'.repeat(40),
+    policy_workflow_sha: 'c'.repeat(40),
+    policy_digest: 'd'.repeat(64),
+    component_pins: Object.fromEntries(
+      Object.entries({
+        api: 'Silicium-Project/BackEnd',
+        web: 'Silicium-Project/FrontEnd',
+        node: 'Silicium-Project/DesktopApp',
+        network: 'Silicium-Project/Network',
+        solana: 'Silicium-Project/Solana',
+      }).map(([name, repository]) => [name, { repository, commit: 'e'.repeat(40) }]),
+    ),
+  },
+  policy_digest: 'd'.repeat(64),
   components: {
     ...Object.fromEntries(
       ['api', 'web', 'network'].map((name) => [
@@ -43,6 +65,14 @@ test('mutable images, stale qualification and prod prereleases fail', () => {
     edit(m);
     assert.ok(validateManifest(m).length);
   }
+});
+test('component pins and duplicated policy digest must remain exact', () => {
+  const wrongPin = candidate();
+  wrongPin.qualification.component_pins.node.repository = 'Silicium-Project/Network';
+  assert.ok(validateManifest(wrongPin).length);
+  const wrongPolicy = candidate();
+  wrongPolicy.policy_digest = 'f'.repeat(64);
+  assert.ok(validateManifest(wrongPolicy).length);
 });
 test('asset names cannot escape the snapshot', () => {
   const m = candidate();

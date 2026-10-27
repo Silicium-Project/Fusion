@@ -16,15 +16,54 @@ Lire [la décision](../architecture/multi-repo.md) et les
    sur `main`, avec le SHA complet de Workbench. Le workflow vérifie que le
    commit appartient à `main`, récupère exactement les cinq pins, puis exécute
    toutes les suites du registre. `integration/required` exige chaque rapport.
+   Après le gate, Integration appelle par SHA complet le workflow public
+   `private-integration-evidence.yml`. Celui-ci revérifie via l'API GitHub le
+   run privé, le gate, le plan, les rapports, les cinq pins et les quatre
+   sorties de compilation du SHA exact. Après succès, le job privé Integration
+   signe les octets exacts du reçu avec Ed25519.
 5. Conserver ces preuves privées. Les résultats publics de Workbench restent
    des preuves de ses seuls fichiers publics. Ne pas activer une publication
    à partir de ce seul gate.
+
+Le workflow réutilisable s'exécute dans le contexte d'Integration : son jeton
+reste en lecture seule sur le dépôt appelant et ne gagne aucun droit sur
+Workbench. Le reçu de métadonnées et sa signature détachée restent privés
+pendant un jour. Le préflight `workflow_run` vérifie la signature et l'identité
+du run avant de télécharger les binaires privés ; Workbench vérifie de nouveau
+la signature avant d'accepter le reçu. Cette preuve ne publie ni ne déploie
+encore de candidat. La signature Ed25519 remplace l'attestation native
+indisponible pour un dépôt privé sur GitHub Free ; elle n'ajoute pas de journal
+de transparence et fait de l'accès en écriture à Integration sa frontière de
+confiance.
 
 La qualification native utilise un commit synthétique **local et temporaire**,
 parent du SHA Workbench épinglé. Il permet de qualifier une nouvelle version du
 composant sans modifier un checkout utilisateur. Les métadonnées enregistrent
 les deux SHA originaux. Ce commit n'est ni une version intégrée ni un candidat
 livrable ; il ne doit jamais être poussé.
+
+## Publication séparée
+
+L'App `Silicium Source Reader` reste strictement en lecture seule. Ne pas ajouter
+de droits d'écriture à cette App pour publier une livraison. Le manifeste
+`tools/config/delivery-publisher-app-manifest.json` décrit une App séparée,
+sans webhook et installée uniquement sur `Workbench` :
+
+- `contents: write` pour publier les seuls assets explicitement publics dans
+  une release Workbench ;
+- aucun droit sur les sources privées, issues, projets, checks, déploiements,
+  membres ou secrets.
+
+Ce fichier prépare la configuration ; l'App n'est pas créée ni installée. Le
+déploiement protégé s'appuiera sur l'événement de publication d'une release,
+sans donner à l'App le droit `Actions: write`. Les images GHCR sont publiées par
+le `GITHUB_TOKEN` à portée du dépôt Integration avec `packages: write`, après
+configuration d'un accès de paquet compatible. Les GitHub Apps ne remplacent
+pas le jeton de registre accepté par GitHub Packages. Les clés APT/RPM/release
+et le trust anchor public manquent encore : ne pas activer le chemin ni
+provisionner l'App de publication avant validation des scopes, secrets et
+formats publics. Aucun secret de publication ne va sur le runner VPS ou dans
+l'App Source Reader.
 
 ## Activation après migration
 
@@ -36,12 +75,38 @@ Un workflow suspendu ou ignoré ne constitue jamais une qualification.
 
 Avant un lancement privé, exécuter le workflow CI de Workbench sur `main` et
 attendre sa réussite. Le job protégé `budget` observe tous les dépôts avec
-l'App existante ; il vérifie la marge de stockage avec une réserve de 210 Mio.
-Les workflows privés exigent que cette étape exacte ait réussi depuis moins
-de quinze minutes. Il s'agit d'une observation bornée, pas d'un verrou global
-de stockage entre tous les dépôts. Les campagnes complètes sont sérialisées,
-les rapports limités à 1 Mio et expirent après un jour ; les caches privés
+l'App existante ; il vérifie une réserve de 392 Mio : 203 Mio d'archives de
+livraison, 16 Mio pour le plan et les rapports privés, 1 Mio pour le reçu de
+qualification, 64 Kio pour sa signature détachée, 1 Mio pour l'identité de candidat, jusqu'à 120 Mio pour
+l'installateur Linux privé, 40 Mio pour l'installateur Windows privé, puis
+jusqu'à 5 Mio pour le plan et les quatre rapports publics du run Workbench
+lui-même. L'enveloppe de signature consomme une partie de la marge de 6 Mio,
+laissant environ 5,94 Mio. Cette réserve
+tient compte du fait que le contrôle de stockage s'exécute avant les
+téléversements du run courant. Les workflows privés exigent que cette étape
+exacte ait réussi depuis moins de quinze minutes et que son SHA corresponde
+exactement au Workbench utilisé pour la qualification. Il s'agit d'une
+observation bornée, pas d'un verrou global de stockage entre tous les dépôts.
+Les campagnes complètes sont sérialisées, les rapports limités à 1 Mio et les
+installateurs limités à 120/40 Mio expirent après un jour ; les caches privés
 sont désactivés pendant la migration.
+
+Les suites `api`, `web`, `node-ui` et `network-integration` téléversent aussi
+leurs sorties de compilation privées sous `delivery-<suite>-<run_attempt>`.
+Le vérificateur de Workbench exige les quatre noms exacts, enregistre leurs
+identifiants GitHub, digests SHA-256 et tailles dans le reçu privé ; le nom
+du reçu inclut lui aussi le numéro de tentative. Il rejette
+un artefact manquant, expiré, dupliqué ou hors budget. Le reçu ne contient pas
+les binaires ; ceux-ci restent dans Integration une journée.
+
+La tentative de réception dans Workbench a été supprimée : même un runner
+temporaire public ne doit pas manipuler les sorties privées. Le workflow privé
+Integration doit télécharger les artefacts de son propre run, revérifier le
+reçu par la politique Workbench, puis les extraire et les assembler dans le
+même dépôt privé. Le staging refuse les chemins inattendus, les liens
+symboliques, les réécritures et les identités d'artefact incomplètes. La
+construction du candidat et la signature/publication restent des étapes
+distinctes et non activées.
 
 Le budget Actions de l'organisation doit rester à zéro avec blocage du
 dépassement. Les runners standards des dépôts privés consomment le quota
@@ -52,28 +117,20 @@ sources privées dans des workflows publics ou ouvrir un budget facturable.
 ## Accès aux sources
 
 L'organisation interdit la création de clés SSH de déploiement ; cette politique
-reste conservée. Une App dédiée **Silicium Source Reader** doit être créée avec
-[le manifeste minimal](../../tools/config/source-app-manifest.json), puis installée
+reste conservée. L'App **Silicium Source Reader** existe et est installée
 uniquement sur BackEnd, FrontEnd, DesktopApp, Network et Solana. Son unique droit
 explicite est `contents: read` ; métadonnées en lecture implicites. Aucun droit
-Project, Actions, secrets ou déploiement, aucune écriture de code.
+Project, Actions, secrets ou déploiement, aucune écriture de code. Ne pas la
+recréer ni élargir ses droits.
 
-Création manuelle par le propriétaire : ouvrir [les réglages GitHub Apps de
-l'organisation](https://github.com/organizations/Silicium-Project/settings/apps/new),
-reprendre le nom et l'URL du manifeste, désactiver les webhooks et abonnements
-d'événements, puis ne donner que `Contents: Read-only`. À l'installation, choisir
-« Only select repositories » et les cinq dépôts listés ci-dessus ; ne pas choisir
-« All repositories ». Générer ensuite une clé privée de l'App et enregistrer le
-Client ID et la clé comme secrets chiffrés `SOURCE_APP_CLIENT_ID` et
-`SOURCE_APP_PRIVATE_KEY` dans Integration. Transférer la clé directement depuis
-l'interface GitHub ou `gh secret set`; ne pas la coller dans un chat, une issue,
-un commit ou un artefact.
-
-Dans Integration, configurer `SOURCE_APP_CLIENT_ID` et `SOURCE_APP_PRIVATE_KEY`
-comme secrets chiffrés. Ces secrets **ne sont pas encore provisionnés** pendant
-la préparation de migration. Ne pas réutiliser le jeton personnel du propriétaire
-ni la clé de l'App du Project. Aucune clé de wallet, de signature ou d'upgrade
-Solana n'est utilisée. Workbench et les CI natives ne reçoivent pas cette clé.
+Dans Integration, `SOURCE_APP_CLIENT_ID` et `SOURCE_APP_PRIVATE_KEY` sont des
+secrets chiffrés déjà provisionnés. Vérifier leur présence par nom seulement ;
+ne jamais lire, imprimer ou copier leur valeur. Ne pas réutiliser le jeton
+personnel du propriétaire ni la clé de l'App du Project. Aucune clé de wallet,
+de signature ou d'upgrade Solana n'est utilisée. Workbench et les CI natives
+ne reçoivent pas cette clé. En cas de rotation, générer la clé dans les réglages
+de l'App et remplacer directement le secret GitHub ; ne pas transmettre la clé
+dans un chat, une issue, un commit ou un artefact.
 
 Chaque suite privée crée un jeton d'installation de courte durée, limité aux
 dépôts déclarés comme sources de cette suite ; le contrôle des contrats demande
@@ -95,8 +152,9 @@ limités et ne pas y approuver de code extérieur pendant la stabilisation.
 
 ## Livraison et miroir Epitech
 
-La reprise du transport des artefacts privés vers la signature/publication
-reste bloquée avant sa propre qualification. Les anciens workflows publics
+Le reçu privé vérifie les preuves mais ne transporte aucun artefact de livraison.
+La reprise du transport des binaires vers la signature/publication reste
+bloquée avant sa propre qualification. Les anciens workflows publics
 `release`, `campaigns` et `mirror-epitech` ne peuvent plus construire ou publier
 une composition incomplète. Les flags de livraison restent à zéro.
 

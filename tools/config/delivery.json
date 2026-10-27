@@ -5,7 +5,7 @@
   "artifact_budget_bytes": 419430400,
   "report_retention_days": 1,
   "platforms": ["linux-x86_64", "windows-x86_64"],
-  "linux_packaging_runner": "ubuntu-22.04",
+  "linux_packaging_runner": "ubuntu-24.04",
   "debian_minimum": "12",
   "required_signing_fingerprints": ["APT_SIGNING_FINGERPRINT", "RPM_SIGNING_FINGERPRINT", "RELEASE_SIGNING_FINGERPRINT"]
 }
