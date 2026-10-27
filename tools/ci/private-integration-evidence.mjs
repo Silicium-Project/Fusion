@@ -77,6 +77,9 @@ async function main() {
   if (!policyReference?.sha)
     throw new Failure('GitHub did not report the called Workbench policy SHA');
   const policyCompare = await github(`repos/${workbench}/compare/${policyReference.sha}...main`);
+  const policySourceCompare = await github(
+    `repos/${workbench}/compare/${policyReference.sha}...${workbenchSha}`,
+  );
 
   const artifactsDir = resolve(root, '.artifacts');
   const planPath = resolve(artifactsDir, 'plan.json');
@@ -118,6 +121,7 @@ async function main() {
     workbenchSha,
     workbenchCompareStatus: workbenchCompare.status,
     policyCompareStatus: policyCompare.status,
+    policySourceCompareStatus: policySourceCompare.status,
     plan,
     reports,
     planDigest: sha256(planBytes),

@@ -4,9 +4,10 @@ import { resolve } from 'node:path';
 import { api, repository, canonicalRepository } from '../lib/github.mjs';
 import { Failure, git } from '../lib/process.mjs';
 
-// Reserve for qualification artifacts, bounded Linux/Windows installer
-// candidates, and the public Workbench budget run itself. The query runs before
-// this workflow uploads its bounded plan and public-suite reports.
+// Reserve for qualification artifacts, the detached receipt-signature envelope,
+// bounded Linux/Windows installer candidates, and the public Workbench budget
+// run itself. The query runs before this workflow uploads its bounded plan and
+// public-suite reports; the signature envelope consumes part of the 6 MiB headroom.
 export const organizationArtifactReservation = 392 * 1024 ** 2;
 
 export function requireBudgetProof(record, jobs, expectedSourceSha, now = Date.now()) {

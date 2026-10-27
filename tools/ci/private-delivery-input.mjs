@@ -111,6 +111,11 @@ async function main() {
     workbenchToken,
     { publicResource: true },
   );
+  const policySourceCompare = await github(
+    `repos/${repository}/compare/${policyRef.sha}...${workbenchSha}`,
+    workbenchToken,
+    { publicResource: true },
+  );
   const receipt = readJson(receiptPath);
   const inputs = validatePrivateDeliveryEvidence({
     run: qualificationRun,
@@ -127,6 +132,7 @@ async function main() {
     workbenchSha,
     workbenchCompareStatus: workbenchCompare.status,
     policyCompareStatus: policyCompare.status,
+    policySourceCompareStatus: policySourceCompare.status,
     workspace: workspaceConfig(root),
     lock: workspaceLock(root),
     lanes: registry(),

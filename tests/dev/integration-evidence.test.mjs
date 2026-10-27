@@ -101,6 +101,7 @@ const base = () => ({
   workbenchSha,
   workbenchCompareStatus: 'identical',
   policyCompareStatus: 'identical',
+  policySourceCompareStatus: 'ahead',
   plan,
   reports,
   planDigest: 'e'.repeat(64),
@@ -143,6 +144,7 @@ test('public, pull-request, stale, skipped, or partial evidence fails closed', (
     [(input) => (input.plan.source_components = {})],
     [(input) => (input.workbenchCompareStatus = 'behind')],
     [(input) => (input.policyCompareStatus = 'behind')],
+    [(input) => (input.policySourceCompareStatus = 'behind')],
     [(input) => (input.actorPermissions = ['read'])],
   ];
   for (const [mutate] of cases) {

@@ -18,16 +18,23 @@ Lire [la décision](../architecture/multi-repo.md) et les
    toutes les suites du registre. `integration/required` exige chaque rapport.
    Après le gate, Integration appelle par SHA complet le workflow public
    `private-integration-evidence.yml`. Celui-ci revérifie via l'API GitHub le
-   run privé, le gate, le plan, les rapports et les cinq pins du SHA exact.
+   run privé, le gate, le plan, les rapports, les cinq pins et les quatre
+   sorties de compilation du SHA exact. Après succès, le job privé Integration
+   signe les octets exacts du reçu avec Ed25519.
 5. Conserver ces preuves privées. Les résultats publics de Workbench restent
    des preuves de ses seuls fichiers publics. Ne pas activer une publication
    à partir de ce seul gate.
 
 Le workflow réutilisable s'exécute dans le contexte d'Integration : son jeton
 reste en lecture seule sur le dépôt appelant et ne gagne aucun droit sur
-Workbench. Il conserve un reçu de métadonnées privé pendant un jour. Ce reçu
-n'est ni une signature, ni une publication, ni une preuve permanente de
-livraison ; aucun workflow ne construit ou ne déploie encore depuis lui.
+Workbench. Le reçu de métadonnées et sa signature détachée restent privés
+pendant un jour. Le préflight `workflow_run` vérifie la signature et l'identité
+du run avant de télécharger les binaires privés ; Workbench vérifie de nouveau
+la signature avant d'accepter le reçu. Cette preuve ne publie ni ne déploie
+encore de candidat. La signature Ed25519 remplace l'attestation native
+indisponible pour un dépôt privé sur GitHub Free ; elle n'ajoute pas de journal
+de transparence et fait de l'accès en écriture à Integration sa frontière de
+confiance.
 
 La qualification native utilise un commit synthétique **local et temporaire**,
 parent du SHA Workbench épinglé. Il permet de qualifier une nouvelle version du
@@ -70,10 +77,11 @@ Avant un lancement privé, exécuter le workflow CI de Workbench sur `main` et
 attendre sa réussite. Le job protégé `budget` observe tous les dépôts avec
 l'App existante ; il vérifie une réserve de 392 Mio : 203 Mio d'archives de
 livraison, 16 Mio pour le plan et les rapports privés, 1 Mio pour le reçu de
-qualification, 1 Mio pour l'identité de candidat, jusqu'à 120 Mio pour
+qualification, 64 Kio pour sa signature détachée, 1 Mio pour l'identité de candidat, jusqu'à 120 Mio pour
 l'installateur Linux privé, 40 Mio pour l'installateur Windows privé, puis
 jusqu'à 5 Mio pour le plan et les quatre rapports publics du run Workbench
-lui-même. Les 6 Mio restants couvrent les marges d'archivage. Cette réserve
+lui-même. L'enveloppe de signature consomme une partie de la marge de 6 Mio,
+laissant environ 5,94 Mio. Cette réserve
 tient compte du fait que le contrôle de stockage s'exécute avant les
 téléversements du run courant. Les workflows privés exigent que cette étape
 exacte ait réussi depuis moins de quinze minutes et que son SHA corresponde

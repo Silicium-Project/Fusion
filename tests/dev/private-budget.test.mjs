@@ -40,6 +40,7 @@ test('private budget proof requires the actual protected organization check', ()
     203 * 1024 ** 2 + // qualified binary archive envelope
     16 * 1024 ** 2 + // private qualification plan and reports
     1 * 1024 ** 2 + // private evidence receipt
+    64 * 1024 + // detached Ed25519 signature envelope
     1 * 1024 ** 2; // candidate identity metadata
   const publicBudgetRunArtifacts = 1 * 1024 ** 2 + 4 * 1024 ** 2; // plan + four public suites
   const boundedCandidateInstallers = 120 * 1024 ** 2 + 40 * 1024 ** 2; // Linux + Windows
@@ -48,7 +49,7 @@ test('private budget proof requires the actual protected organization check', ()
       privateArtifacts -
       publicBudgetRunArtifacts -
       boundedCandidateInstallers,
-    6 * 1024 ** 2,
+    6 * 1024 ** 2 - 64 * 1024,
   );
   for (const changes of [
     { event: 'pull_request' },

@@ -1,6 +1,10 @@
 /** Bind a Workbench delivery input to one completed, private Integration attempt. */
 import { createHash } from 'node:crypto';
 import { Failure } from './process.mjs';
+import {
+  privateEvidenceSignatureLimitBytes,
+  privateEvidenceSignatureName,
+} from './private-evidence-signature.mjs';
 
 export const privateDeliveryArtifactPolicy = Object.freeze({
   api: { name: 'delivery-api', limit_bytes: 48 * 1024 ** 2 },
@@ -9,6 +13,7 @@ export const privateDeliveryArtifactPolicy = Object.freeze({
   node_ui: { name: 'delivery-node-ui', limit_bytes: 2 * 1024 ** 2 },
 });
 export const privateReceiptName = (attempt) => `private-integration-evidence-${attempt}`;
+export const privateReceiptSignatureName = privateEvidenceSignatureName;
 
 const sha256Pattern = /^[a-f0-9]{64}$/;
 const artifactDigestPattern = /^sha256:[a-f0-9]{64}$/;
@@ -73,6 +78,7 @@ export function validatePrivateDeliveryEvidence({
   workbenchSha,
   workbenchCompareStatus,
   policyCompareStatus,
+  policySourceCompareStatus,
   workspace,
   lock,
   lanes,
@@ -121,6 +127,13 @@ export function validatePrivateDeliveryEvidence({
   const gates = jobs.filter((job) => job.name === 'integration/required');
   if (gates.length !== 1 || gates[0].status !== 'completed' || gates[0].conclusion !== 'success')
     throw new Failure('The exact Integration required gate did not succeed');
+  const signatureJobs = jobs.filter((job) => job.name === 'integration/sign-evidence');
+  if (
+    signatureJobs.length !== 1 ||
+    signatureJobs[0].status !== 'completed' ||
+    signatureJobs[0].conclusion !== 'success'
+  )
+    throw new Failure('The detached qualification signature job did not succeed');
 
   if (
     !Array.isArray(artifacts) ||
@@ -145,9 +158,12 @@ export function validatePrivateDeliveryEvidence({
   if (
     !shaPattern.test(policy.sha ?? '') ||
     policy.sha !== policyPin ||
-    !['ahead', 'identical'].includes(policyCompareStatus)
+    !['ahead', 'identical'].includes(policyCompareStatus) ||
+    !['ahead', 'identical'].includes(policySourceCompareStatus)
   )
-    throw new Failure('The private evidence policy is not pinned to Workbench main');
+    throw new Failure(
+      'The private evidence policy must be on Workbench main and in the qualified source',
+    );
   if (!['ahead', 'identical'].includes(workbenchCompareStatus))
     throw new Failure('The qualified Workbench source is not included in Workbench main');
 
@@ -200,6 +216,11 @@ export function validatePrivateDeliveryEvidence({
     artifacts,
     privateReceiptName(attempt),
     maxReceiptBytes + maxArchiveOverheadBytes,
+  );
+  const signatureArtifact = artifactForName(
+    artifacts,
+    privateReceiptSignatureName(attempt),
+    privateEvidenceSignatureLimitBytes + maxArchiveOverheadBytes,
   );
   const delivery = receipt.artifacts.delivery;
   if (
@@ -263,6 +284,12 @@ export function validatePrivateDeliveryEvidence({
       name: receiptArtifact.name,
       digest: receiptArtifact.digest,
       size_bytes: receiptArtifact.size_in_bytes,
+    },
+    receipt_signature_artifact: {
+      id: signatureArtifact.id,
+      name: signatureArtifact.name,
+      digest: signatureArtifact.digest,
+      size_bytes: signatureArtifact.size_in_bytes,
     },
     artifacts: validated.sort((a, b) => a.suite.localeCompare(b.suite)),
   };

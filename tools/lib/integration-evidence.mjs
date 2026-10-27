@@ -108,6 +108,7 @@ export function privateIntegrationEvidence({
   workbenchSha,
   workbenchCompareStatus,
   policyCompareStatus,
+  policySourceCompareStatus,
   plan,
   reports,
   planDigest,
@@ -185,10 +186,11 @@ export function privateIntegrationEvidence({
   if (
     !shaPattern.test(policyReference.sha ?? '') ||
     policyReference.sha !== policyPin ||
-    !['ahead', 'identical'].includes(policyCompareStatus)
+    !['ahead', 'identical'].includes(policyCompareStatus) ||
+    !['ahead', 'identical'].includes(policySourceCompareStatus)
   )
     throw new Failure(
-      'The reusable Workbench workflow must be pinned to a commit already on Workbench main',
+      'The pinned Workbench policy must be on main and included in the qualified Workbench source commit',
     );
 
   if (!lanes || lanes.schema_version !== 1 || !lanes.suites)

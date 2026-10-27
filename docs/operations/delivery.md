@@ -26,19 +26,22 @@ La chaîne décrite ci-dessous est la **cible** ; elle n'est pas encore
 opérationnelle après la séparation de Workbench et des cinq dépôts privés.
 
 - `Integration` dispose d'une qualification privée manuelle. La PR Integration
-  #4 propose les quatre artefacts de compilation bornés et l'appel au vérificateur
-  Workbench ; elle reste en brouillon et aucun run privé n'a été effectué.
+  #4 propose les quatre artefacts de compilation bornés, le préflight privé et
+  la signature détachée du reçu ; elle reste en brouillon et aucun run privé
+  n'a été effectué.
 - Le récepteur Workbench qui téléchargeait les sorties privées depuis Integration
   a été retiré. La politique réutilisable Workbench ne reçoit que le plan, les
   rapports et un reçu limité aux métadonnées. Le staging des sorties privées
   appartient à un workflow Integration protégé ; elles ne transitent pas par
   un runner public.
 - La PR Integration #4 ajoute le préflight `workflow_run`, fermé par défaut.
-  Après une qualification manuelle réussie, il lie le reçu à l'événement,
-  télécharge les quatre sorties depuis le même dépôt privé, revérifie IDs,
-  digests et tailles avec la politique Workbench, puis matérialise les cinq
-  pins avec le Source Reader. Il n'est pas fusionné, son verrou
-  `SILICIUM_DELIVERY_PREFLIGHT_ENABLED` est absent et aucun run n'a été lancé.
+  Après une qualification manuelle réussie, Integration signe le reçu exact
+  avec Ed25519. Le préflight vérifie cette signature et lie le reçu à
+  l'événement avant de télécharger les quatre sorties depuis le dépôt privé ;
+  il revérifie IDs, digests et tailles avec la politique Workbench, puis
+  matérialise les cinq pins avec le Source Reader. Le code reste en brouillon,
+  son verrou `SILICIUM_DELIVERY_PREFLIGHT_ENABLED` est absent et aucun run
+  n'a été lancé.
 - Son brouillon contient aussi des jobs Linux et Windows qui revalident
   l'identité candidate, consomment seulement les sorties qualifiées utiles et
   construisent des installateurs non signés. Ils sont fermés par défaut par
@@ -68,11 +71,19 @@ opérationnelle après la séparation de Workbench et des cinq dépôts privés.
   drapeau d'activation ; leur absence bloque aujourd'hui le dispatch. Ces deux
   valeurs sont des verrous d'activation, pas une preuve de qualification. La
   PR #332 ajoute un workflow réutilisable et un vérificateur de réception qui
-  vérifient le run privé, le SHA de
-  politique, les cinq pins, les rapports et les quatre artefacts de compilation
-  exacts avec leurs digests. Elle doit encore être fusionnée et appelée depuis
-  Integration ; aucun run privé n'a validé ce raccordement. Le reçu temporaire
-  n'est pas signé et ne qualifie pas une livraison.
+  vérifient le run privé, le SHA de politique, l'inclusion de cette politique
+  dans le SHA source qualifié, les cinq pins, les rapports et les quatre
+  artefacts de compilation exacts avec leurs digests. Elle ajoute aussi la
+  vérification Ed25519 du reçu privé. Le commit contenant ces changements doit
+  être intégré à `Workbench/main`, puis épinglé depuis Integration avant toute
+  qualification privée ; aucun run privé n'a validé le raccordement.
+- La clé privée Ed25519 du reçu est un secret Integration, injecté seulement
+  dans le job `integration/sign-evidence`. La clé publique versionnée est le
+  trust anchor des deux dépôts. C'est une signature vérifiable sans journal de
+  transparence public : GitHub Free ne fournit pas l'attestation native
+  d'artefact pour un dépôt privé. L'accès en écriture à Integration reste donc
+  la frontière de confiance ; une rotation exige de remplacer le secret et les
+  deux clés publiques ensemble.
 - Les environnements Workbench de signature et de déploiement n'ont aucun
   secret configuré. Les fingerprints APT/RPM sont présents dans les contrats,
   mais les clés privées APT/RPM/release et le trust anchor public release sont

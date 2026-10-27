@@ -6,6 +6,7 @@ import { workspaceConfig, workspaceLock } from '../../tools/lib/workspace.mjs';
 import {
   privateDeliveryArtifactPolicy,
   privateReceiptName,
+  privateReceiptSignatureName,
   validatePrivateDeliveryEvidence,
 } from '../../tools/lib/private-delivery.mjs';
 
@@ -45,6 +46,13 @@ function base() {
     id: 110,
     name: privateReceiptName(attempt),
     digest: `sha256:${digest('5')}`,
+    size_in_bytes: 4096,
+    expired: false,
+  };
+  const signatureArtifact = {
+    id: 111,
+    name: privateReceiptSignatureName(attempt),
+    digest: `sha256:${digest('8')}`,
     size_in_bytes: 4096,
     expired: false,
   };
@@ -111,14 +119,16 @@ function base() {
     jobs: [
       { name: 'integration/required', status: 'completed', conclusion: 'success' },
       { name: 'evidence', status: 'completed', conclusion: 'success' },
+      { name: 'integration/sign-evidence', status: 'completed', conclusion: 'success' },
     ],
-    jobsTotalCount: 2,
-    artifacts: [...artifactRows, receiptArtifact],
-    artifactsTotalCount: artifactRows.length + 1,
+    jobsTotalCount: 3,
+    artifacts: [...artifactRows, receiptArtifact, signatureArtifact],
+    artifactsTotalCount: artifactRows.length + 2,
     referencedWorkflows,
     receipt,
     workbenchCompareStatus: 'identical',
     policyCompareStatus: 'ahead',
+    policySourceCompareStatus: 'ahead',
     workspace,
     lock,
     lanes,
@@ -135,6 +145,10 @@ test('private delivery inputs bind one successful Integration run to its exact r
   assert.equal(verified.status, 'verified');
   assert.equal(verified.qualification.integration_sha, integrationSha);
   assert.equal(verified.artifacts.length, Object.keys(privateDeliveryArtifactPolicy).length);
+  assert.equal(
+    verified.receipt_signature_artifact.name,
+    privateReceiptSignatureName(input.attempt),
+  );
 });
 
 test('public, failed, stale, mismatched, partial, or expired private inputs fail closed', () => {
@@ -146,6 +160,7 @@ test('public, failed, stale, mismatched, partial, or expired private inputs fail
     (input) => (input.run.created_at = new Date(input.now - 24 * 60 * 60 * 1000 - 1).toISOString()),
     (input) => (input.jobsTotalCount += 1),
     (input) => (input.jobs[0].conclusion = 'skipped'),
+    (input) => (input.jobs[2].conclusion = 'failure'),
     (input) => input.artifacts.pop(),
     (input) => (input.artifacts[0].digest = ''),
     (input) => (input.artifacts[0].expired = true),
@@ -153,6 +168,7 @@ test('public, failed, stale, mismatched, partial, or expired private inputs fail
     (input) => (input.receipt.workbench.source_sha = sha('f')),
     (input) => (input.workbenchCompareStatus = 'behind'),
     (input) => (input.policyCompareStatus = 'behind'),
+    (input) => (input.policySourceCompareStatus = 'behind'),
     (input) => (input.referencedWorkflows = []),
   ];
   for (const mutate of mutations) {
@@ -173,7 +189,22 @@ test('receipt artifact must bind the same attempt and each remote artifact ID, d
     (input) => (input.receipt.artifacts.delivery[0].id += 999),
     (input) => (input.receipt.artifacts.delivery[1].digest = `sha256:${digest('f')}`),
     (input) => (input.receipt.artifacts.delivery[2].size_bytes += 1),
-    (input) => (input.artifacts.at(-1).name = 'private-integration-evidence-1'),
+    (input) =>
+      (input.artifacts.find((artifact) =>
+        artifact.name.startsWith('private-integration-evidence-signature-'),
+      ).name = 'private-integration-evidence-signature-1'),
+    (input) =>
+      (input.artifacts.find((artifact) =>
+        artifact.name.startsWith('private-integration-evidence-signature-'),
+      ).expired = true),
+    (input) =>
+      (input.artifacts.find((artifact) =>
+        artifact.name.startsWith('private-integration-evidence-signature-'),
+      ).size_in_bytes = 400 * 1024),
+    (input) =>
+      (input.artifacts.find((artifact) =>
+        artifact.name.startsWith('private-integration-evidence-'),
+      ).name = 'private-integration-evidence-1'),
   ]) {
     const input = base();
     mutate(input);
