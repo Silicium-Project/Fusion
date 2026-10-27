@@ -24,7 +24,7 @@ const waitSync = (milliseconds) => {
 
 /** Create a GitHub API client; injected execution/wait functions keep retry behavior testable. */
 export function createClient({ execute = run, wait = waitSync } = {}) {
-  function api(path, { method = 'GET', body } = {}) {
+  function api(path, { method = 'GET', body, token } = {}) {
     const args = ['gh', 'api', path, '--method', method];
     if (body !== undefined) args.push('--input', '-');
     const input = body === undefined ? undefined : JSON.stringify(body);
@@ -33,7 +33,11 @@ export function createClient({ execute = run, wait = waitSync } = {}) {
       method === 'GET' || (path === 'graphql' && method === 'POST' && isGraphqlQuery(body?.query));
     let result;
     for (let attempt = 0; ; attempt++) {
-      result = execute(args, { input, allowFailure: true });
+      result = execute(args, {
+        input,
+        allowFailure: true,
+        ...(token ? { env: { GH_TOKEN: token } } : {}),
+      });
       if (!result.status) break;
       const detail = `${result.error ?? ''}\n${result.stderr ?? ''}`.trim();
       if (!retryable || attempt >= retryDelaysMs.length || !isTransientReadFailure(detail))
@@ -58,10 +62,12 @@ export function createClient({ execute = run, wait = waitSync } = {}) {
 
 const client = createClient();
 export const { api, graphql } = client;
-export function pages(path) {
+export function pages(path, { token } = {}) {
   const result = [];
   for (let page = 1; ; page++) {
-    const values = api(`${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`);
+    const values = api(`${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`, {
+      token,
+    });
     if (!Array.isArray(values)) throw new Failure('Expected GitHub collection', 3);
     result.push(...values);
     if (values.length < 100) return result;

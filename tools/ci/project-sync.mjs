@@ -9,18 +9,31 @@ import {
   dependencyAccepted,
   projectSyncFailureOutput,
   projectSyncOutput,
+  integrationRepository,
+  projectRequiredCheckName,
+  projectRequiredCheckConclusion,
 } from '../lib/project.mjs';
 import { inspectEvidence } from '../lib/evidence.mjs';
 import { referencesIssue } from '../lib/issue-links.mjs';
+import { Failure } from '../lib/process.mjs';
 
 const apply = process.argv.includes('--apply');
 const summaries = [];
 let statusUpdates = 0;
 let blockageUpdates = 0;
 try {
+  const integrationToken = process.env.INTEGRATION_GH_TOKEN;
+  if (!integrationToken)
+    throw new Failure(
+      'The read-only Integration pull-request token is required for reconciliation.',
+      3,
+    );
   const project = projectState();
   const items = new Map(project.items.filter((x) => x.content?.url).map((x) => [x.content.id, x]));
-  const prs = pages(`repos/${repository}/pulls?state=all`);
+  const prs = [
+    ...pages(`repos/${repository}/pulls?state=all`),
+    ...pages(`repos/${integrationRepository}/pulls?state=all`, { token: integrationToken }),
+  ];
   for (const item of items.values()) {
     const issue = item.content,
       f = fieldValues(item);
@@ -32,22 +45,26 @@ try {
     const linked = prs.filter((p) => referencesIssue(p.body, issue.url));
     const active = [];
     for (const p of linked.filter((x) => !x.merged_at && x.state === 'open')) {
-      if (p.head.repo?.full_name !== repository) continue;
-      const checks = api(
-        `repos/${repository}/commits/${p.head.sha}/check-runs?filter=latest&per_page=100`,
-      ).check_runs;
-      const required = checks.filter(
-        (c) => c.name === 'ci/required' && c.app?.slug === 'github-actions',
-      );
-      const reviews = pages(`repos/${repository}/pulls/${p.number}/reviews`);
+      const prRepository = p.base?.repo?.full_name;
+      if (![repository, integrationRepository].includes(prRepository)) continue;
+      const token = prRepository === integrationRepository ? integrationToken : undefined;
+      const checks =
+        api(`repos/${prRepository}/commits/${p.head.sha}/check-runs?filter=latest&per_page=100`, {
+          token,
+        }).check_runs ?? [];
+      const reviews = pages(`repos/${prRepository}/pulls/${p.number}/reviews`, { token });
       const latest = new Map();
       for (const r of reviews) if (r.user?.login) latest.set(r.user.login, r);
       active.push({
         url: p.html_url,
         draft: p.draft,
         closed: false,
-        ci: required.length === 1 ? required[0].conclusion : 'pending',
-        check_url: required[0]?.html_url,
+        ci: projectRequiredCheckConclusion(checks, prRepository),
+        check_url: checks.find(
+          (check) =>
+            check.name === projectRequiredCheckName(prRepository) &&
+            check.app?.slug === 'github-actions',
+        )?.html_url,
         changes_requested: [...latest.values()].some((r) => r.state === 'CHANGES_REQUESTED'),
         merged: false,
       });

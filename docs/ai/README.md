@@ -49,6 +49,11 @@ bloque la suite avant toute demande de jeton Source Reader.
 8. Présenter les changements, résultats observés et limites ; laisser la
    décision de revue/acceptation à un humain autorisé.
 
+La synchronisation du Project 12 observe aussi les PR et checks du dépôt privé
+Integration, avec un délai maximal nominal de quinze minutes. Les logs publics
+ne contiennent que des totaux ; un PR privé sans gate requis unique reste en
+attente. Ne saisis pas toi-même un statut comme preuve d'acceptation.
+
 ### Faire intégrer une PR
 
 Le mode mainteneur unique autorise le mainteneur à examiner sa propre PR.
