@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "repository": "Silicium-Project/Workbench",
+  "repository_id": 1304063299,
+  "visibility": "public",
+  "default_branch": "main",
+  "ruleset": {
+    "name": "Protect Main",
+    "source_type": "Repository",
+    "source": "Silicium-Project/Workbench",
+    "target": "branch",
+    "enforcement": "active",
+    "ref_name_include": ["~DEFAULT_BRANCH"],
+    "ref_name_exclude": [],
+    "rule_types": ["non_fast_forward", "pull_request", "required_status_checks"],
+    "pull_request": {
+      "allowed_merge_methods": ["merge"],
+      "dismiss_stale_reviews_on_push": true,
+      "required_approving_review_count": 0,
+      "required_review_thread_resolution": true
+    },
+    "empty_required_status_checks_rule": true
+  },
+  "not_publicly_verifiable": [
+    "ruleset bypass actors",
+    "classic branch protection and its required ci/required status check",
+    "private component repositories, Project items, and release artifacts"
+  ]
+}

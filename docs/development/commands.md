@@ -66,6 +66,13 @@ appelle `dev test --suite ...` ; un changement de dépendance ou de contrat
 qualifie aussi les consommateurs. Une surface inconnue impose la matrice.
 `dev check --changed --base origin/main` exécute l'ensemble des suites choisies.
 
+`dev ci policy --json` compare les métadonnées publiques de Workbench et le
+ruleset actif `Protect Main` au manifeste versionné. Une divergence échoue ;
+une erreur ou une pagination incomplète de l'API donne `blocked`, jamais un
+rapport propre. Ce contrôle ne lit pas les dépôts privés, le Project, les
+artefacts de release, les acteurs de contournement ou la protection de branche
+classique. La CI l'exécute quand les fichiers de politique concernés changent.
+
 ## Applications
 
 ```sh

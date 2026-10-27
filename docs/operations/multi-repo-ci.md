@@ -58,6 +58,22 @@ download-artifact v8 et cache v6.1.0. `setup-node` désactive son cache implicit
 seules les clés et frontières de confiance explicitement définies dans le
 workflow contrôlent les caches.
 
+## Audit public des règles du dépôt
+
+`tools/config/repository-policy.json` fixe la visibilité, la branche par défaut
+et les paramètres publics attendus de `Protect Main`. `dev ci policy --json`
+relit le dépôt et le ruleset via l'API GitHub sans jeton ni secret. Le rapport
+contient le SHA de politique, l'heure de vérification, les écarts et les
+limites de couverture. Une réponse API refusée, limitée, invalide ou incomplète
+produit `blocked`, jamais un rapport propre.
+
+La CI requise appelle ce contrôle lorsque le manifeste, son code, ses tests, le
+lanceur ou le workflow CI changent ; les autres PR ne déclenchent pas cet appel
+réseau. L'audit ne couvre que les métadonnées et règles visibles publiquement :
+GitHub masque les acteurs de contournement et l'API de protection classique
+exige une lecture administrative. Les dépôts privés, le Project et les
+artefacts de release restent à vérifier par la réconciliation privée CI-09.
+
 ## Publication séparée
 
 L'App `Silicium Source Reader` reste strictement en lecture seule. Ne pas ajouter

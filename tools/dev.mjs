@@ -12,6 +12,7 @@ import { releasePlan, requestDeploy } from './lib/release.mjs';
 import { diagnosticRequest } from './lib/operations.mjs';
 import { inspectMetrics } from './lib/metrics.mjs';
 import { inspectRun } from './lib/ci-inspect.mjs';
+import { auditRepositoryPolicy } from './lib/repository-policy.mjs';
 import {
   workspaceStatus,
   initializeWorkspace,
@@ -68,6 +69,7 @@ const commands = [
     usage: 'ci inspect --run ID [--repository Silicium-Project/Integration]',
   },
   { command: 'ci metrics', effect: 'read', usage: 'ci metrics [--limit 20] --json' },
+  { command: 'ci policy', effect: 'read', usage: 'ci policy --json' },
   { command: 'check', effect: 'local validation', usage: 'check --changed --base origin/main' },
   {
     command: 'test',
@@ -233,6 +235,13 @@ async function main() {
   }
   if (command === 'ci' && subcommand === 'metrics')
     return output(inspectMetrics(Number(o.limit ?? 20)));
+  if (command === 'ci' && subcommand === 'policy') {
+    const sourceSha = process.env.GITHUB_SHA || run(['git', 'rev-parse', 'HEAD']).stdout.trim();
+    const report = await auditRepositoryPolicy({ sourceSha });
+    output(report);
+    process.exitCode = report.status === 'success' ? 0 : report.status === 'drift' ? 1 : 2;
+    return;
+  }
   if (command === 'test') {
     if (!o.suite) throw new Failure('Provide --suite; see capabilities', 2);
     const report = executeSuite(o.suite, {

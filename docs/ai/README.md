@@ -75,6 +75,13 @@ les métadonnées seules ne prouvent pas sa cause. Pour les artefacts, ne prése
 `bytes` comme total que si `complete` vaut `true` ; sinon `bytes_observed` n'est
 qu'un sous-total.
 
+Quand un changement touche la politique GitHub ou son vérificateur, lancer
+`dev ci policy --json`. `success` ne couvre que le dépôt public Workbench et
+son ruleset `Protect Main`. `drift` indique les écarts observés ; `blocked`
+signifie que l'API ou ses données étaient incomplètes. Ce contrôle ne prouve
+pas la protection de branche classique, les acteurs de contournement, les
+dépôts privés, le Project ou la chaîne d'artefacts.
+
 Pour un service : préparer `dev ops diagnose --environment dev --json`, puis
 utiliser `--apply` si l'automatisation est configurée et autorisée. Lire
 [les observations et leurs limites](../operations/diagnostics.md). Une absence
