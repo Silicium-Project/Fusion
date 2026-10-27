@@ -130,6 +130,21 @@ inclus ; le statut public de Workbench ne change pas cette règle. Son
 épuisement bloque la qualification. Ne pas utiliser de runner VPS, copier des
 sources privées dans des workflows publics ou ouvrir un budget facturable.
 
+## Synchronisation du Project 12 entre dépôts
+
+La réconciliation publique `project-sync.yml` lit les PR liées de Workbench et
+d'Integration privé. Elle utilise son jeton Project existant pour Workbench et
+un second jeton d'installation de courte durée limité à Integration, avec
+seulement `pull_requests: read` et `checks: read`. Le gate Workbench est
+`ci/required` ; celui d'Integration est `integration/required`. Un jeton ou une
+réponse de dépôt manquante bloque la réconciliation ; un gate absent ou ambigu
+laisse la PR en attente. Les
+données des PR privées ne sont jamais imprimées dans les logs publics, qui ne
+contiennent que des totaux ; leurs références et les blocages détaillés restent
+dans le Project 12 privé. Les changements Integration sont réconciliés par la
+planification existante toutes les quinze minutes ; la synchronisation ne donne
+aucun droit d'écriture ni d'accès au Project dans Integration.
+
 ## Accès aux sources
 
 L'organisation interdit la création de clés SSH de déploiement ; cette politique

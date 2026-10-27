@@ -3,6 +3,22 @@ import { api, pages, graphql, issueRef, requireWriter, repository } from './gith
 import { Failure } from './process.mjs';
 import { inspectEvidence, acceptanceChecklistComplete } from './evidence.mjs';
 
+export const integrationRepository = 'Silicium-Project/Integration';
+
+export function projectRequiredCheckName(repo) {
+  if (repo === repository) return 'ci/required';
+  if (repo === integrationRepository) return 'integration/required';
+  throw new Failure(`Project sync does not inspect pull requests from ${repo}`, 3);
+}
+
+export function projectRequiredCheckConclusion(checkRuns, repo) {
+  const requiredName = projectRequiredCheckName(repo);
+  const required = checkRuns.filter(
+    (check) => check.name === requiredName && check.app?.slug === 'github-actions',
+  );
+  return required.length === 1 ? required[0].conclusion : 'pending';
+}
+
 export function nextStatus(item) {
   if (item.hold || item.status === 'Arbitrage') return 'Arbitrage';
   if (item.abandoned) return 'Abandonné';
