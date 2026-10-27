@@ -68,9 +68,12 @@ Un workflow suspendu ou ignoré ne constitue jamais une qualification.
 
 Avant un lancement privé, exécuter le workflow CI de Workbench sur `main` et
 attendre sa réussite. Le job protégé `budget` observe tous les dépôts avec
-l'App existante ; il vérifie la marge de stockage avec une réserve de 224 Mio
-pour les binaires de livraison (202 Mio de contenu, 203 Mio d'archives), le
-plan/rapports (16 Mio) et le reçu (1 Mio), avec une marge de 4 Mio.
+l'App existante ; il vérifie une réserve de 232 Mio : 203 Mio d'archives de
+livraison, 16 Mio pour le plan et les rapports privés, 1 Mio pour le reçu de
+qualification, 1 Mio pour l'identité de candidat, puis jusqu'à 5 Mio pour le
+plan et les quatre rapports publics du run Workbench lui-même. Les 6 Mio
+restants couvrent les marges d'archivage. Cette réserve tient compte du fait
+que le contrôle de stockage s'exécute avant les téléversements du run courant.
 Les workflows privés exigent que cette étape exacte ait réussi depuis moins
 de quinze minutes. Il s'agit d'une observation bornée, pas d'un verrou global
 de stockage entre tous les dépôts. Les campagnes complètes sont sérialisées,

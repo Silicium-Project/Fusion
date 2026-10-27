@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  privateIntegrationArtifactReservation,
+  organizationArtifactReservation,
   requireBudgetProof,
   privateBudget,
 } from '../../tools/ci/private-budget.mjs';
@@ -32,12 +32,20 @@ const jobs = [
 test('private budget proof requires the actual protected organization check', () => {
   const proof = requireBudgetProof(record, jobs, now);
   assert.equal(proof.run_id, 1);
-  assert.equal(proof.incoming_bytes_reserved, privateIntegrationArtifactReservation);
-  assert.equal(privateIntegrationArtifactReservation, 224 * 1024 ** 2);
+  assert.equal(proof.incoming_bytes_reserved, organizationArtifactReservation);
+  assert.equal(organizationArtifactReservation, 232 * 1024 ** 2);
   const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
-  assert.ok(workflow.includes("SILICIUM_INCOMING_BYTES: '234881024'"));
-  const integrationArtifacts = 203 * 1024 ** 2 + 16 * 1024 ** 2 + 1 * 1024 ** 2;
-  assert.equal(privateIntegrationArtifactReservation - integrationArtifacts, 4 * 1024 ** 2);
+  assert.ok(workflow.includes("SILICIUM_INCOMING_BYTES: '243269632'"));
+  const privateArtifacts =
+    203 * 1024 ** 2 + // qualified binary archive envelope
+    16 * 1024 ** 2 + // private qualification plan and reports
+    1 * 1024 ** 2 + // private evidence receipt
+    1 * 1024 ** 2; // candidate identity metadata
+  const publicBudgetRunArtifacts = 1 * 1024 ** 2 + 4 * 1024 ** 2; // plan + four public suites
+  assert.equal(
+    organizationArtifactReservation - privateArtifacts - publicBudgetRunArtifacts,
+    6 * 1024 ** 2,
+  );
   for (const changes of [
     { event: 'pull_request' },
     { head_branch: 'topic' },
