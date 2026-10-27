@@ -11,7 +11,7 @@ import { workspaceConfig, workspaceLock } from '../lib/workspace.mjs';
 const apiRoot = 'https://api.github.com';
 const integration = 'Silicium-Project/Integration';
 const workbench = 'Silicium-Project/Workbench';
-const maxArtifactBytes = 10 * 1024 * 1024;
+const maxArtifactBytes = 16 * 1024 * 1024;
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
 async function github(path) {
@@ -21,7 +21,7 @@ async function github(path) {
     headers: {
       accept: 'application/vnd.github+json',
       authorization: `Bearer ${token}`,
-      'x-github-api-version': '2022-11-28',
+      'x-github-api-version': '2026-03-10',
     },
     signal: AbortSignal.timeout(15_000),
   });
@@ -92,7 +92,7 @@ async function main() {
     return total + stat.size;
   }, 0);
   if (artifactBytes > maxArtifactBytes)
-    throw new Failure('Private qualification evidence exceeds 10 MiB');
+    throw new Failure('Private qualification evidence exceeds 16 MiB');
 
   const planBytes = readFileSync(planPath);
   const plan = JSON.parse(planBytes.toString('utf8'));
