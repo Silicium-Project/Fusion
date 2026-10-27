@@ -23,6 +23,10 @@ import {
   workspaceConfig,
 } from './lib/workspace.mjs';
 import { prepareComponent } from './lib/component.mjs';
+import {
+  verifyPublicWorkbenchQualification,
+  writePublicQualificationOutputs,
+} from './lib/public-ci-evidence.mjs';
 
 const commands = [
   { command: 'workspace status', effect: 'read', usage: 'workspace status --json' },
@@ -70,6 +74,11 @@ const commands = [
   },
   { command: 'ci metrics', effect: 'read', usage: 'ci metrics [--limit 20] --json' },
   { command: 'ci policy', effect: 'read', usage: 'ci policy --json' },
+  {
+    command: 'ci public-evidence',
+    effect: 'read',
+    usage: 'ci public-evidence --sha SHA --json',
+  },
   { command: 'check', effect: 'local validation', usage: 'check --changed --base origin/main' },
   {
     command: 'test',
@@ -240,6 +249,15 @@ async function main() {
     const report = await auditRepositoryPolicy({ sourceSha });
     output(report);
     process.exitCode = report.status === 'success' ? 0 : report.status === 'drift' ? 1 : 2;
+    return;
+  }
+  if (command === 'ci' && subcommand === 'public-evidence') {
+    const result = await verifyPublicWorkbenchQualification({
+      workbenchSha: o.sha,
+    });
+    writePublicQualificationOutputs(result, process.env.GITHUB_OUTPUT);
+    output(result);
+    process.exitCode = result.status === 'success' ? 0 : 1;
     return;
   }
   if (command === 'test') {

@@ -12,6 +12,7 @@ test('capabilities lists actual commands, suites and unimplemented runtime deliv
     'doctor',
     'ci plan',
     'ci policy',
+    'ci public-evidence',
     'test',
     'issue start',
     'issue accept',

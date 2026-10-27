@@ -29,6 +29,12 @@ les validations manquantes. Mettre à jour les deux pins ensemble avec
 `dev workspace pin --component ID --revision SHA --apply`, puis créer une PR
 Workbench liée aux PR natives.
 
+Avant une qualification privée, vérifier aussi que le SHA Workbench exact est
+le `main` courant et que son contrôle public `ci/required` a réussi :
+`./dev ci public-evidence --sha SHA --json`. Le contrôle lit uniquement l'API
+publique, sans jeton ; une preuve absente, ancienne, paginée ou non réussie
+bloque la suite avant toute demande de jeton Source Reader.
+
 ## Implémenter une tranche
 
 1. Lire l'issue, son parent, ses dépendances et la cible de validation du Project.

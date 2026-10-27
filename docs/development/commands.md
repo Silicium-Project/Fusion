@@ -80,6 +80,11 @@ rapport propre. Ce contrôle ne lit pas les dépôts privés, le Project, les
 artefacts de release, les acteurs de contournement ou la protection de branche
 classique. La CI l'exécute quand les fichiers de politique concernés changent.
 
+`dev ci public-evidence --sha SHA --json` confirme sans jeton que le SHA
+correspond toujours au `main` courant et que son unique `ci/required` est
+terminé et réussi. Integration l'exécute avant de demander le jeton Source
+Reader ; un résultat absent, ancien ou incomplet bloque l'accès aux sources.
+
 ## Applications
 
 ```sh

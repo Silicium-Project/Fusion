@@ -109,7 +109,12 @@ l'intégration de leurs nouveaux workflows et la disponibilité du quota privé.
 Un workflow suspendu ou ignoré ne constitue jamais une qualification.
 
 Avant un lancement privé, exécuter le workflow CI de Workbench sur `main` et
-attendre sa réussite. Le job protégé `budget` observe tous les dépôts avec
+attendre sa réussite. Integration vérifie automatiquement, avant de demander
+le jeton Source Reader, que `main` porte encore le SHA retenu et que son unique
+`ci/required` est terminé et réussi. Le contrôle public correspondant est
+disponible localement avec `dev ci public-evidence --sha SHA --json` ; il ne
+présente aucun jeton et bloque sur une preuve ancienne, absente ou incomplète.
+Le job protégé `budget` observe tous les dépôts avec
 l'App existante ; il vérifie une réserve de 392 Mio : 203 Mio d'archives de
 livraison, 16 Mio pour le plan et les rapports privés, 1 Mio pour le reçu de
 qualification, 64 Kio pour sa signature détachée, 1 Mio pour l'identité de candidat, jusqu'à 120 Mio pour
