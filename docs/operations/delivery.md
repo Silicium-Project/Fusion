@@ -40,8 +40,10 @@ opérationnelle après la séparation de Workbench et des cinq dépôts privés.
   configuré. Le CLI et les jobs GitHub exigent à la fois ce marqueur et le
   drapeau d'activation ; leur absence bloque aujourd'hui le dispatch. Ces deux
   valeurs sont des verrous d'activation, pas une preuve de qualification. La
-  vérification cryptographique du run et de ses cinq pins reste à implémenter
-  dans CI-10 ; ne configure pas les marqueurs avant son acceptation.
+  PR #332 ajoute un workflow réutilisable qui vérifie le run privé, le SHA de
+  politique, les cinq pins et les rapports. Il doit encore être fusionné et
+  appelé depuis Integration ; aucun run privé n'a validé ce raccordement. Le
+  reçu temporaire n'est pas signé et ne qualifie pas une livraison.
 - Les environnements Workbench de signature et de déploiement n'ont aucun
   secret ni variable d'environnement configuré. Les workflows attendent entre
   autres des clés de signature et `DEPLOY_SSH_HOST` / `DEPLOY_SSH_KNOWN_HOSTS` /
@@ -53,8 +55,9 @@ opérationnelle après la séparation de Workbench et des cinq dépôts privés.
 
 Le raccordement est suivi dans [CI-10](https://github.com/Silicium-Project/Workbench/issues/331).
 Ne pas lancer `dev deploy request --apply`, ne pas activer les variables de
-livraison et ne pas considérer un run public vert comme preuve de qualification
-privée tant que cette issue n'est pas acceptée.
+livraison et ne pas considérer un run public vert ou le reçu temporaire comme
+preuve de publication ou de déploiement privés tant que cette issue n'est pas
+acceptée.
 
 ### Frontière entre dépôts
 

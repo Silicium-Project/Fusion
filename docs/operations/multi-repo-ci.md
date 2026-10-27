@@ -16,9 +16,19 @@ Lire [la décision](../architecture/multi-repo.md) et les
    sur `main`, avec le SHA complet de Workbench. Le workflow vérifie que le
    commit appartient à `main`, récupère exactement les cinq pins, puis exécute
    toutes les suites du registre. `integration/required` exige chaque rapport.
-5. Conserver ces preuves privées. Les résultats publics de Workbench restent
+   Le job suivant à relier dans Integration appellera, par SHA Workbench
+   complet, le workflow public `private-integration-evidence.yml`. Celui-ci
+   revérifie le run privé via l'API GitHub, le gate, le plan, les rapports et
+   les cinq pins du SHA exact.
+6. Conserver ces preuves privées. Les résultats publics de Workbench restent
    des preuves de ses seuls fichiers publics. Ne pas activer une publication
    à partir de ce seul gate.
+
+Le workflow réutilisable s'exécute dans le contexte d'Integration : son jeton
+reste en lecture seule sur le dépôt appelant et ne gagne aucun droit sur
+Workbench. Il conserve un reçu de métadonnées privé pendant un jour. Ce reçu
+n'est ni une signature, ni une publication, ni une preuve permanente de
+livraison ; aucun workflow ne construit ou ne déploie encore depuis lui.
 
 La qualification native utilise un commit synthétique **local et temporaire**,
 parent du SHA Workbench épinglé. Il permet de qualifier une nouvelle version du
@@ -52,28 +62,20 @@ sources privées dans des workflows publics ou ouvrir un budget facturable.
 ## Accès aux sources
 
 L'organisation interdit la création de clés SSH de déploiement ; cette politique
-reste conservée. Une App dédiée **Silicium Source Reader** doit être créée avec
-[le manifeste minimal](../../tools/config/source-app-manifest.json), puis installée
+reste conservée. L'App **Silicium Source Reader** existe et est installée
 uniquement sur BackEnd, FrontEnd, DesktopApp, Network et Solana. Son unique droit
 explicite est `contents: read` ; métadonnées en lecture implicites. Aucun droit
-Project, Actions, secrets ou déploiement, aucune écriture de code.
+Project, Actions, secrets ou déploiement, aucune écriture de code. Ne pas la
+recréer ni élargir ses droits.
 
-Création manuelle par le propriétaire : ouvrir [les réglages GitHub Apps de
-l'organisation](https://github.com/organizations/Silicium-Project/settings/apps/new),
-reprendre le nom et l'URL du manifeste, désactiver les webhooks et abonnements
-d'événements, puis ne donner que `Contents: Read-only`. À l'installation, choisir
-« Only select repositories » et les cinq dépôts listés ci-dessus ; ne pas choisir
-« All repositories ». Générer ensuite une clé privée de l'App et enregistrer le
-Client ID et la clé comme secrets chiffrés `SOURCE_APP_CLIENT_ID` et
-`SOURCE_APP_PRIVATE_KEY` dans Integration. Transférer la clé directement depuis
-l'interface GitHub ou `gh secret set`; ne pas la coller dans un chat, une issue,
-un commit ou un artefact.
-
-Dans Integration, configurer `SOURCE_APP_CLIENT_ID` et `SOURCE_APP_PRIVATE_KEY`
-comme secrets chiffrés. Ces secrets **ne sont pas encore provisionnés** pendant
-la préparation de migration. Ne pas réutiliser le jeton personnel du propriétaire
-ni la clé de l'App du Project. Aucune clé de wallet, de signature ou d'upgrade
-Solana n'est utilisée. Workbench et les CI natives ne reçoivent pas cette clé.
+Dans Integration, `SOURCE_APP_CLIENT_ID` et `SOURCE_APP_PRIVATE_KEY` sont des
+secrets chiffrés déjà provisionnés. Vérifier leur présence par nom seulement ;
+ne jamais lire, imprimer ou copier leur valeur. Ne pas réutiliser le jeton
+personnel du propriétaire ni la clé de l'App du Project. Aucune clé de wallet,
+de signature ou d'upgrade Solana n'est utilisée. Workbench et les CI natives
+ne reçoivent pas cette clé. En cas de rotation, générer la clé dans les réglages
+de l'App et remplacer directement le secret GitHub ; ne pas transmettre la clé
+dans un chat, une issue, un commit ou un artefact.
 
 Chaque suite privée crée un jeton d'installation de courte durée, limité aux
 dépôts déclarés comme sources de cette suite ; le contrôle des contrats demande
@@ -95,8 +97,9 @@ limités et ne pas y approuver de code extérieur pendant la stabilisation.
 
 ## Livraison et miroir Epitech
 
-La reprise du transport des artefacts privés vers la signature/publication
-reste bloquée avant sa propre qualification. Les anciens workflows publics
+Le reçu privé vérifie les preuves mais ne transporte aucun artefact de livraison.
+La reprise du transport des binaires vers la signature/publication reste
+bloquée avant sa propre qualification. Les anciens workflows publics
 `release`, `campaigns` et `mirror-epitech` ne peuvent plus construire ou publier
 une composition incomplète. Les flags de livraison restent à zéro.
 
