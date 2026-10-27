@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateManifest, packageVersions, compareVersions } from '../../tools/lib/manifest.mjs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  validateManifest,
+  packageVersions,
+  compareVersions,
+  sha256,
+  verifyManifestAssetDirectory,
+} from '../../tools/lib/manifest.mjs';
 import { trustedReleaseBaseline } from '../../tools/lib/release-baseline.mjs';
 const sha = 'a'.repeat(40);
 const candidate = () => ({
@@ -99,6 +108,66 @@ test('asset names cannot escape the snapshot', () => {
   const m = candidate();
   m.assets = [{ name: '../wallet', sha256: 'a'.repeat(64), size: 1 }];
   assert.ok(validateManifest(m).length);
+});
+test('reserved signature files cannot be listed as ordinary release assets', () => {
+  const m = candidate();
+  m.assets[0].name = 'manifest.json';
+  assert.ok(validateManifest(m).includes('reserved candidate asset name'));
+});
+test('publication and deployment require the exact manifest asset set and bytes', () => {
+  const createFixture = () => {
+    const directory = mkdtempSync(join(tmpdir(), 'silicium-release-assets-'));
+    const manifest = candidate();
+    const payloads = new Map([
+      ['packages.tar.gz', Buffer.from('packages')],
+      ['deployment.tar.gz', Buffer.from('deployment')],
+      ['qualification.json', Buffer.from('{}')],
+    ]);
+    manifest.assets = [...payloads].map(([name, bytes]) => ({
+      name,
+      size: bytes.length,
+      sha256: sha256(bytes),
+    }));
+    for (const [name, bytes] of payloads) writeFileSync(join(directory, name), bytes);
+    writeFileSync(join(directory, 'manifest.json'), JSON.stringify(manifest));
+    writeFileSync(join(directory, 'manifest.json.asc'), 'signature');
+    return { directory, manifest };
+  };
+
+  const valid = createFixture();
+  try {
+    assert.equal(verifyManifestAssetDirectory(valid.manifest, valid.directory), valid.manifest);
+    writeFileSync(join(valid.directory, 'unexpected.txt'), 'extra');
+    assert.throws(
+      () => verifyManifestAssetDirectory(valid.manifest, valid.directory),
+      /does not match the manifest asset set/,
+    );
+  } finally {
+    rmSync(valid.directory, { recursive: true, force: true });
+  }
+
+  const corrupt = createFixture();
+  try {
+    writeFileSync(join(corrupt.directory, 'packages.tar.gz'), 'tampered');
+    assert.throws(
+      () => verifyManifestAssetDirectory(corrupt.manifest, corrupt.directory),
+      /candidate asset integrity failure/,
+    );
+  } finally {
+    rmSync(corrupt.directory, { recursive: true, force: true });
+  }
+
+  const nonRegular = createFixture();
+  try {
+    rmSync(join(nonRegular.directory, 'packages.tar.gz'));
+    mkdirSync(join(nonRegular.directory, 'packages.tar.gz'));
+    assert.throws(
+      () => verifyManifestAssetDirectory(nonRegular.manifest, nonRegular.directory),
+      /candidate asset is not a regular file/,
+    );
+  } finally {
+    rmSync(nonRegular.directory, { recursive: true, force: true });
+  }
 });
 test('versions retain prerelease ordering and unique Windows sequence', () => {
   assert.deepEqual(packageVersions('0.3.0-dev.12'), {

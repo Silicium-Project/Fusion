@@ -3,7 +3,12 @@ import { readdirSync, readFileSync, appendFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { root, run, readJson, writeJson, Failure } from '../lib/process.mjs';
 import { publicApi, publicPages, repository } from '../lib/github.mjs';
-import { sha256, requireManifest, compareVersions } from '../lib/manifest.mjs';
+import {
+  sha256,
+  requireManifest,
+  compareVersions,
+  verifyManifestAssetDirectory,
+} from '../lib/manifest.mjs';
 import { trustedReleaseBaseline } from '../lib/release-baseline.mjs';
 import { writePreviousInstallBaseline } from '../lib/candidate-installation.mjs';
 const operation = process.argv[2];
@@ -248,10 +253,16 @@ if (operation === 'prepare-private') {
     `manifest_digest=${sha256(readFileSync(resolve(assetsDir, 'manifest.json')))}\n`,
   );
 } else if (operation === 'publish') {
-  const m = requireManifest(readJson(resolve(root, '.artifacts/publish/manifest.json')));
-  const files = readdirSync(resolve(root, '.artifacts/publish')).map((n) =>
-    resolve(root, '.artifacts/publish', n),
-  );
+  const assetsDir = resolve(root, '.artifacts/publish');
+  const m = verifyManifestAssetDirectory(readJson(resolve(assetsDir, 'manifest.json')), assetsDir);
+  run([
+    'gpgv',
+    '--keyring',
+    resolve(root, 'contracts/trust/release.gpg'),
+    resolve(assetsDir, 'manifest.json.asc'),
+    resolve(assetsDir, 'manifest.json'),
+  ]);
+  const files = readdirSync(assetsDir).map((n) => resolve(assetsDir, n));
   run(
     [
       'gh',

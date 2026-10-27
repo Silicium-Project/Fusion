@@ -109,7 +109,8 @@ Lire [le runbook](../operations/delivery.md). Utiliser un SHA exact, le canal
 explicite et le manifeste qualifié. Traiter le manifeste de release comme une
 entrée non fiable : valider sa structure puis vérifier sa signature avec le
 trust anchor avant de l'appliquer. Le tag doit correspondre au champ GitHub
-`prerelease` du canal. `dev release plan` distingue maintenant
+`prerelease` du canal ; chaque fichier du candidat doit aussi correspondre au
+jeu exact, à la taille et au digest du manifeste. `dev release plan` distingue maintenant
 le succès public Workbench de la qualification privée requise ; il ne marque
 pas le public comme livraison qualifiée. C'est une commande de
 préparation. Au 27 octobre 2026, le raccordement de la qualification privée à la

@@ -15,6 +15,10 @@ ne remplace jamais la vérification de la signature détachée avec le trust anc
 Le tag d'une release doit aussi correspondre à son indicateur GitHub
 `prerelease` pour le canal préparé ; une incohérence bloque la sélection de la
 baseline au lieu de laisser la release hors du contrôle de version.
+Avant publication et déploiement, le répertoire doit contenir exactement les
+assets déclarés, avec leurs tailles et SHA-256 concordants ; les fichiers de
+manifeste et de signature sont des fichiers réguliers non vides. La signature
+GPG est vérifiée séparément avec le trust anchor.
 
 Les artefacts temporaires de qualification et de livraison portent le numéro
 de tentative du workflow qui les a produits. Les téléchargements, la preuve

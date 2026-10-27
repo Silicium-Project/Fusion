@@ -1,6 +1,7 @@
 /** Delivery identities are immutable; a digest is never a mutable image tag. */
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { lstatSync, readFileSync, readdirSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { Failure } from './process.mjs';
 const privateSources = Object.freeze({
   api: 'Silicium-Project/BackEnd',
@@ -89,6 +90,8 @@ export function validateManifest(m) {
       const name = typeof asset.name === 'string' ? asset.name : '';
       if (names.has(name)) errors.push('duplicate asset');
       names.add(name);
+      if (name === 'manifest.json' || name === 'manifest.json.asc')
+        errors.push('reserved candidate asset name');
       if (
         !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(name) ||
         !/^[a-f0-9]{64}$/.test(asset.sha256 ?? '') ||
@@ -108,6 +111,40 @@ export function requireManifest(m) {
   const errors = validateManifest(m);
   if (errors.length) throw new Failure(errors.join('\n'), 2);
   return m;
+}
+/** Verify the exact files that will be published or deployed against a signed manifest. */
+export function verifyManifestAssetDirectory(m, directory) {
+  const manifest = requireManifest(m);
+  if (!lstatSync(directory).isDirectory())
+    throw new Failure('Candidate asset path must be a real directory', 2);
+
+  const expectedNames = [
+    ...manifest.assets.map((asset) => asset.name),
+    'manifest.json',
+    'manifest.json.asc',
+  ].sort();
+  const actualNames = readdirSync(directory).sort();
+  if (
+    actualNames.length !== expectedNames.length ||
+    actualNames.some((name, index) => name !== expectedNames[index])
+  )
+    throw new Failure('Candidate asset directory does not match the manifest asset set', 2);
+
+  for (const name of ['manifest.json', 'manifest.json.asc']) {
+    const info = lstatSync(resolve(directory, name));
+    if (!info.isFile() || info.size < 1)
+      throw new Failure(`${name}: candidate signature input must be a non-empty regular file`, 2);
+  }
+  for (const asset of manifest.assets) {
+    const path = resolve(directory, asset.name);
+    const info = lstatSync(path);
+    if (!info.isFile())
+      throw new Failure(`${asset.name}: candidate asset is not a regular file`, 2);
+    const bytes = readFileSync(path);
+    if (bytes.length !== asset.size || sha256(bytes) !== asset.sha256)
+      throw new Failure(`${asset.name}: candidate asset integrity failure`, 2);
+  }
+  return manifest;
 }
 export function packageVersions(version) {
   if (!/^\d+\.\d+\.\d+(?:-dev\.\d+)?$/.test(version)) throw new Failure('Invalid version', 2);
