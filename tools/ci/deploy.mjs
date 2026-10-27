@@ -3,7 +3,7 @@ import { readFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { api, repository } from '../lib/github.mjs';
 import { root, run, readJson, Failure } from '../lib/process.mjs';
-import { requireManifest, sha256 } from '../lib/manifest.mjs';
+import { sha256, verifyManifestAssetDirectory } from '../lib/manifest.mjs';
 import { deploymentSsh } from '../lib/ssh.mjs';
 const dir = resolve(root, '.artifacts/deploy');
 mkdirSync(dir, { recursive: true });
@@ -24,16 +24,13 @@ run([
   resolve(dir, 'manifest.json.asc'),
   resolve(dir, 'manifest.json'),
 ]);
-const m = requireManifest(readJson(resolve(dir, 'manifest.json')));
+const m = verifyManifestAssetDirectory(readJson(resolve(dir, 'manifest.json')), dir);
 if (m.release_id !== rid || m.channel !== channel) throw new Failure('Release/channel mismatch');
 if (m.qualification.repository !== 'Silicium-Project/Integration')
   throw new Failure('Candidate is not bound to private Integration qualification');
 const sourceCompare = api(`repos/${repository}/compare/${m.source_sha}...main`);
 if (!['ahead', 'identical'].includes(sourceCompare.status))
   throw new Failure('Candidate Workbench source is not included in Workbench main');
-for (const a of m.assets)
-  if (sha256(readFileSync(resolve(dir, a.name))) !== a.sha256)
-    throw new Failure('Asset integrity failure');
 const digest = sha256(readFileSync(resolve(dir, 'manifest.json')));
 const env = channel === 'dev' ? 'development' : 'production';
 const deployment = api(`repos/${repository}/deployments`, {
