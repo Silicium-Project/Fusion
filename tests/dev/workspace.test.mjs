@@ -37,10 +37,34 @@ function fixture(t, materialized = false) {
     git(path, 'config', 'user.email', 'fixture@silicium.invalid');
   }
   const config = {
+    $schema: 'https://silicium.network/contracts/workspace/registry/v1',
     schema_version: 1,
+    name: 'Workbench',
     repository: 'Silicium-Project/Workbench',
+    repository_id: 1304063299,
+    owner: 'Silicium-Project',
+    visibility: 'public',
+    default_branch: 'main',
+    legacy_repositories: ['Silicium-Project/Fusion'],
+    mode: 'multi-repo',
+    integration_repository: 'Silicium-Project/Integration',
+    integration: {
+      repository: 'Silicium-Project/Integration',
+      owner: 'Silicium-Project',
+      visibility: 'private',
+      default_branch: 'main',
+      role: 'private cross-repository qualification',
+    },
+    public_suites: ['docs'],
     components: {
-      api: { repository: 'Silicium-Project/BackEnd', path: 'apps/api', visibility: 'private' },
+      api: {
+        repository: 'Silicium-Project/BackEnd',
+        owner: 'Silicium-Project',
+        path: 'apps/api',
+        default_branch: 'main',
+        visibility: 'private',
+        suites: ['api'],
+      },
     },
   };
   writeJson(resolve(source, '.silicium-component.json'), {
@@ -53,6 +77,7 @@ function fixture(t, materialized = false) {
   git(source, 'commit', '--quiet', '-m', 'fixture source');
   const sha = git(source, 'rev-parse', 'HEAD');
   const lock = {
+    $schema: 'https://silicium.network/contracts/workspace/pins/v1',
     schema_version: 1,
     repository: config.repository,
     components: {
@@ -102,6 +127,30 @@ test('workspace pins reject missing components, floating refs, traversal and nes
       c.components.nested = { ...c.components.api, path: 'apps/api/nested' };
       l.components.nested = { ...l.components.api, path: 'apps/api/nested' };
     },
+    (c) => {
+      c.components.api.owner = 'Other-Organization';
+    },
+    (c) => {
+      c.components.api.default_branch = '../main';
+    },
+    (c) => {
+      c.default_branch = '';
+    },
+    (c) => {
+      delete c.$schema;
+    },
+    (c) => {
+      c.repository_id = 0;
+    },
+    (c) => {
+      c.components.api.suites = [];
+    },
+    (c) => {
+      c.integration.repository = 'other/Integration';
+    },
+    (c) => {
+      c.integration.default_branch = '';
+    },
   ]) {
     const c = structuredClone(config),
       l = structuredClone(lock);
@@ -112,7 +161,11 @@ test('workspace pins reject missing components, floating refs, traversal and nes
 
 test('public verification accepts absent private sources but materialized verification blocks', (t) => {
   const { directory } = fixture(t);
-  assert.equal(workspaceStatus({ directory }).status, 'success');
+  const status = workspaceStatus({ directory });
+  assert.equal(status.status, 'success');
+  assert.equal(status.registry.workbench.default_branch, 'main');
+  assert.equal(status.registry.integration.visibility, 'private');
+  assert.equal(status.registry.components.api.default_branch, 'main');
   assert.equal(workspaceStatus({ directory, materialized: true }).status, 'blocked');
   const preview = initializeWorkspace({ directory });
   assert.equal(preview.status, 'planned');

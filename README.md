@@ -57,6 +57,8 @@ applicative exige une qualification privée complète des cinq pins. Une CI
 publique verte ne suffit pas à publier une application. GitHub Free limite la
 CI des dépôts privés ; aucun dépassement facturé ni runner VPS de secours.
 Les publications automatiques restent suspendues pendant cette transition.
+La preuve du `ci/required` courant peut être vérifiée sans jeton avec
+`./dev ci public-evidence --sha SHA --json`.
 
 [Documentation](docs/README.md) · [Contribution](CONTRIBUTING.md) ·
 [Sécurité](Security.md) · [Licence MIT de Workbench](LICENSE) ·

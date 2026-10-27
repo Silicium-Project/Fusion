@@ -15,12 +15,25 @@ politique et utiliser son lanceur `dev`. Sa qualification crée une composition
 temporaire dont les rapports enregistrent le SHA source et celui de la politique.
 Ne jamais pousser ce commit synthétique de qualification.
 
+Pour toute modification du registre ou des pins, lire les schémas
+`contracts/workspace/registry-v1.schema.json` et
+`contracts/workspace/pins-v1.schema.json`. Mettre à jour les schémas versionnés,
+le validateur, les tests et les procédures IA dans la même PR ; conserver la
+cohérence entre propriétaire, dépôt, sous-module et SHA. Ne jamais ajuster les
+pins, la visibilité ou les identités par automatisation.
+
 La CI publique `--scope public` ne qualifie pas les applications. La qualification
 privée `--scope integration` doit couvrir les cinq pins avant livraison. Un
 quota privé épuisé reste un blocage. Lire `deferred_suites` et rapporter toutes
 les validations manquantes. Mettre à jour les deux pins ensemble avec
 `dev workspace pin --component ID --revision SHA --apply`, puis créer une PR
 Workbench liée aux PR natives.
+
+Avant une qualification privée, vérifier aussi que le SHA Workbench exact est
+le `main` courant et que son contrôle public `ci/required` a réussi :
+`./dev ci public-evidence --sha SHA --json`. Le contrôle lit uniquement l'API
+publique, sans jeton ; une preuve absente, ancienne, paginée ou non réussie
+bloque la suite avant toute demande de jeton Source Reader.
 
 ## Implémenter une tranche
 
@@ -74,6 +87,13 @@ workflow) et `job_queue_and_matrix_wait` (création du job jusqu'à sa première
 les métadonnées seules ne prouvent pas sa cause. Pour les artefacts, ne présenter
 `bytes` comme total que si `complete` vaut `true` ; sinon `bytes_observed` n'est
 qu'un sous-total.
+
+Quand un changement touche la politique GitHub ou son vérificateur, lancer
+`dev ci policy --json`. `success` ne couvre que le dépôt public Workbench et
+son ruleset `Protect Main`. `drift` indique les écarts observés ; `blocked`
+signifie que l'API ou ses données étaient incomplètes. Ce contrôle ne prouve
+pas la protection de branche classique, les acteurs de contournement, les
+dépôts privés, le Project ou la chaîne d'artefacts.
 
 Pour un service : préparer `dev ops diagnose --environment dev --json`, puis
 utiliser `--apply` si l'automatisation est configurée et autorisée. Lire

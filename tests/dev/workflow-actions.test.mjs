@@ -34,3 +34,10 @@ test('setup-node never enables an implicit dependency cache', () => {
     }
   }
 });
+
+test('required CI audits public repository policy only for policy-related changes', () => {
+  const ci = readFileSync(resolve(root, '.github/workflows/ci.yml'), 'utf8');
+  assert.match(ci, /policyFiles=.*tools\/config\/repository-policy\.json/);
+  assert.match(ci, /matrix\.suite == 'tooling' && needs\.changes\.outputs\.policy_audit == 'true'/);
+  assert.match(ci, /node tools\/dev\.mjs ci policy --json/);
+});
