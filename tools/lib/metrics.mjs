@@ -4,6 +4,24 @@ import { Failure, run, readJson } from './process.mjs';
 import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
+const MAX_REPORT_BYTES_PER_RUN = 16 * 1024 ** 2;
+export const MAX_REPORT_DOWNLOAD_BYTES = 64 * 1024 ** 2;
+export function fitsReportDownloadBudget(
+  reservedBytes,
+  nextRunBytes,
+  limitBytes = MAX_REPORT_DOWNLOAD_BYTES,
+) {
+  return (
+    Number.isSafeInteger(reservedBytes) &&
+    reservedBytes >= 0 &&
+    Number.isSafeInteger(nextRunBytes) &&
+    nextRunBytes >= 0 &&
+    Number.isSafeInteger(limitBytes) &&
+    limitBytes >= 0 &&
+    reservedBytes <= limitBytes &&
+    nextRunBytes <= limitBytes - reservedBytes
+  );
+}
 export function cacheMetrics(reports) {
   let hits = 0,
     misses = 0,
@@ -47,9 +65,46 @@ function seconds(start, end) {
   const value = (Date.parse(end) - Date.parse(start)) / 1000;
   return Number.isFinite(value) && value >= 0 ? value : null;
 }
+export function collectArtifactPages(fetchPage, { pageSize = 100, maxPages = 100 } = {}) {
+  if (typeof fetchPage !== 'function') throw new Failure('Artifact page reader is required', 2);
+  if (!Number.isInteger(pageSize) || pageSize < 1 || !Number.isInteger(maxPages) || maxPages < 1)
+    throw new Failure('Artifact pagination bounds must be positive integers', 2);
+  const items = [];
+  let total = null,
+    totalsConsistent = true;
+  for (let page = 1; page <= maxPages; page++) {
+    const result = fetchPage(page);
+    if (!result || !Array.isArray(result.artifacts))
+      throw new Failure('Expected GitHub artifact collection', 3);
+    const pageTotal = result.total_count;
+    if (Number.isSafeInteger(pageTotal) && pageTotal >= 0) {
+      if (total === null) total = pageTotal;
+      else if (pageTotal !== total) totalsConsistent = false;
+    } else if (total !== null) totalsConsistent = false;
+    items.push(...result.artifacts);
+    if (total !== null && items.length >= total)
+      return {
+        items,
+        total: totalsConsistent ? total : null,
+        complete: totalsConsistent && items.length === total,
+        pages: page,
+      };
+    if (result.artifacts.length === 0)
+      return {
+        items,
+        total: totalsConsistent ? total : null,
+        complete: total === null && items.length === 0,
+        pages: page,
+      };
+    if (total === null && result.artifacts.length < pageSize)
+      return { items, total: items.length, complete: true, pages: page };
+  }
+  return { items, total: totalsConsistent ? total : null, complete: false, pages: maxPages };
+}
 export function summarizeRuns(rows) {
   const completed = rows.filter((row) => row.run.status === 'completed');
   const durations = [],
+    workflowStartWait = [],
     feedback = [],
     queue = [],
     execution = [];
@@ -57,6 +112,8 @@ export function summarizeRuns(rows) {
     cancelled = 0,
     success = 0;
   for (const { run, jobs } of completed) {
+    const startWait = seconds(run.created_at, run.run_started_at);
+    if (startWait !== null) workflowStartWait.push(startWait);
     if (run.conclusion === 'cancelled') {
       cancelled++;
       continue;
@@ -84,7 +141,7 @@ export function summarizeRuns(rows) {
     }
   }
   return {
-    schema_version: 1,
+    schema_version: 2,
     total_runs: rows.length,
     active_runs: rows.length - completed.length,
     successes: success,
@@ -92,11 +149,14 @@ export function summarizeRuns(rows) {
     cancellations: cancelled,
     failure_ratio: success + failure ? failure / (success + failure) : null,
     workflow: distribution(durations),
+    workflow_start_wait: distribution(workflowStartWait),
     quick_feedback: distribution(feedback),
     job_queue_and_matrix_wait: distribution(queue),
     job_execution: distribution(execution),
     definitions: {
       quick_feedback: 'run creation to last completed quick lane',
+      workflow_start_wait:
+        'workflow run created_at to run_started_at, before jobs are created; missing timestamps are excluded',
       job_queue_and_matrix_wait:
         'job created_at to first executed step; includes queue, matrix throttling and runner provisioning',
       p95: 'nearest rank; always report sample count',
@@ -121,29 +181,60 @@ export function inspectMetrics(limit = 20) {
     jobs: api(`repos/${repository}/actions/runs/${run.id}/jobs?per_page=100`).jobs,
   }));
   const summary = summarizeRuns(rows);
-  summary.artifacts = api(`repos/${repository}/actions/artifacts?per_page=100`);
-  const artifacts = summary.artifacts.artifacts;
+  const artifacts = collectArtifactPages((page) =>
+    api(`repos/${repository}/actions/artifacts?per_page=100&page=${page}`),
+  );
+  const artifactBytes = artifacts.items
+    .filter((artifact) => !artifact.expired)
+    .reduce((sum, artifact) => sum + artifact.size_in_bytes, 0);
   summary.artifacts = {
-    observed: artifacts.length,
-    total: summary.artifacts.total_count,
-    bytes: artifacts.filter((a) => !a.expired).reduce((n, a) => n + a.size_in_bytes, 0),
-    complete: summary.artifacts.total_count <= 100,
+    observed: artifacts.items.length,
+    total: artifacts.total,
+    bytes: artifacts.complete ? artifactBytes : null,
+    bytes_observed: artifactBytes,
+    complete: artifacts.complete,
+    pages: artifacts.pages,
     scope: repository,
   };
   const temp = mkdtempSync(resolve(tmpdir(), 'silicium-ci-metrics-'));
   const reports = [];
-  let unavailable = 0;
+  let unavailable = 0,
+    oversized = 0,
+    reportBytesReserved = 0,
+    reportRunsDownloaded = 0,
+    runsSkippedForBudget = 0;
   try {
-    for (const { run: record } of rows.filter((row) => row.run.status === 'completed')) {
-      const available = api(
-        `repos/${repository}/actions/runs/${record.id}/artifacts?per_page=100`,
-      ).artifacts.filter((a) => a.name.startsWith('report-') && !a.expired);
-      if (!available.length) {
+    const completedRuns = rows.filter((row) => row.run.status === 'completed');
+    for (let index = 0; index < completedRuns.length; index++) {
+      const { run: record } = completedRuns[index];
+      const available = collectArtifactPages((page) =>
+        api(`repos/${repository}/actions/runs/${record.id}/artifacts?per_page=100&page=${page}`),
+      );
+      const reportArtifacts = available.items.filter(
+        (artifact) => artifact.name.startsWith('report-') && !artifact.expired,
+      );
+      if (!available.complete || !reportArtifacts.length) {
         unavailable++;
         continue;
       }
-      if (available.reduce((sum, a) => sum + a.size_in_bytes, 0) > 16 * 1024 ** 2)
-        throw new Failure('Metric reports exceed their bounded download size', 4);
+      const runBytes = reportArtifacts.reduce((sum, artifact) => {
+        if (!Number.isSafeInteger(artifact.size_in_bytes) || artifact.size_in_bytes < 0)
+          throw new Failure('Metric report artifact has an invalid size', 4);
+        const total = sum + artifact.size_in_bytes;
+        if (!Number.isSafeInteger(total))
+          throw new Failure('Metric report artifacts have an invalid total size', 4);
+        return total;
+      }, 0);
+      if (runBytes > MAX_REPORT_BYTES_PER_RUN) {
+        unavailable++;
+        oversized++;
+        continue;
+      }
+      if (!fitsReportDownloadBudget(reportBytesReserved, runBytes)) {
+        runsSkippedForBudget = completedRuns.length - index;
+        break;
+      }
+      reportBytesReserved += runBytes;
       const folder = resolve(temp, String(record.id));
       const result = run(
         [
@@ -164,12 +255,21 @@ export function inspectMetrics(limit = 20) {
         unavailable++;
         continue;
       }
+      reportRunsDownloaded++;
       for (const file of readdirSync(folder, { recursive: true }).filter((file) =>
         file.endsWith('.json'),
       ))
         reports.push(readJson(resolve(folder, file)));
     }
-    summary.caches = { ...cacheMetrics(reports), runs_without_report_evidence: unavailable };
+    summary.caches = {
+      ...cacheMetrics(reports),
+      runs_without_report_evidence: unavailable,
+      report_runs_downloaded: reportRunsDownloaded,
+      report_bytes_reserved: reportBytesReserved,
+      report_download_limit_bytes: MAX_REPORT_DOWNLOAD_BYTES,
+      oversized_report_runs: oversized,
+      runs_skipped_for_download_budget: runsSkippedForBudget,
+    };
   } finally {
     rmSync(temp, { recursive: true, force: true });
   }
