@@ -33,17 +33,21 @@ test('private budget proof requires the actual protected organization check', ()
   const proof = requireBudgetProof(record, jobs, record.head_sha, now);
   assert.equal(proof.run_id, 1);
   assert.equal(proof.incoming_bytes_reserved, organizationArtifactReservation);
-  assert.equal(organizationArtifactReservation, 232 * 1024 ** 2);
+  assert.equal(organizationArtifactReservation, 392 * 1024 ** 2);
   const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
-  assert.ok(workflow.includes("SILICIUM_INCOMING_BYTES: '243269632'"));
+  assert.ok(workflow.includes("SILICIUM_INCOMING_BYTES: '411041792'"));
   const privateArtifacts =
     203 * 1024 ** 2 + // qualified binary archive envelope
     16 * 1024 ** 2 + // private qualification plan and reports
     1 * 1024 ** 2 + // private evidence receipt
     1 * 1024 ** 2; // candidate identity metadata
   const publicBudgetRunArtifacts = 1 * 1024 ** 2 + 4 * 1024 ** 2; // plan + four public suites
+  const boundedCandidateInstallers = 120 * 1024 ** 2 + 40 * 1024 ** 2; // Linux + Windows
   assert.equal(
-    organizationArtifactReservation - privateArtifacts - publicBudgetRunArtifacts,
+    organizationArtifactReservation -
+      privateArtifacts -
+      publicBudgetRunArtifacts -
+      boundedCandidateInstallers,
     6 * 1024 ** 2,
   );
   for (const changes of [

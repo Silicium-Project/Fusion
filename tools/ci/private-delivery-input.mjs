@@ -154,7 +154,9 @@ async function main() {
   if (process.env.GITHUB_OUTPUT) {
     appendFileSync(
       process.env.GITHUB_OUTPUT,
-      `source_sha=${workbenchSha}\nqualification_run=${runId}\nqualification_attempt=${attempt}\n`,
+      `source_sha=${workbenchSha}\nintegration_sha=${result.qualification.integration_sha}\n` +
+        `policy_workflow_sha=${result.qualification.policy_workflow_sha}\n` +
+        `policy_digest=${result.policy_digest}\nqualification_run=${runId}\nqualification_attempt=${attempt}\n`,
     );
   }
   console.log(

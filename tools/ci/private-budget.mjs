@@ -4,10 +4,10 @@ import { resolve } from 'node:path';
 import { api, repository, canonicalRepository } from '../lib/github.mjs';
 import { Failure, git } from '../lib/process.mjs';
 
-// Reserve for private delivery artifacts plus the public Workbench budget run
-// itself. The budget query runs before this workflow uploads its bounded plan
-// and public-suite reports, so omitting those would create a time-of-check gap.
-export const organizationArtifactReservation = 232 * 1024 ** 2;
+// Reserve for qualification artifacts, bounded Linux/Windows installer
+// candidates, and the public Workbench budget run itself. The query runs before
+// this workflow uploads its bounded plan and public-suite reports.
+export const organizationArtifactReservation = 392 * 1024 ** 2;
 
 export function requireBudgetProof(record, jobs, expectedSourceSha, now = Date.now()) {
   const budget = jobs.find((job) => job.name === 'budget');

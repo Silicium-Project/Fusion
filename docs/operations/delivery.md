@@ -39,13 +39,21 @@ opérationnelle après la séparation de Workbench et des cinq dépôts privés.
   digests et tailles avec la politique Workbench, puis matérialise les cinq
   pins avec le Source Reader. Il n'est pas fusionné, son verrou
   `SILICIUM_DELIVERY_PREFLIGHT_ENABLED` est absent et aucun run n'a été lancé.
+- Son brouillon contient aussi des jobs Linux et Windows qui revalident
+  l'identité candidate, consomment seulement les sorties qualifiées utiles et
+  construisent des installateurs non signés. Ils sont fermés par défaut par
+  `SILICIUM_CANDIDATE_BUILD_ENABLED`, bornés à 120/40 Mio et retenus un jour.
+  Ils ne signent, publient ou déploient rien ; ils ne sont pas encore fusionnés
+  ni exécutés. Le nouveau validateur Workbench doit d'abord être intégré à
+  `main` avec la PR #332.
 - Les scripts `prepare-private` et de staging lient un candidat aux IDs/digests
-  de la qualification, au SHA Workbench et aux cinq pins. Le flux complet de
-  construction, signature des dépôts, validation d'installation et publication
-  reste à raccorder dans Integration ; aucun candidat n'est livré.
+  de la qualification, au SHA Workbench et aux cinq pins. La signature des
+  dépôts, la validation complète d'installation, la publication immuable et le
+  déploiement restent à raccorder dans Integration ; aucun candidat n'est livré.
 - `SILICIUM_DELIVERY_ENABLED=0` dans Workbench et son marqueur de contrat est
   absent. Dans Integration, `SILICIUM_INTEGRATION_ENABLED`,
-  `SILICIUM_DELIVERY_PREFLIGHT_ENABLED` et le marqueur de contrat sont absents.
+  `SILICIUM_DELIVERY_PREFLIGHT_ENABLED`, `SILICIUM_CANDIDATE_BUILD_ENABLED` et
+  le marqueur de contrat sont absents.
   Aucun run privé, préflight, déploiement dev ou déploiement prod n'est
   autorisé par cet état. Le budget privé Actions était épuisé lors de la
   vérification du 26 octobre ; il faut vérifier le solde avant tout run, sans
@@ -53,6 +61,8 @@ opérationnelle après la séparation de Workbench et des cinq dépôts privés.
 - L'App Source Reader est installée uniquement sur les cinq dépôts privés et ses
   deux secrets chiffrés existent dans Integration. Elle garde `contents: read`
   seulement ; elle ne télécharge pas les artefacts et ne publie rien.
+- Aucun App Publisher n'est installé. Le Source Reader ne doit pas recevoir de
+  permissions d'écriture pour le remplacer.
 - Le marqueur `SILICIUM_DELIVERY_CONTRACT=private-integration-v1` n'est pas
   configuré. Le CLI et les jobs GitHub exigent à la fois ce marqueur et le
   drapeau d'activation ; leur absence bloque aujourd'hui le dispatch. Ces deux
