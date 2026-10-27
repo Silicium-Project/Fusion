@@ -121,6 +121,21 @@ préparation ; les Actions des anciens composants restent suspendues jusqu'à
 l'intégration de leurs nouveaux workflows et la disponibilité du quota privé.
 Un workflow suspendu ou ignoré ne constitue jamais une qualification.
 
+Dans le changement CI-01 en cours, `DesktopApp` sépare le flag de validation
+`SILICIUM_COMPONENT_CI_ENABLED` du contrôle externe
+`SILICIUM_MIRROR_ENABLED`, configuré à `0`. Activer les validations ne doit
+jamais activer un push vers le dépôt Epitech. Le workflow du miroir ne reçoit
+que `MIRROR_SSH_KEY`, sérialise les mises à jour et s'exécute sur un runner
+GitHub borné dans le temps. Cette séparation ne sera effective qu'après la
+fusion et la qualification des PR concernées.
+
+Le changement proposé pour Network borne aussi sa concurrence : jusqu'à deux
+jobs CodeQL et deux jobs Rust au premier stade, puis un job Solana et jusqu'à
+trois tests parallèles. Le test Docker optionnel attend la fin des tests
+principaux. Les jobs ont des limites de temps explicites ; ne pas augmenter
+ces limites ou le parallélisme pour masquer une suite lente. Ce plafond n'est
+pas actif sur `main` avant fusion et qualification.
+
 Avant un lancement privé, exécuter le workflow CI de Workbench sur `main` et
 attendre sa réussite. Integration vérifie automatiquement, avant de demander
 le jeton Source Reader, que `main` porte encore le SHA retenu et que son unique

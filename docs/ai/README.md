@@ -132,6 +132,13 @@ ne doivent pas être décrites comme équivalentes aux protections publiques.
 Les preuves d’acceptation inter-dépôts et le transport privé des artefacts
 restent à qualifier ; ne pas accepter une fonctionnalité sur le seul gate public.
 
+Le changement CI-01 en cours introduit dans `DesktopApp` un flag de validation
+`SILICIUM_COMPONENT_CI_ENABLED` séparé de `SILICIUM_MIRROR_ENABLED`. Ne change
+pas ce dernier en activant ou diagnostiquant la CI : il autorise une écriture
+dans le dépôt Epitech et reste à `0` sans demande explicite de publication du
+miroir. Tant que la PR n'est pas fusionnée et qualifiée, ne présente pas ce
+contrôle comme actif sur `main`.
+
 ## Publier et déployer
 
 Lire [le runbook](../operations/delivery.md). Utiliser un SHA exact, le canal
