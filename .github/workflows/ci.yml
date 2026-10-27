@@ -167,10 +167,11 @@ jobs:
         cache-on-failure: 'false'
         cache-targets: ${{ matrix.suite != 'solana' }}
       id: rust-cache
-    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+    - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
       with:
         name: qualification-plan-${{ github.run_attempt }}
         path: .artifacts
+        digest-mismatch: error
     - name: Prepare runner
       shell: bash
       run: node tools/ci/bootstrap.mjs "${{ matrix.suite }}"
@@ -273,15 +274,17 @@ jobs:
     - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
       with:
         node-version: 22.23.4
-    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+    - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
       with:
         name: qualification-plan-${{ github.run_attempt }}
         path: .artifacts
-    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        digest-mismatch: error
+    - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
       with:
         pattern: report-*-${{ github.run_attempt }}
         path: .artifacts/reports
         merge-multiple: 'true'
+        digest-mismatch: error
     - name: Require every planned execution
       env:
         PLANNER_RESULT: ${{ needs.changes.result }}

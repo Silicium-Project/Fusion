@@ -128,10 +128,11 @@ jobs:
       if: ${{ matrix.suite == 'network-integration' }}
       with:
         python-version: 3.11.17
-    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+    - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
       with:
         name: qualification-plan
         path: workspace/.artifacts
+        digest-mismatch: error
     - name: Prepare runner
       working-directory: workspace
       run: node tools/ci/bootstrap.mjs "${{ matrix.suite }}"
@@ -168,15 +169,17 @@ jobs:
         test "$EXECUTION_RESULT" = success'
     - *id001
     - *id002
-    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+    - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
       with:
         name: qualification-plan
         path: reports
-    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        digest-mismatch: error
+    - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
       with:
         pattern: report-*
         path: reports/results
         merge-multiple: true
+        digest-mismatch: error
     - env:
         COMPOSITION_SHA: ${{ needs.plan.outputs.source_sha }}
       run: node policy/tools/dev.mjs ci gate --plan reports/plan.json --reports reports/results --sha "$COMPOSITION_SHA"

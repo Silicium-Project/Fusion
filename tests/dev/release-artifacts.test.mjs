@@ -32,7 +32,7 @@ test('artifact naming rejects invalid attempts and names', () => {
   assert.throws(() => releaseArtifactName('../candidate', 1), /artifact name/);
 });
 
-test('CI and release workflows name artifacts with their producing attempt', () => {
+test('the bridge pins receipt and private outputs to the producing Integration attempt', () => {
   const ci = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
   const release = readFileSync(
     new URL('../../.github/workflows/release.yml', import.meta.url),
@@ -46,7 +46,15 @@ test('CI and release workflows name artifacts with their producing attempt', () 
       ci.includes('name: ' + base + '-${{ github.run_attempt }}'),
       `${base} attempt suffix`,
     );
-  assert.match(release, /name: candidate-input-\$\{\{ github\.run_attempt \}\}/);
-  assert.match(release, /name: candidate-images-\$\{\{ github\.run_attempt \}\}/);
-  assert.match(release, /pattern: installers-\*-\$\{\{ github\.run_attempt \}\}/);
+  assert.match(
+    release,
+    /name: private-integration-evidence-\$\{\{ inputs\.qualification_attempt \}\}/,
+  );
+  for (const base of ['delivery-api', 'delivery-web', 'delivery-network', 'delivery-node-ui'])
+    assert.ok(
+      release.includes('name: ' + base + '-${{ inputs.qualification_attempt }}'),
+      `${base} attempt suffix`,
+    );
+  assert.equal((release.match(/digest-mismatch: error/g) ?? []).length, 5);
+  assert.doesNotMatch(release, /actions\/upload-artifact@/);
 });

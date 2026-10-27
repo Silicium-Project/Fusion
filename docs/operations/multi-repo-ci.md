@@ -85,8 +85,17 @@ Le vérificateur de Workbench exige les quatre noms exacts, enregistre leurs
 identifiants GitHub, digests SHA-256 et tailles dans le reçu privé ; le nom
 du reçu inclut lui aussi le numéro de tentative. Il rejette
 un artefact manquant, expiré, dupliqué ou hors budget. Le reçu ne contient pas
-les binaires ; ceux-ci restent dans Integration une journée. Aucun transfert
-vers Workbench ni publication n'est encore implémenté.
+les binaires ; ceux-ci restent dans Integration une journée.
+
+Le workflow Workbench `release.yml` fournit maintenant le premier raccordement
+de réception : il télécharge le reçu et les quatre artefacts de l'exécution
+Integration explicitement indiquée, utilise une App limitée à `Actions: read`
+sur Integration, puis exige l'égalité des IDs, digests et tailles du reçu et
+de l'API GitHub. Chaque extraction impose `digest-mismatch: error` et une
+seconde limite vérifie la taille décompressée. Les fichiers ne sont ni versés
+dans un artefact Workbench public ni conservés après la fin du runner. Le
+workflow reste bloqué par défaut et n'a pas encore été exécuté ; il ne crée
+pas encore de candidat, de signature ou de publication.
 
 Le budget Actions de l'organisation doit rester à zéro avec blocage du
 dépassement. Les runners standards des dépôts privés consomment le quota

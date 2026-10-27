@@ -1,313 +1,114 @@
-name: Release
+name: Verify private delivery inputs
 'on':
-  workflow_run:
-    workflows:
-    - CI
-    types:
-    - completed
-    branches:
-    - main
   workflow_dispatch:
     inputs:
       qualification_run:
+        description: Exact successful Integration workflow run ID
         required: true
         type: string
-      channel:
-        type: choice
-        options:
-        - dev
-        - prod
-        default: dev
+      qualification_attempt:
+        description: Exact Integration workflow run attempt
         required: true
-      version:
         type: string
-        required: false
+      workbench_sha:
+        description: Exact Workbench commit qualified by Integration
+        required: true
+        type: string
 permissions:
+  actions: read
   contents: read
 concurrency:
-  group: silicium-main-delivery
+  group: silicium-private-input-${{ inputs.qualification_run }}-${{ inputs.qualification_attempt }}
   cancel-in-progress: false
 jobs:
-  prepare:
-    if: ${{ github.event.repository.private && github.repository == 'Silicium-Project/Integration' && vars.SILICIUM_DELIVERY_ENABLED == '1' && vars.SILICIUM_DELIVERY_CONTRACT == 'private-integration-v1' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion
-      == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main')) }}
+  verify:
+    name: delivery/private-inputs
+    if: ${{ github.repository == 'Silicium-Project/Workbench' && github.ref == 'refs/heads/main' && vars.SILICIUM_DELIVERY_ENABLED == '1' && vars.SILICIUM_DELIVERY_CONTRACT == 'private-integration-v1' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    outputs:
-      source_sha: ${{ steps.candidate.outputs.source_sha }}
-      release_id: ${{ steps.candidate.outputs.release_id }}
-      version: ${{ steps.candidate.outputs.version }}
-      channel: ${{ steps.candidate.outputs.channel }}
-      node_changed: ${{ steps.candidate.outputs.node_changed }}
-      qualification_attempt: ${{ steps.candidate.outputs.qualification_attempt }}
-    steps:
-    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      with:
-        ref: main
-        fetch-depth: 1
-        persist-credentials: false
-    - &id001
-      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-      with:
-        node-version: 22.23.4
-    - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
-      id: budget-token
-      with:
-        client-id: ${{ secrets.PROJECT_APP_CLIENT_ID }}
-        private-key: ${{ secrets.PROJECT_APP_PRIVATE_KEY }}
-        owner: Silicium-Project
-        permission-actions: read
-    - name: Reserve signing/package artifact headroom
-      env:
-        GH_TOKEN: ${{ steps.budget-token.outputs.token }}
-        SILICIUM_BUDGET_INSTALLATION_ID: ${{ steps.budget-token.outputs.installation-id }}
-        SILICIUM_BUDGET_APP_CLIENT_ID: ${{ secrets.PROJECT_APP_CLIENT_ID }}
-        SILICIUM_BUDGET_APP_PRIVATE_KEY: ${{ secrets.PROJECT_APP_PRIVATE_KEY }}
-        SILICIUM_INCOMING_BYTES: '201326592'
-      run: node tools/ci/storage-budget.mjs
-    - id: qualification
-      env:
-        GH_TOKEN: ${{ github.token }}
-        QUALIFICATION_RUN: ${{ inputs.qualification_run || github.event.workflow_run.id }}
-      run: node tools/ci/check-github-run.mjs
-    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      with:
-        ref: ${{ steps.qualification.outputs.source_sha }}
-        fetch-depth: 0
-        persist-credentials: false
-    - id: candidate
-      env:
-        GH_TOKEN: ${{ github.token }}
-        QUALIFICATION_RUN: ${{ inputs.qualification_run || github.event.workflow_run.id }}
-        RELEASE_CHANNEL: ${{ inputs.channel || 'dev' }}
-        RELEASE_VERSION: ${{ inputs.version }}
-      run: node tools/ci/candidate.mjs prepare
-    - name: Retain permanent qualification evidence
-      env:
-        GH_TOKEN: ${{ github.token }}
-        QUALIFICATION_RUN: ${{ inputs.qualification_run || github.event.workflow_run.id }}
-      run: 'node tools/ci/qualification-evidence.mjs
-
-        node tools/ci/artifact-size.mjs .artifacts/publish/qualification.json 1048576
-
-        '
-    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-      with:
-        name: candidate-input-${{ github.run_attempt }}
-        path: '.artifacts/candidate
-
-          .artifacts/publish'
-        include-hidden-files: true
-        if-no-files-found: error
-        retention-days: 1
-    permissions:
-      contents: read
-      actions: read
+    timeout-minutes: 15
     environment: project-automation
-  images:
-    needs:
-    - prepare
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    permissions:
-      contents: read
-      actions: read
-      packages: write
+    outputs:
+      source_sha: ${{ steps.verify.outputs.source_sha }}
+      qualification_run: ${{ steps.verify.outputs.qualification_run }}
+      qualification_attempt: ${{ steps.verify.outputs.qualification_attempt }}
     steps:
-    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      with:
-        ref: ${{ needs.prepare.outputs.source_sha }}
-        fetch-depth: 1
-        persist-credentials: false
-    - *id001
-    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-      with:
-        name: candidate-input-${{ github.run_attempt }}
-        path: .artifacts
-    - name: Download qualifying outputs only
-      env:
-        GH_TOKEN: ${{ github.token }}
-        CI_RUN: ${{ inputs.qualification_run || github.event.workflow_run.id }}
-      run: node tools/ci/download-qualified.mjs
-    - name: Login to public GHCR
-      env:
-        GH_TOKEN: ${{ github.token }}
-      run: printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-    - run: node tools/ci/candidate.mjs images
-    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-      with:
-        name: candidate-images-${{ github.run_attempt }}
-        path: .artifacts/candidate/components.json
-        include-hidden-files: true
-        retention-days: 1
-        if-no-files-found: error
-  desktop:
-    needs:
-    - prepare
-    if: ${{ needs.prepare.outputs.node_changed == 'true' }}
-    strategy:
-      max-parallel: 2
-      fail-fast: false
-      matrix:
-        include:
-        - os: ubuntu-22.04
-          suite: node-native
-        - os: windows-2022
-          suite: node-windows
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
-    env:
-      RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
-      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
-      SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
-      CARGO_BUILD_JOBS: '4'
-      RUSTUP_TOOLCHAIN: 1.98.0
-    steps:
-    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      with:
-        ref: ${{ needs.prepare.outputs.source_sha }}
-        fetch-depth: 0
-        persist-credentials: false
-    - *id001
-    - run: node tools/ci/bootstrap.mjs "${{ matrix.suite }}"
-    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-      with:
-        name: node-ui-output-${{ needs.prepare.outputs.qualification_attempt }}
-        path: apps/node/dist
-        run-id: ${{ inputs.qualification_run || github.event.workflow_run.id }}
-        github-token: ${{ github.token }}
-    - run: node tools/ci/desktop-package.mjs
-    - name: Check installer size reservation
-      shell: bash
-      run: node tools/ci/artifact-size.mjs .artifacts/installers 167772160
-    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-      with:
-        name: ${{ runner.os == 'Windows' && 'unsigned-Windows' || 'installers-Linux' }}-${{ github.run_attempt }}
-        path: .artifacts/installers
-        include-hidden-files: true
-        if-no-files-found: error
-        retention-days: 1
-    permissions:
-      contents: read
-      actions: read
-  publish:
-    needs:
-    - prepare
-    - images
-    - desktop
-    - windows-sign
-    if: ${{ always() && needs.prepare.result == 'success' && needs.images.result == 'success' && ((needs.prepare.outputs.node_changed == 'true'
-      && needs.desktop.result == 'success' && needs.windows-sign.result == 'success') || (needs.prepare.outputs.node_changed == 'false' && needs.desktop.result
-      == 'skipped' && needs.windows-sign.result == 'skipped')) }}
-    environment: ${{ needs.prepare.outputs.channel == 'dev' && 'signing-development' || 'signing-production' }}
-    permissions:
-      contents: write
-      actions: write
-      id-token: write
-      attestations: write
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    env:
-      RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
-      GH_TOKEN: ${{ github.token }}
-    steps:
-    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      with:
-        ref: main
-        fetch-depth: 1
-        persist-credentials: false
-    - *id001
-    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-      with:
-        name: candidate-input-${{ github.run_attempt }}
-        path: .artifacts
-    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-      with:
-        name: candidate-images-${{ github.run_attempt }}
-        path: .artifacts/candidate
-    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-      if: ${{ needs.prepare.outputs.node_changed == 'true' }}
-      with:
-        pattern: installers-*-${{ github.run_attempt }}
-        path: .artifacts/installers
-        merge-multiple: true
-    - name: Prepare signing tools
-      run: 'sudo apt-get update
-
-        sudo apt-get install -y --no-install-recommends dpkg-dev apt-utils rpm createrepo-c gnupg'
-    - name: Build signed APT/DNF snapshots
-      if: ${{ needs.prepare.outputs.node_changed == 'true' }}
-      env:
-        APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
-        RPM_SIGNING_KEY: ${{ secrets.RPM_SIGNING_KEY }}
-        APT_SIGNING_FINGERPRINT: ${{ vars.APT_SIGNING_FINGERPRINT }}
-        RPM_SIGNING_FINGERPRINT: ${{ vars.RPM_SIGNING_FINGERPRINT }}
-        DOWNLOAD_BASE_URL: ${{ vars.DOWNLOAD_BASE_URL }}
-        UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
-      run: python3 tools/ci/package-repositories.py
-    - name: Qualify package installations
-      if: ${{ needs.prepare.outputs.node_changed == 'true' }}
-      run: bash tools/ci/installation-checks.sh
-    - name: Assemble deployment payload and manifest
-      id: manifest
-      run: 'mkdir -p .artifacts/publish
-
-        tar -czf .artifacts/publish/deployment.tar.gz infra/compose infra/release
-
-        node tools/ci/candidate.mjs manifest'
-    - name: Sign final manifest
-      env:
-        RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
-        RELEASE_SIGNING_FINGERPRINT: ${{ vars.RELEASE_SIGNING_FINGERPRINT }}
-      run: python3 tools/ci/sign-release.py
-    - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
-      with:
-        subject-path: .artifacts/publish/*
-    - name: Publish immutable release and request delivery
-      run: node tools/ci/candidate.mjs publish
-    - name: Delete temporary artifacts after durable publication
-      run: node tools/ci/cleanup-transferred.mjs
-  windows-sign:
-    needs:
-    - prepare
-    - desktop
-    if: ${{ needs.prepare.outputs.node_changed == 'true' }}
-    runs-on: windows-2022
-    timeout-minutes: 10
-    environment: ${{ needs.prepare.outputs.channel == 'dev' && 'windows-signing-development' || 'windows-signing-production' }}
-    permissions:
-      contents: read
-    steps:
-    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      with:
-        ref: main
-        persist-credentials: false
-    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-      with:
-        node-version: 22.23.4
-    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-      with:
-        name: unsigned-Windows-${{ github.run_attempt }}
-        path: .artifacts/installers
-    - name: Sign verified Windows installer
-      shell: pwsh
-      env:
-        WINDOWS_CERTIFICATE_BASE64: ${{ secrets.SILICIUM_WINDOWS_CERTIFICATE_BASE64 }}
-        WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.SILICIUM_WINDOWS_CERTIFICATE_PASSWORD }}
-        WINDOWS_SIGNING_THUMBPRINT: ${{ vars.WINDOWS_SIGNING_THUMBPRINT }}
-      run: ./tools/ci/sign-windows.ps1
-    - name: Verify signed installation
-      shell: pwsh
-      env:
-        RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
-      run: ./tools/ci/windows-install.ps1
-    - name: Check installer size reservation
-      shell: bash
-      run: node tools/ci/artifact-size.mjs .artifacts/installers 16777216
-    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-      with:
-        name: installers-Windows-${{ github.run_attempt }}
-        path: .artifacts/installers
-        include-hidden-files: true
-        retention-days: 1
-        if-no-files-found: error
+      - name: Check the exact dispatched identities
+        env:
+          QUALIFICATION_RUN_ID: ${{ inputs.qualification_run }}
+          QUALIFICATION_ATTEMPT: ${{ inputs.qualification_attempt }}
+          WORKBENCH_SHA: ${{ inputs.workbench_sha }}
+        run: |
+          [[ "$QUALIFICATION_RUN_ID" =~ ^[1-9][0-9]{0,18}$ ]]
+          [[ "$QUALIFICATION_ATTEMPT" =~ ^[1-9][0-9]{0,6}$ ]]
+          [[ "$WORKBENCH_SHA" =~ ^[a-f0-9]{40}$ ]]
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.23.4
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
+        id: integration-reader
+        with:
+          client-id: ${{ secrets.INTEGRATION_ARTIFACT_READER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.INTEGRATION_ARTIFACT_READER_APP_PRIVATE_KEY }}
+          owner: Silicium-Project
+          repositories: Integration
+          permission-actions: read
+      - name: Download exact private receipt
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
+        with:
+          name: private-integration-evidence-${{ inputs.qualification_attempt }}
+          path: .artifacts/private-integration/receipt
+          repository: Silicium-Project/Integration
+          run-id: ${{ inputs.qualification_run }}
+          github-token: ${{ steps.integration-reader.outputs.token }}
+          digest-mismatch: error
+      - name: Download exact private API output
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
+        with:
+          name: delivery-api-${{ inputs.qualification_attempt }}
+          path: .artifacts/private-integration/api
+          repository: Silicium-Project/Integration
+          run-id: ${{ inputs.qualification_run }}
+          github-token: ${{ steps.integration-reader.outputs.token }}
+          digest-mismatch: error
+      - name: Download exact private web output
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
+        with:
+          name: delivery-web-${{ inputs.qualification_attempt }}
+          path: .artifacts/private-integration/web
+          repository: Silicium-Project/Integration
+          run-id: ${{ inputs.qualification_run }}
+          github-token: ${{ steps.integration-reader.outputs.token }}
+          digest-mismatch: error
+      - name: Download exact private network output
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
+        with:
+          name: delivery-network-${{ inputs.qualification_attempt }}
+          path: .artifacts/private-integration/network
+          repository: Silicium-Project/Integration
+          run-id: ${{ inputs.qualification_run }}
+          github-token: ${{ steps.integration-reader.outputs.token }}
+          digest-mismatch: error
+      - name: Download exact private desktop UI output
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
+        with:
+          name: delivery-node-ui-${{ inputs.qualification_attempt }}
+          path: .artifacts/private-integration/node-ui
+          repository: Silicium-Project/Integration
+          run-id: ${{ inputs.qualification_run }}
+          github-token: ${{ steps.integration-reader.outputs.token }}
+          digest-mismatch: error
+      - name: Verify run, receipt, exact pins, artifact digests, and extracted bounds
+        id: verify
+        env:
+          QUALIFICATION_RUN_ID: ${{ inputs.qualification_run }}
+          QUALIFICATION_ATTEMPT: ${{ inputs.qualification_attempt }}
+          WORKBENCH_SHA: ${{ inputs.workbench_sha }}
+          INTEGRATION_GH_TOKEN: ${{ steps.integration-reader.outputs.token }}
+          WORKBENCH_GH_TOKEN: ${{ github.token }}
+          PRIVATE_DELIVERY_ARTIFACT_ROOT: .artifacts/private-integration
+        run: node tools/ci/private-delivery-input.mjs

@@ -26,28 +26,39 @@ La chaîne décrite ci-dessous est la **cible** ; elle n'est pas encore
 opérationnelle après la séparation de Workbench et des cinq dépôts privés.
 
 - `Integration` dispose d'une qualification privée manuelle. La PR Integration
-  #4 propose aussi des artefacts de compilation bornés et un appel au vérificateur
-  Workbench ; elle est encore en brouillon et aucun run n'a été effectué. Elle
-  ne construit pas encore un paquet candidat, ne transfère rien vers Workbench,
-  et n'appelle pas la livraison.
-- `Workbench/.github/workflows/release.yml` écoute les fins du workflow `CI`
-  de Workbench, puis exige dans son job `prepare` que le run appartienne au
-  dépôt privé `Integration`. Un run public Workbench ne peut donc pas satisfaire
-  cette condition. Le run 40359464116 a terminé `skipped` ; ce n'est pas une
-  qualification ni une release.
-- Le script de candidat actuel vérifie les runs et les artefacts dans
-  `Silicium-Project/Workbench`. Il ne consomme pas encore la preuve privée
-  `integration/required` ni ses cinq pins.
-- `SILICIUM_DELIVERY_ENABLED` est à `0` dans Workbench et
-  `SILICIUM_INTEGRATION_ENABLED` n'est pas activé dans Integration. Aucun
-  déploiement dev ou prod n'est autorisé par cet état. Le budget privé Actions
-  avait été épuisé lors de la dernière vérification du 26 octobre ; il doit être
-  vérifié de nouveau avant tout run, sans dépassement facturé ni runner VPS.
+  #4 propose les quatre artefacts de compilation bornés et l'appel au vérificateur
+  Workbench ; elle reste en brouillon et aucun run privé n'a été effectué.
+- `Workbench/.github/workflows/release.yml` a été remplacé par une réception
+  manuelle verrouillée : elle demande le run, la tentative et le SHA Workbench,
+  télécharge les sorties privées depuis Integration avec un lecteur `Actions:
+  read`, vérifie le reçu et les digests, puis efface ces fichiers avec le runner.
+  Le code n'envoie pas les binaires vers les artefacts publics de Workbench.
+  Le workflow reste désactivé et n'a pas été exécuté ; aucune livraison ne
+  démarre après cette vérification.
+- Les scripts de candidat existants vérifient encore des runs et artefacts dans
+  `Silicium-Project/Workbench`. Ils ne consomment pas encore la preuve privée
+  `integration/required` ni ses cinq pins ; le nouveau pont de réception ne
+  construit pas encore de candidat.
+- `SILICIUM_DELIVERY_ENABLED` n'est pas configuré dans Workbench ; le verrou
+  manque donc et aucun transfert ne démarre. Dans Integration,
+  `SILICIUM_DELIVERY_ENABLED` est à `0` et `SILICIUM_INTEGRATION_ENABLED` n'est
+  pas configuré. Aucun run privé, déploiement dev ou déploiement prod n'est
+  autorisé par cet état. Le budget privé Actions était épuisé lors de la
+  vérification du 26 octobre ; il faut vérifier le solde avant tout run, sans
+  dépassement facturé ni runner VPS.
+- La réception privée requiert l'App décrite dans
+  `tools/config/integration-artifact-reader-app-manifest.json`, installée
+  uniquement sur Integration avec `Actions: read`. Ses clés doivent être
+  enregistrées dans les secrets de l'environnement Workbench
+  `project-automation` sous `INTEGRATION_ARTIFACT_READER_APP_CLIENT_ID` et
+  `INTEGRATION_ARTIFACT_READER_APP_PRIVATE_KEY`. L'App et ces secrets ne sont
+  pas encore configurés ; l'App Source Reader ne doit pas être élargie.
 - Le marqueur `SILICIUM_DELIVERY_CONTRACT=private-integration-v1` n'est pas
   configuré. Le CLI et les jobs GitHub exigent à la fois ce marqueur et le
   drapeau d'activation ; leur absence bloque aujourd'hui le dispatch. Ces deux
   valeurs sont des verrous d'activation, pas une preuve de qualification. La
-  PR #332 ajoute un workflow réutilisable qui vérifie le run privé, le SHA de
+  PR #332 ajoute un workflow réutilisable et un vérificateur de réception qui
+  vérifient le run privé, le SHA de
   politique, les cinq pins, les rapports et les quatre artefacts de compilation
   exacts avec leurs digests. Elle doit encore être fusionnée et appelée depuis
   Integration ; aucun run privé n'a validé ce raccordement. Le reçu temporaire

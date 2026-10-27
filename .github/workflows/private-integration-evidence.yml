@@ -31,16 +31,18 @@ jobs:
         with:
           node-version: 22.23.4
       - name: Download private qualification plan
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
         with:
           name: qualification-plan-${{ github.run_attempt }}
           path: workspace/.artifacts
+          digest-mismatch: error
       - name: Download private suite reports
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
         with:
           pattern: report-*-${{ github.run_attempt }}
           path: workspace/.artifacts/reports
           merge-multiple: true
+          digest-mismatch: error
       - name: Verify caller run, policy, pins, jobs and reports
         id: evidence
         working-directory: workspace
