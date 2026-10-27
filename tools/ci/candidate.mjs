@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { root, run, readJson, writeJson, Failure } from '../lib/process.mjs';
 import { publicApi, publicPages, repository } from '../lib/github.mjs';
 import { sha256, requireManifest, compareVersions } from '../lib/manifest.mjs';
+import { writePreviousInstallBaseline } from '../lib/candidate-installation.mjs';
 const operation = process.argv[2];
 const dir = resolve(root, '.artifacts/candidate');
 mkdirSync(dir, { recursive: true });
@@ -104,6 +105,7 @@ if (operation === 'prepare-private') {
     throw new Failure(
       'Candidate version must be newer than every published release in its channel',
     );
+  writePreviousInstallBaseline(dir, previous);
   const release_id = `${channel}-${version}-${source.slice(0, 12)}`;
   const existing = publicApi(
     `repos/${repository}/releases/tags/${encodeURIComponent(release_id)}`,

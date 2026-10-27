@@ -1,11 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   isQualifiedArtifactFromAttempt,
   qualifiedBuildArtifacts,
   releaseArtifactName,
 } from '../../tools/lib/release-artifacts.mjs';
+import { readJson } from '../../tools/lib/process.mjs';
+import { writePreviousInstallBaseline } from '../../tools/lib/candidate-installation.mjs';
 
 test('build outputs are unique to a validated workflow attempt', () => {
   assert.deepEqual(qualifiedBuildArtifacts(2), {
@@ -30,6 +34,54 @@ test('artifact naming rejects invalid attempts and names', () => {
   for (const attempt of [0, -1, 'x', Number.MAX_SAFE_INTEGER + 1])
     assert.throws(() => qualifiedBuildArtifacts(attempt), /workflow attempt/);
   assert.throws(() => releaseArtifactName('../candidate', 1), /artifact name/);
+});
+
+test('candidate preparation retains the signed package snapshot for upgrade tests', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'silicium-candidate-baseline-'));
+  try {
+    const previous = {
+      release_id: 'dev-0.2.9-dev.18-aaaaaaaaaaaa',
+      components: { node: { version: '0.2.9-dev.18' } },
+      assets: [{ name: 'packages.tar.gz', sha256: 'b'.repeat(64), size: 512 }],
+      extra_metadata: 'not needed by the installer test',
+    };
+    assert.deepEqual(writePreviousInstallBaseline(directory, previous), {
+      release_id: previous.release_id,
+      components: previous.components,
+      assets: previous.assets,
+    });
+    assert.deepEqual(readJson(join(directory, 'previous.json')), {
+      release_id: previous.release_id,
+      components: previous.components,
+      assets: previous.assets,
+    });
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('first candidates remove stale package upgrade baselines and incomplete releases fail', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'silicium-candidate-baseline-'));
+  try {
+    writePreviousInstallBaseline(directory, {
+      release_id: 'dev-0.2.9-dev.18-aaaaaaaaaaaa',
+      components: { node: { version: '0.2.9-dev.18' } },
+      assets: [{ name: 'packages.tar.gz', sha256: 'b'.repeat(64) }],
+    });
+    assert.equal(writePreviousInstallBaseline(directory, null), null);
+    assert.equal(existsSync(join(directory, 'previous.json')), false);
+    assert.throws(
+      () =>
+        writePreviousInstallBaseline(directory, {
+          release_id: 'dev-0.2.9-dev.18-aaaaaaaaaaaa',
+          components: { node: { version: '0.2.9-dev.18' } },
+          assets: [],
+        }),
+      /Previous signed release lacks the package upgrade baseline/,
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test('public Workbench verifies private evidence without receiving private build artifacts', () => {
