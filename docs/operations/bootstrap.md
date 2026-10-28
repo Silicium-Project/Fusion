@@ -148,6 +148,12 @@ limité à `Workbench` et `planning-private`, avec `checks: read`, `issues: read
 seulement `actions: read` ; un JWT de courte durée vérifie que l'installation
 couvre bien toute l'organisation, sans être enregistré.
 
+Pour suivre les PR privées, le workflow crée aussi deux jetons de preuve
+distincts : un limité à `Integration`, l'autre aux cinq dépôts composants.
+Chacun ne reçoit que `pull_requests: read` et `checks: read`. Ils ne peuvent ni
+lire le contenu des sources, ni modifier les PR ou accéder au Project. Les
+jetons restent distincts du jeton Project et sont révoqués à la fin du job.
+
 L'App `Silicium Project Automation` est créée et installée depuis le 25 octobre
 2026. Les deux secrets sont provisionnés dans cet environnement. La
 réconciliation GitHub `40469270941` a réussi le 27 octobre 2026 : elle a traité

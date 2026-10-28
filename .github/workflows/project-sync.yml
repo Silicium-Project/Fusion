@@ -84,10 +84,21 @@ jobs:
         repositories: Integration
         permission-checks: read
         permission-pull-requests: read
+    - name: Create read-only component PR evidence token
+      id: component-token
+      uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
+      with:
+        client-id: ${{ secrets.PROJECT_APP_CLIENT_ID }}
+        private-key: ${{ secrets.PROJECT_APP_PRIVATE_KEY }}
+        owner: Silicium-Project
+        repositories: BackEnd,FrontEnd,DesktopApp,Network,Solana
+        permission-checks: read
+        permission-pull-requests: read
     - name: Reconcile trusted metadata
       env:
         GH_TOKEN: ${{ steps.token.outputs.token }}
         INTEGRATION_GH_TOKEN: ${{ steps.integration-token.outputs.token }}
+        COMPONENT_GH_TOKEN: ${{ steps.component-token.outputs.token }}
         APPLY: ${{ github.event_name != 'workflow_dispatch' || inputs.mode == 'apply' }}
       shell: bash
       run: |

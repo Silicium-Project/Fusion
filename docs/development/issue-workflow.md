@@ -110,9 +110,15 @@ et les cartes sans issue. Le Project 12 reste privé.
 Le déclenchement manuel `workflow_dispatch` utilise `mode=dry-run` par défaut,
 uniquement depuis `main`. Il utilise un jeton App avec les droits du Project en
 lecture seule et n'affiche que le nombre d'items et les changements prévus, sans
-URL d'issue ni texte de blocage. Ce mode reste disponible même si le flag vaut
-`0`. Le mode `apply`, les événements d'issue/PR/CI et le rapprochement périodique
-toutes les quinze minutes exigent tous le flag à `1`.
+URL d'issue, PR privée ni texte de blocage. Les lectures des PR et des checks
+Workbench, Integration et des cinq composants utilisent des jetons distincts,
+éphémères et limités à `pull_requests:read` et `checks:read` pour les dépôts
+privés. Le workflow ne clone et n'exécute jamais le code d'une PR privée. Les
+événements GitHub reçus par Workbench et le rapprochement toutes les quinze
+minutes couvrent aussi les dépôts privés, qui ne déclenchent pas le workflow
+public directement. Ce mode reste disponible même si le flag vaut `0`. Le mode
+`apply`, les événements d'issue/PR/CI et le rapprochement périodique exigent le
+flag à `1`.
 
 L'automatisation modifie seulement les champs `Status` et `Blocage` du Project.
 Elle ne crée, ne ferme, n'assigne et ne commente aucune issue. Elle ignore les
@@ -122,8 +128,10 @@ issues `HOLD` ou `Arbitrage`. La règle de statut est :
   `Backlog` ; une issue préparée, assignée et sans dépendance ouverte peut
   passer à `Prêt` ;
 - PR liée brouillon, CI en attente/échec ou demande de changement : `En cours` ;
-- toutes les PR liées actives prêtes, `ci/required` réussi et aucune demande de
-  changement : `Revue` ;
+- toutes les PR liées actives de Workbench, des composants et d'Integration
+  prêtes, avec leur gate requis réussi et sans demande de changement : `Revue` ;
+- une PR privée sans gate `ci/required` unique ou avec contrôle en attente reste
+  en `En cours` avec un blocage automatique ; elle ne vaut pas une qualification ;
 - fusion d'une PR ou fermeture manuelle comme terminée sans preuve complète :
   `Validation` ;
 - `Terminé` exige l'acceptation humaine, une preuve de la cible et les
