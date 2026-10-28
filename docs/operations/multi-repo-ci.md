@@ -36,6 +36,18 @@ indisponible pour un dépôt privé sur GitHub Free ; elle n'ajoute pas de journ
 de transparence et fait de l'accès en écriture à Integration sa frontière de
 confiance.
 
+Le dépôt `Integration` exécute la qualification et appelle, dans le même run,
+`private-integration-evidence.yml` via `workflow_call`. Le workflow réutilisable
+conserve le contexte et le `GITHUB_TOKEN` du workflow appelant ; le jeton limité
+à Integration, avec `Actions: read`, suffit pour vérifier le run et télécharger
+ses artefacts. L'App `Silicium Integration Reader`, installée avec
+`Actions: read` et `Metadata: read` sur `Integration`, n'est pas utilisée par
+ce parcours. Ne pas créer une seconde App de lecture des preuves ni copier une
+clé privée ou un Client ID d'App dans Workbench. Si l'architecture doit un jour
+déplacer la collecte hors de ce run privé, documenter d'abord le besoin d'accès
+inter-dépôts, le dépôt cible et les permissions minimales avant de créer une
+App distincte.
+
 La qualification native utilise un commit synthétique **local et temporaire**,
 parent du SHA Workbench épinglé. Il permet de qualifier une nouvelle version du
 composant sans modifier un checkout utilisateur. Les métadonnées enregistrent
