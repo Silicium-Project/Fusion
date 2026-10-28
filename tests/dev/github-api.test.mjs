@@ -90,3 +90,19 @@ test('REST writes and rate-limit refusals are never retried', () => {
     (error) => error.exitCode === 4 && /429/.test(error.message),
   );
 });
+
+test('repository-scoped tokens are passed only through the request environment', () => {
+  let request;
+  const client = createClient({
+    execute: (args, options) => {
+      request = { args, options };
+      return { status: 0, stdout: '{"ok":true}', stderr: '' };
+    },
+  });
+
+  client.api('repos/Silicium-Project/Integration/pulls?state=all', {
+    token: 'ephemeral-integration-token',
+  });
+  assert.deepEqual(request.options.env, { GH_TOKEN: 'ephemeral-integration-token' });
+  assert.ok(request.args.every((argument) => !argument.includes('ephemeral-integration-token')));
+});

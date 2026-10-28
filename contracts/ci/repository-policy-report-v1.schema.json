@@ -1,0 +1,218 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://silicium.network/contracts/ci/repository-policy-report/v1",
+  "title": "Silicium public repository policy report v1",
+  "description": "Read-only evidence for the public Workbench repository identity, active default-branch ruleset and server timestamps returned by GitHub.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "operation",
+    "repository",
+    "policy_schema_version",
+    "checked_at",
+    "source_sha",
+    "registry",
+    "coverage",
+    "not_publicly_verifiable",
+    "api_observations",
+    "repository_metadata",
+    "ruleset",
+    "status",
+    "drift"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "operation": {
+      "const": "ci.repository-policy"
+    },
+    "repository": {
+      "type": ["string", "null"],
+      "pattern": "^Silicium-Project/[A-Za-z0-9._-]+$"
+    },
+    "policy_schema_version": {
+      "type": ["integer", "null"]
+    },
+    "checked_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source_sha": {
+      "type": "string",
+      "pattern": "^(unknown|[a-f0-9]{40})$"
+    },
+    "registry": {
+      "type": "object",
+      "required": ["workbench", "integration", "components"],
+      "properties": {
+        "workbench": {
+          "type": "object"
+        },
+        "integration": {
+          "type": ["object", "null"]
+        },
+        "components": {
+          "type": "object"
+        }
+      }
+    },
+    "coverage": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "not_publicly_verifiable": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "api_observations": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["resource", "api_timestamp"],
+            "properties": {
+              "resource": {
+                "enum": ["repository.metadata", "repository.ruleset"]
+              },
+              "api_timestamp": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["resource", "page", "api_timestamp"],
+            "properties": {
+              "resource": {
+                "const": "repository.rulesets"
+              },
+              "page": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "api_timestamp": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "repository_metadata": {
+      "type": ["object", "null"],
+      "required": ["id", "full_name", "visibility", "default_branch"],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "full_name": {
+          "type": "string",
+          "pattern": "^Silicium-Project/[A-Za-z0-9._-]+$"
+        },
+        "visibility": {
+          "enum": ["public", "private"]
+        },
+        "default_branch": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "ruleset": {
+      "type": ["object", "null"],
+      "required": ["name", "id", "target", "enforcement", "rule_types"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1
+        },
+        "enforcement": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rule_types": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "status": {
+      "enum": ["success", "drift", "blocked"]
+    },
+    "drift": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "expected", "actual"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expected": {},
+          "actual": {}
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "blocked"
+          }
+        }
+      },
+      "then": {
+        "required": ["error"]
+      },
+      "else": {
+        "not": {
+          "required": ["error"]
+        }
+      }
+    }
+  ]
+}

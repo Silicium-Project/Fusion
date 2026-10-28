@@ -1,6 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateManifest, packageVersions, compareVersions } from '../../tools/lib/manifest.mjs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  validateManifest,
+  packageVersions,
+  compareVersions,
+  sha256,
+  verifyManifestAssetDirectory,
+} from '../../tools/lib/manifest.mjs';
+import { trustedReleaseBaseline } from '../../tools/lib/release-baseline.mjs';
 const sha = 'a'.repeat(40);
 const candidate = () => ({
   schema_version: 1,
@@ -55,6 +65,26 @@ test('release ordering reserves the final Windows field for stable and compares 
 });
 test('complete immutable identity validates', () =>
   assert.deepEqual(validateManifest(candidate()), []));
+test('malformed JSON containers fail closed without throwing', () => {
+  for (const value of [null, [], 'manifest']) assert.ok(validateManifest(value).length);
+
+  const badQualification = candidate();
+  badQualification.qualification = [];
+  assert.ok(validateManifest(badQualification).length);
+
+  const badPins = candidate();
+  badPins.qualification.component_pins.api = null;
+  assert.ok(validateManifest(badPins).length);
+
+  const badComponents = candidate();
+  badComponents.components.api = null;
+  assert.ok(validateManifest(badComponents).length);
+
+  const badAssets = candidate();
+  badAssets.assets[0] = null;
+  assert.ok(validateManifest(badAssets).length);
+  assert.ok(validateManifest({ ...candidate(), assets: {} }).length);
+});
 test('mutable images, stale qualification and prod prereleases fail', () => {
   for (const edit of [
     (m) => (m.components.api.image = 'api:latest'),
@@ -79,6 +109,66 @@ test('asset names cannot escape the snapshot', () => {
   m.assets = [{ name: '../wallet', sha256: 'a'.repeat(64), size: 1 }];
   assert.ok(validateManifest(m).length);
 });
+test('reserved signature files cannot be listed as ordinary release assets', () => {
+  const m = candidate();
+  m.assets[0].name = 'manifest.json';
+  assert.ok(validateManifest(m).includes('reserved candidate asset name'));
+});
+test('publication and deployment require the exact manifest asset set and bytes', () => {
+  const createFixture = () => {
+    const directory = mkdtempSync(join(tmpdir(), 'silicium-release-assets-'));
+    const manifest = candidate();
+    const payloads = new Map([
+      ['packages.tar.gz', Buffer.from('packages')],
+      ['deployment.tar.gz', Buffer.from('deployment')],
+      ['qualification.json', Buffer.from('{}')],
+    ]);
+    manifest.assets = [...payloads].map(([name, bytes]) => ({
+      name,
+      size: bytes.length,
+      sha256: sha256(bytes),
+    }));
+    for (const [name, bytes] of payloads) writeFileSync(join(directory, name), bytes);
+    writeFileSync(join(directory, 'manifest.json'), JSON.stringify(manifest));
+    writeFileSync(join(directory, 'manifest.json.asc'), 'signature');
+    return { directory, manifest };
+  };
+
+  const valid = createFixture();
+  try {
+    assert.equal(verifyManifestAssetDirectory(valid.manifest, valid.directory), valid.manifest);
+    writeFileSync(join(valid.directory, 'unexpected.txt'), 'extra');
+    assert.throws(
+      () => verifyManifestAssetDirectory(valid.manifest, valid.directory),
+      /does not match the manifest asset set/,
+    );
+  } finally {
+    rmSync(valid.directory, { recursive: true, force: true });
+  }
+
+  const corrupt = createFixture();
+  try {
+    writeFileSync(join(corrupt.directory, 'packages.tar.gz'), 'tampered');
+    assert.throws(
+      () => verifyManifestAssetDirectory(corrupt.manifest, corrupt.directory),
+      /candidate asset integrity failure/,
+    );
+  } finally {
+    rmSync(corrupt.directory, { recursive: true, force: true });
+  }
+
+  const nonRegular = createFixture();
+  try {
+    rmSync(join(nonRegular.directory, 'packages.tar.gz'));
+    mkdirSync(join(nonRegular.directory, 'packages.tar.gz'));
+    assert.throws(
+      () => verifyManifestAssetDirectory(nonRegular.manifest, nonRegular.directory),
+      /candidate asset is not a regular file/,
+    );
+  } finally {
+    rmSync(nonRegular.directory, { recursive: true, force: true });
+  }
+});
 test('versions retain prerelease ordering and unique Windows sequence', () => {
   assert.deepEqual(packageVersions('0.3.0-dev.12'), {
     semver: '0.3.0-dev.12',
@@ -90,4 +180,89 @@ test('versions retain prerelease ordering and unique Windows sequence', () => {
   assert.equal(packageVersions('0.3.0').windows, '0.3.0.65535');
   for (const v of ['0.3.0+hidden', '0.3.0-dev.0', '0.3.0-dev.65535', '0.3.0-dev.65536', '$(id)'])
     assert.throws(() => packageVersions(v));
+});
+
+function release(tag, { channel = 'dev', signed = false, draft = false } = {}) {
+  return {
+    tag_name: tag,
+    draft,
+    prerelease: channel === 'dev',
+    assets: signed
+      ? [{ name: 'manifest.json' }, { name: 'manifest.json.asc' }]
+      : [
+          {
+            name: 'release-channel.json',
+            digest: `sha256:${'a'.repeat(64)}`,
+          },
+        ],
+  };
+}
+
+test('release baseline selection allows an empty channel but requires the newest existing release to be signed', () => {
+  assert.deepEqual(trustedReleaseBaseline([], 'dev'), {
+    highestPublished: null,
+    previous: null,
+  });
+  const current = release('dev-0.3.0-dev.31-aaaaaaaaaaaa', { signed: true });
+  assert.equal(
+    trustedReleaseBaseline([release('v0.2.9-dev.28'), current], 'dev').previous,
+    current,
+  );
+  assert.throws(
+    () => trustedReleaseBaseline([release('v0.2.9-dev.28')], 'dev'),
+    /newest published dev release has no signed manifest/,
+  );
+  assert.throws(
+    () =>
+      trustedReleaseBaseline(
+        [
+          release('dev-0.3.0-dev.31-aaaaaaaaaaaa', { signed: true }),
+          release('dev-0.3.0-dev.32-bbbbbbbbbbbb'),
+        ],
+        'dev',
+      ),
+    /newest published dev release has no signed manifest/,
+  );
+});
+
+test('release baseline rejects duplicate or unsupported versions and keeps channels separate', () => {
+  assert.deepEqual(trustedReleaseBaseline([release('v0.2.17', { channel: 'prod' })], 'dev'), {
+    highestPublished: null,
+    previous: null,
+  });
+  assert.throws(
+    () =>
+      trustedReleaseBaseline(
+        [
+          release('dev-0.3.0-dev.31-aaaaaaaaaaaa', { signed: true }),
+          release('dev-0.3.0-dev.31-bbbbbbbbbbbb', { signed: true }),
+        ],
+        'dev',
+      ),
+    /duplicate versions/,
+  );
+  assert.throws(
+    () => trustedReleaseBaseline([release('dev-latest')], 'dev'),
+    /unsupported version tag/,
+  );
+  assert.throws(
+    () =>
+      trustedReleaseBaseline([{ tag_name: 'dev-0.3.0-dev.31-aaaaaaaaaaaa', draft: false }], 'dev'),
+    /inventory is incomplete/,
+  );
+});
+
+test('release baseline rejects channel tags that contradict GitHub prerelease metadata', () => {
+  assert.throws(
+    () =>
+      trustedReleaseBaseline(
+        [release('dev-0.3.0-dev.31-aaaaaaaaaaaa', { channel: 'prod' })],
+        'dev',
+      ),
+    /dev release tag contradicts its prerelease metadata/,
+  );
+  assert.throws(
+    () => trustedReleaseBaseline([release('v0.3.0')], 'prod'),
+    /prod release tag contradicts its prerelease metadata/,
+  );
 });

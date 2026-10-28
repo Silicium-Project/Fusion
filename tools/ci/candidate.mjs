@@ -3,7 +3,13 @@ import { readdirSync, readFileSync, appendFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { root, run, readJson, writeJson, Failure } from '../lib/process.mjs';
 import { publicApi, publicPages, repository } from '../lib/github.mjs';
-import { sha256, requireManifest, compareVersions } from '../lib/manifest.mjs';
+import {
+  sha256,
+  requireManifest,
+  compareVersions,
+  verifyManifestAssetDirectory,
+} from '../lib/manifest.mjs';
+import { trustedReleaseBaseline } from '../lib/release-baseline.mjs';
 import { writePreviousInstallBaseline } from '../lib/candidate-installation.mjs';
 const operation = process.argv[2];
 const dir = resolve(root, '.artifacts/candidate');
@@ -39,30 +45,7 @@ if (operation === 'prepare-private') {
   if (!Number.isSafeInteger(qualificationNumber) || qualificationNumber < 1)
     throw new Failure('The completed qualification run number is required');
   const releases = publicPages(`repos/${repository}/releases`);
-  const releasePattern = new RegExp(
-    `^${channel}-(\\d+\\.\\d+\\.\\d+(?:-dev\\.\\d+)?)-[a-f0-9]{12}$`,
-  );
-  const releaseVersions = releases
-    .filter((release) => !release.draft)
-    .map((release) => ({ release, version: release.tag_name.match(releasePattern)?.[1] }))
-    .filter(({ version }) => version);
-  const highestPublished = releaseVersions.reduce(
-    (highest, row) =>
-      !highest || compareVersions(row.version, highest.version) > 0 ? row : highest,
-    null,
-  );
-  const highestSigned = releaseVersions
-    .filter(
-      ({ release }) =>
-        release.assets?.some((asset) => asset.name === 'manifest.json') &&
-        release.assets?.some((asset) => asset.name === 'manifest.json.asc'),
-    )
-    .reduce(
-      (highest, row) =>
-        !highest || compareVersions(row.version, highest.version) > 0 ? row : highest,
-      null,
-    );
-  const prior = highestSigned?.release;
+  const { highestPublished, previous: prior } = trustedReleaseBaseline(releases, channel);
   let previous = null;
   if (prior) {
     const previousDir = resolve(dir, 'previous');
@@ -270,10 +253,16 @@ if (operation === 'prepare-private') {
     `manifest_digest=${sha256(readFileSync(resolve(assetsDir, 'manifest.json')))}\n`,
   );
 } else if (operation === 'publish') {
-  const m = requireManifest(readJson(resolve(root, '.artifacts/publish/manifest.json')));
-  const files = readdirSync(resolve(root, '.artifacts/publish')).map((n) =>
-    resolve(root, '.artifacts/publish', n),
-  );
+  const assetsDir = resolve(root, '.artifacts/publish');
+  const m = verifyManifestAssetDirectory(readJson(resolve(assetsDir, 'manifest.json')), assetsDir);
+  run([
+    'gpgv',
+    '--keyring',
+    resolve(root, 'contracts/trust/release.gpg'),
+    resolve(assetsDir, 'manifest.json.asc'),
+    resolve(assetsDir, 'manifest.json'),
+  ]);
+  const files = readdirSync(assetsDir).map((n) => resolve(assetsDir, n));
   run(
     [
       'gh',

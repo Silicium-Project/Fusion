@@ -1,0 +1,149 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://silicium.network/contracts/workspace/registry/v1",
+  "title": "Silicium workspace registry v1",
+  "description": "Versioned identities, ownership, visibility, paths and validation suites for Workbench and its private components.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "name",
+    "repository",
+    "repository_id",
+    "owner",
+    "visibility",
+    "default_branch",
+    "legacy_repositories",
+    "mode",
+    "integration_repository",
+    "integration",
+    "public_suites",
+    "components"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "https://silicium.network/contracts/workspace/registry/v1"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "repository": {
+      "$ref": "#/definitions/repository"
+    },
+    "repository_id": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "owner": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9-]+$"
+    },
+    "visibility": {
+      "const": "public"
+    },
+    "default_branch": {
+      "$ref": "#/definitions/branch"
+    },
+    "legacy_repositories": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/definitions/repository"
+      }
+    },
+    "mode": {
+      "const": "multi-repo"
+    },
+    "integration_repository": {
+      "$ref": "#/definitions/repository"
+    },
+    "integration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "owner", "visibility", "default_branch", "role"],
+      "properties": {
+        "repository": {
+          "$ref": "#/definitions/repository"
+        },
+        "owner": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9-]+$"
+        },
+        "visibility": {
+          "const": "private"
+        },
+        "default_branch": {
+          "$ref": "#/definitions/branch"
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "public_suites": {
+      "$ref": "#/definitions/suites"
+    },
+    "components": {
+      "type": "object",
+      "minProperties": 1,
+      "patternProperties": {
+        "^[a-z][a-z0-9-]*$": {
+          "$ref": "#/definitions/component"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "definitions": {
+    "repository": {
+      "type": "string",
+      "pattern": "^Silicium-Project/[A-Za-z0-9._-]+$"
+    },
+    "branch": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]+$"
+    },
+    "suites": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "owner", "path", "default_branch", "visibility", "suites"],
+      "properties": {
+        "repository": {
+          "$ref": "#/definitions/repository"
+        },
+        "owner": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9-]+$"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(/|$))[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*$"
+        },
+        "default_branch": {
+          "$ref": "#/definitions/branch"
+        },
+        "visibility": {
+          "const": "private"
+        },
+        "suites": {
+          "$ref": "#/definitions/suites"
+        }
+      }
+    }
+  }
+}
