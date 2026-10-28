@@ -7,7 +7,9 @@ import {
   combinePlans,
   splitMatrix,
   makePlan,
+  scopeSelection,
 } from '../../tools/lib/planner.mjs';
+import { workspaceConfig } from '../../tools/lib/workspace.mjs';
 
 test('rename and copy include old and new paths, with spaces preserved', () => {
   assert.deepEqual(
@@ -17,13 +19,8 @@ test('rename and copy include old and new paths, with spaces preserved', () => {
 });
 test('truncated change output fails closed', () =>
   assert.throws(() => parseChanges('R100\0one\0')));
-test('documentation does not compile applications', () =>
-  assert.deepEqual(route(['docs/ai/README.md']).suites, [
-    'docs',
-    'powershell',
-    'security',
-    'tooling',
-  ]));
+test('documentation routes only the documentation suite', () =>
+  assert.deepEqual(route(['docs/ai/README.md']).suites, ['docs']));
 test('unknown paths require the entire registered matrix', () =>
   assert.equal(
     route(['unexpected.file']).suites.length,
@@ -66,7 +63,24 @@ test('qualification plans carry each suite source list for least-privilege priva
   assert.deepEqual(suites['workspace-sources'], ['api', 'web', 'node', 'network', 'solana']);
   assert.deepEqual(suites.network, ['network']);
   assert.deepEqual(suites['network-integration'], ['network']);
+  assert.deepEqual(suites['network-contract'], ['network', 'solana']);
   assert.deepEqual(suites.tooling, []);
+});
+
+test('Network-to-Solana contracts run only in the cross-repository composition', () => {
+  const localPytest = registry().suites['network-integration'].steps.find(
+    (step) =>
+      step.command[0] === 'python3' && step.command[1] === '-m' && step.command[2] === 'pytest',
+  );
+  assert.ok(localPytest.command.includes('--ignore=tests/test_solana_integration_contract.py'));
+  const component = makePlan({ paths: [], scope: 'component:network' });
+  assert.ok(!component.suites.includes('network-contract'));
+  const integration = makePlan({ paths: [], scope: 'integration' });
+  assert.ok(integration.suites.includes('network-contract'));
+  const row = integration.matrix.include.find((entry) => entry.suite === 'network-contract');
+  assert.deepEqual(row.sources, ['network', 'solana']);
+  const publicPlan = makePlan({ paths: [], scope: 'public' });
+  assert.ok(!publicPlan.suites.includes('network-contract'));
 });
 
 test('a PR cannot silently remove the test command from an unchanged suite', () => {
@@ -79,6 +93,28 @@ test('a PR cannot silently remove the test command from an unchanged suite', () 
       ),
     /obligations/,
   );
+});
+
+test('public plans target changed suites and expand conservatively for policy or unknown paths', () => {
+  const config = registry();
+  const workspace = workspaceConfig();
+  const publicPlan = (paths) =>
+    scopeSelection(route(paths, config), 'public', config, workspace).suites;
+  assert.deepEqual(publicPlan(['docs/ai/README.md']), ['docs']);
+  assert.deepEqual(publicPlan(['tools/config/lanes.json']), [...workspace.public_suites].sort());
+  assert.deepEqual(publicPlan(['unexpected.file']), [...workspace.public_suites].sort());
+  assert.deepEqual(publicPlan([]), [...workspace.public_suites].sort());
+});
+
+test('component plans run only their own suites and defer only other private components', () => {
+  const plan = makePlan({ paths: ['tools/dev.mjs'], scope: 'component:api' });
+  assert.deepEqual(plan.suites, ['api']);
+  assert.ok(!plan.deferred_suites.some((entry) => ['docs', 'tooling'].includes(entry.suite)));
+  assert.equal(
+    plan.not_applicable.find((entry) => entry.suite === 'docs').reason,
+    'public policy is checked at the exact pinned Workbench SHA',
+  );
+  assert.ok(plan.deferred_suites.some((entry) => entry.suite === 'web'));
 });
 
 test('Solana program and SDK changes qualify the runtime payment consumers', () => {

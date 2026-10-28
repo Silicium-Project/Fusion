@@ -35,6 +35,19 @@ le `main` courant et que son contrôle public `ci/required` a réussi :
 publique, sans jeton ; une preuve absente, ancienne, paginée ou non réussie
 bloque la suite avant toute demande de jeton Source Reader.
 
+Pour une PR Workbench, lire aussi `./dev ci plan --scope public --base
+origin/main --head HEAD --json`. Les suites publiques suivent les chemins
+modifiés ; une PR documentaire exécute la validation documentaire, alors que
+les workflows, outils partagés, contrats et chemins inconnus élargissent la
+matrice. Les suites privées différées ne sont pas des réussites : elles exigent
+la qualification Integration avant livraison.
+
+Une CI native n'exécute que les suites de son composant. Elle ne doit pas
+relancer les suites publiques de Workbench : le workflow exige auparavant un
+`ci/required` réussi et une observation de stockage fraîche pour le SHA exact
+de la politique épinglée. Vérifier `not_applicable` et `deferred_suites` pour
+distinguer ces cas ; les autres composants restent à qualifier dans Integration.
+
 Pour les runs et artefacts privés, garder la lecture dans le workflow
 `Integration` : `workflow_call` conserve le contexte et le `GITHUB_TOKEN` du
 run appelant, avec `Actions: read`. Ne pas créer une seconde App « Actions
@@ -49,6 +62,9 @@ ce flux.
 2. Ne démarrer que si préparation, responsable, taille et prérequis sont définis.
 3. Créer une branche courte et une PR brouillon avec les URL des issues.
 4. Lire les contrats affectés ; demander au plan CI les suites nécessaires.
+   Lorsqu'un test lit plusieurs dépôts privés, le déclarer comme suite croisée
+   avec tous ses `sources` ; ne pas l'ajouter aux suites de CI native d'un seul
+   composant. Garder ces sources hors des workflows publics.
 5. Implémenter le changement avec le contre-exemple et les tests applicables.
    Appliquer `dev format --write` puis les [normes de qualité](../development/quality.md).
 6. Exécuter les suites communes et conserver leurs rapports. Ne pas inventer
