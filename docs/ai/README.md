@@ -23,9 +23,12 @@ cohérence entre propriétaire, dépôt, sous-module et SHA. Ne jamais ajuster l
 pins, la visibilité ou les identités par automatisation.
 
 La CI publique `--scope public` ne qualifie pas les applications. La qualification
-privée `--scope integration` doit couvrir les cinq pins avant livraison. Un
-quota privé épuisé reste un blocage. Lire `deferred_suites` et rapporter toutes
-les validations manquantes. Mettre à jour les deux pins ensemble avec
+privée `--scope integration` doit couvrir les cinq pins avant livraison. Lire
+`deferred_suites` et rapporter toutes les validations manquantes. Avant chaque
+run privé coûteux, vérifier le solde inclus courant, le pire cas pondéré du plan
+et l'absence de run concurrent. L'attestation de solde du dispatch n'est pas un
+plafond de facturation automatique ; si le solde ne peut pas être confirmé,
+garder les flags fermés. Aucun fallback vers le VPS. Mettre à jour les deux pins ensemble avec
 `dev workspace pin --component ID --revision SHA --apply`, puis créer une PR
 Workbench liée aux PR natives.
 

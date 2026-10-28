@@ -92,11 +92,14 @@ opérationnelle après la séparation de Workbench et des cinq dépôts privés.
   qualification privée ; aucun run privé n'a validé le raccordement.
 - La clé privée Ed25519 du reçu est un secret Integration, injecté seulement
   dans le job `integration/sign-evidence`. La clé publique versionnée est le
-  trust anchor des deux dépôts. C'est une signature vérifiable sans journal de
-  transparence public : GitHub Free ne fournit pas l'attestation native
-  d'artefact pour un dépôt privé. L'accès en écriture à Integration reste donc
-  la frontière de confiance ; une rotation exige de remplacer le secret et les
-  deux clés publiques ensemble.
+  trust anchor des deux dépôts. Les attestations natives sont disponibles pour
+  les dépôts privés Enterprise ([documentation GitHub](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)), mais le workflow actuel ne les émet ni ne les
+  vérifie. Les attestations privées GitHub ne publient pas dans le journal de
+  transparence public. Conserver le reçu Ed25519 jusqu'à ce qu'une migration
+  soit implémentée, vérifiée par des tests négatifs et acceptée ; l'accès en
+  écriture à Integration reste la frontière de confiance actuelle. Une rotation
+  de la clé Ed25519 exige de remplacer le secret et les deux clés publiques
+  ensemble.
 - Les environnements Workbench de signature et de déploiement n'ont aucun
   secret configuré. Les fingerprints APT/RPM sont présents dans les contrats,
   mais les clés privées APT/RPM/release et le trust anchor public release sont

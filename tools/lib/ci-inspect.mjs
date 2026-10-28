@@ -20,7 +20,7 @@ export function allocationDiagnostic(job, annotations) {
     messages,
     tests_executed: false,
     action: billing
-      ? 'Review the account billing state and available included quota; retain the zero spending limit and repository visibility.'
+      ? 'Review the current plan and included Actions minutes. No automatic $0 spending cap is verified; keep private-workflow flags closed unless the balance covers the full run. No VPS fallback.'
       : 'Inspect the GitHub allocation annotations; no test ran in this job.',
   };
 }

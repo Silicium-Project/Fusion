@@ -67,10 +67,13 @@ Workbench. Le reçu de métadonnées et sa signature détachée restent privés
 pendant un jour. Le préflight `workflow_run` vérifie la signature et l'identité
 du run avant de télécharger les binaires privés ; Workbench vérifie de nouveau
 la signature avant d'accepter le reçu. Cette preuve ne publie ni ne déploie
-encore de candidat. La signature Ed25519 remplace l'attestation native
-indisponible pour un dépôt privé sur GitHub Free ; elle n'ajoute pas de journal
-de transparence et fait de l'accès en écriture à Integration sa frontière de
-confiance.
+encore de candidat. La signature Ed25519 est le mécanisme actuellement utilisé
+pour le reçu privé ; elle n'ajoute pas de journal de transparence et fait de
+l'accès en écriture à Integration sa frontière de confiance. Les attestations
+natives GitHub sont disponibles pour les dépôts privés Enterprise
+([documentation GitHub](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)), mais ne sont pas intégrées ni vérifiées par ce parcours. Une migration devra préserver les
+contrôles de signature et être qualifiée séparément avant de retirer le reçu
+Ed25519.
 
 Le dépôt `Integration` exécute la qualification et appelle, dans le même run,
 `private-integration-evidence.yml` via `workflow_call`. Le workflow réutilisable
@@ -293,11 +296,17 @@ révoque son jeton à la fin du job. Une absence d'App bloque la récupération 
 aucun accès du propriétaire n'est utilisé en secours. La création/installation
 initiale de l'App exige une session propriétaire GitHub et reste une étape humaine.
 
-GitHub Free ne fournit pas les mêmes protections sur les dépôts privés que sur
-Workbench public. Les conventions PR/CODEOWNERS ne sont pas présentées comme
-des protections serveur effectives. Les membres autorisés à écrire dans ces
-dépôts constituent donc une frontière de confiance ; maintenir des accès
-limités et ne pas y approuver de code extérieur pendant la stabilisation.
+Au 28 octobre 2026, des rulesets actifs couvrent `main` dans Workbench,
+Integration et les cinq dépôts composants. Integration exige
+`integration/required` ; Workbench exige `ci/required`. Les rulesets composants
+exigent une PR, la résolution des discussions et le check strict
+`qualify / ci/required`, sans approbation imposée ni contournement. Ce nom suit
+le [format GitHub des checks de workflows réutilisables](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/troubleshooting-rules#troubleshooting-required-status-checks)
+(`job appelant / job réutilisable`) ; il faut encore prouver un succès sur le
+SHA exact avant toute fusion. L'organisation est sur un essai Enterprise
+temporaire ; revérifier les règles après son expiration et documenter tout changement de capacité. Les
+membres autorisés à écrire restent une frontière de confiance ; maintenir des
+accès limités et ne pas approuver de code extérieur pendant la stabilisation.
 
 ## Livraison et miroir Epitech
 
