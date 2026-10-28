@@ -247,10 +247,7 @@ function compareRuleset(policy, repository, ruleset, drifts) {
         : null;
     if (
       checksRules.length !== 1 ||
-      !equalValue(
-        sortChecks(actualChecks),
-        sortChecks(expected.required_status_checks.checks),
-      )
+      !equalValue(sortChecks(actualChecks), sortChecks(expected.required_status_checks.checks))
     )
       drifts.push({
         path: 'ruleset.required_status_checks',
