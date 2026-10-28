@@ -64,6 +64,7 @@ test('qualification plans carry each suite source list for least-privilege priva
   assert.deepEqual(suites.network, ['network']);
   assert.deepEqual(suites['network-integration'], ['network']);
   assert.deepEqual(suites['network-contract'], ['network', 'solana']);
+  assert.deepEqual(suites.infrastructure, ['network', 'solana']);
   assert.deepEqual(suites.tooling, []);
 });
 
@@ -127,6 +128,7 @@ test('Solana program and SDK changes qualify the runtime payment consumers', () 
       'web',
       'node-native',
       'node-windows',
+      'infrastructure',
     ])
       assert.ok(plan.suites.includes(suite), `${path}: ${suite}`);
   }

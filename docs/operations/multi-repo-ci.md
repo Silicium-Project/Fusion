@@ -41,8 +41,9 @@ Network ne lance pas cette suite. Le plan privé Integration la lancera avec les
 deux dépôts quand leurs pins intègreront les changements correspondants. Le
 chemin attendu du SDK est `chain/sdk/src/index.ts`, selon la structure du dépôt
 Solana ; ne pas réintroduire les anciens chemins du monorepo
-`packages/solana-sdk`. La suite privée reste non qualifiée tant que les Actions
-Integration et son quota sont suspendus.
+`packages/solana-sdk`. La suite n'est qualifiée que si le run Integration exact
+termine toutes les lanes et son gate requis avec succès ; une lane ignorée,
+absente ou en échec bloque la composition.
 
 ## Routage des suites publiques
 
@@ -164,9 +165,11 @@ déclarée signée rétroactivement.
 ## Activation après migration
 
 Les workflows natifs utilisent `SILICIUM_COMPONENT_CI_ENABLED=1`. Integration
-utilise `SILICIUM_INTEGRATION_ENABLED=1`. Les flags restent à zéro pendant la
-préparation ; les Actions des anciens composants restent suspendues jusqu'à
-l'intégration de leurs nouveaux workflows et la disponibilité du quota privé.
+utilise `SILICIUM_INTEGRATION_ENABLED=1`. Les flags restent à zéro par défaut.
+Après intégration des nouveaux workflows, activer un seul flag pour une
+exécution manuelle bornée, vérifier avant le run le quota Actions inclus et la
+durée maximale cumulée du plan, puis remettre le flag à zéro. Si le quota
+disponible ou la facturation ne sont pas vérifiables, ne pas lancer le workflow.
 Un workflow suspendu ou ignoré ne constitue jamais une qualification.
 
 Dans le changement CI-01 en cours, `DesktopApp` sépare le flag de validation
@@ -224,11 +227,14 @@ symboliques, les réécritures et les identités d'artefact incomplètes. La
 construction du candidat et la signature/publication restent des étapes
 distinctes et non activées.
 
-Le budget Actions de l'organisation doit rester à zéro avec blocage du
-dépassement. Les runners standards des dépôts privés consomment le quota
-inclus ; le statut public de Workbench ne change pas cette règle. Son
-épuisement bloque la qualification. Ne pas utiliser de runner VPS, copier des
-sources privées dans des workflows publics ou ouvrir un budget facturable.
+Ne jamais autoriser de dépassement facturable. Utiliser uniquement les minutes
+incluses des runners standards et vérifier leur solde avant chaque lancement.
+Si un budget strict à 0 $ avec arrêt du dépassement est disponible, le garder
+actif. Si le plan ou l'essai ne permet pas ce contrôle, ne lancer que des
+workflows manuels dont la durée maximale cumulée tient dans le solde inclus ;
+garder les flags à zéro en dehors de cette exécution. L'épuisement du quota
+bloque la qualification. Ne pas utiliser de runner VPS, copier des sources
+privées dans des workflows publics ou activer une facturation supplémentaire.
 
 ## Synchronisation du Project 12 entre dépôts
 

@@ -154,8 +154,10 @@ comme preuve plus forte que son contrat.
 ## Qualification privée
 
 Lire [le runbook multi-dépôts](../operations/multi-repo-ci.md). Les workflows
-natifs et Integration restent suspendus tant que leurs PR, flags et quota ne
-sont pas prêts. Ne pas contourner ce blocage. Les protections privées Free
+privés restent fermés par défaut. Avant un lancement manuel, vérifier le solde
+inclus Actions et le pire cas de durée du plan ; activer un seul flag, puis le
+remettre à zéro. Ne jamais compter sur un dépassement facturable ni contourner
+un refus de quota. Les protections privées Free
 ne doivent pas être décrites comme équivalentes aux protections publiques.
 Les preuves d’acceptation inter-dépôts et le transport privé des artefacts
 restent à qualifier ; ne pas accepter une fonctionnalité sur le seul gate public.
@@ -182,8 +184,9 @@ release et au déploiement n'est pas opérationnel (issue
 [CI-10](https://github.com/Silicium-Project/Workbench/issues/331)). Ne lance
 pas `dev deploy request --apply`, ne change pas les variables de livraison et
 ne traite pas une CI publique verte comme qualification des cinq dépôts. Les
-tests privés restent suspendus tant que quota et plafond à zéro ne sont pas
-vérifiés. Après acceptation de CI-10, l'option `--apply` demandera l'action
+tests privés ne peuvent démarrer que si leur quota inclus et leur durée maximale
+sont connus avant le run ; le flag doit revenir à `0` après l'exécution. Après
+acceptation de CI-10, l'option `--apply` demandera l'action
 GitHub autorisée ; elle ne contournera pas les protections ni l'approbation
 production.
 
