@@ -12,13 +12,12 @@ La qualification complète des composants est isolée dans le dépôt privé
 [Integration](https://github.com/Silicium-Project/Integration), via son workflow
 manuel **Full private integration**. Elle exige un commit Workbench intégré à
 `main`, les sources privées à leurs SHA exacts et un flag d'activation. Le
-trial Enterprise observé le 28 octobre 2026 fournit 3 000 minutes Actions
-incluses, mais les budgets avec arrêt sur limite ne sont pas inclus. La page de
-facturation à 14:06 UTC affichait 207,7 minutes utilisées, 0 $ de dépense
-Actions après crédits et 0/50 Go de stockage. Ce relevé est un instantané, pas
-une réservation : recalculer la réserve juste avant chaque lancement. Le
-workflow réserve 555 minutes Linux équivalentes pour les 16 suites actuelles ;
-son attestation manuelle ne constitue pas un plafond de facturation.
+le trial Enterprise fournit des minutes Actions incluses, mais pas de budget
+GitHub avec arrêt à une limite. Vérifier le solde réel, le stockage disponible
+et l'absence de runs concurrents avant chaque lancement ; ces valeurs changent
+et ne constituent pas une réservation. Le workflow réserve 555 minutes Linux
+équivalentes pour les 16 suites actuelles ; son attestation manuelle ne
+constitue pas un plafond de facturation.
 
 La variable `SILICIUM_INTEGRATION_ENABLED` existe et vaut `0`. Le run de
 qualification [40701623830](https://github.com/Silicium-Project/Integration/actions/runs/40701623830)

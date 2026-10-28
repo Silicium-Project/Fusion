@@ -164,8 +164,10 @@ workflows composants et Integration doivent être fusionnées avant que ces
 contrôles soient actifs sur `main`. Les validations de branches de PR ne
 qualifient pas la composition complète ; celle-ci se lance seulement depuis
 `Integration/main`, après confirmation du solde et du plan. Ne pas contourner
-ces gardes. Les protections privées Free ne doivent pas être décrites comme
-équivalentes aux protections publiques.
+ces gardes. Au 28 octobre 2026, Integration et les cinq dépôts composants ont
+des rulesets privés actifs avec `integration/required` ou `qualify / ci/required`
+comme contrôle requis. Revérifier leur état et leurs paramètres après l'essai
+Enterprise ; une règle configurée ne prouve pas qu'un run l'a passée.
 Les preuves d’acceptation inter-dépôts et le transport privé des artefacts
 restent à qualifier ; ne pas accepter une fonctionnalité sur le seul gate public.
 

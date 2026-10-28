@@ -33,12 +33,10 @@
 - Les PR de restauration privées BackEnd #39, FrontEnd #28, Network #355,
   DesktopApp #1 et Solana #1 ont toutes leurs checks de qualification verts sur
   leur HEAD courant ; elles restent des PR de branche, certaines en brouillon.
-- Le trial Enterprise affiche 30 jours restants. À 14:06 UTC, Actions affichait
-  207,7/3 000 minutes utilisées, 0 $ facturé après crédits et 0/50 Go de
-  stockage. Le trial exclut le budget avec arrêt à une limite : l'attestation
-  Integration n'est pas un plafond de facturation. Réserver au plus 555 minutes
-  Linux équivalentes pour la matrice Integration actuelle, après nouvelle
-  mesure du solde juste avant le run.
+- Le trial Enterprise fournit des minutes Actions incluses, mais ne comprend
+  pas de budget avec arrêt à une limite. L'attestation Integration n'est donc
+  pas un plafond de facturation. La matrice actuelle réserve au plus 555 minutes
+  Linux équivalentes ; vérifier le solde réel juste avant tout lancement.
 - Le flag `SILICIUM_INTEGRATION_ENABLED` est `0` et aucun run Integration n'est
   en cours. Le dispatch de branche
   [40701623830](https://github.com/Silicium-Project/Integration/actions/runs/40701623830)
