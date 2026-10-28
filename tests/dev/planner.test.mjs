@@ -84,6 +84,14 @@ test('Network-to-Solana contracts run only in the cross-repository composition',
   assert.ok(!publicPlan.suites.includes('network-contract'));
 });
 
+test('combining plans preserves source pins required by private integration suites', () => {
+  const plan = makePlan({ paths: [], scope: 'integration' });
+  const combined = combinePlans(plan, makePlan({ paths: [], scope: 'integration' }));
+  const rows = Object.fromEntries(combined.matrix.include.map((row) => [row.suite, row.sources]));
+  assert.deepEqual(rows['network-contract'], ['network', 'solana']);
+  assert.deepEqual(rows.infrastructure, ['network', 'solana']);
+});
+
 test('a PR cannot silently remove the test command from an unchanged suite', () => {
   const step = { command: ['node', 'unit'], cwd: '.', kind: 'test', env: {} };
   assert.throws(
