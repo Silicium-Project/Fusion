@@ -9,7 +9,8 @@ import {
   dependencyAccepted,
   projectSyncFailureOutput,
   projectSyncOutput,
-  integrationRepository,
+  projectPullRequestRepositories,
+  projectPullRequestToken,
   projectRequiredCheckName,
   projectRequiredCheckConclusion,
 } from '../lib/project.mjs';
@@ -28,12 +29,19 @@ try {
       'The read-only Integration pull-request token is required for reconciliation.',
       3,
     );
+  const componentToken = process.env.COMPONENT_GH_TOKEN;
+  if (!componentToken)
+    throw new Failure(
+      'The read-only component pull-request token is required for reconciliation.',
+      3,
+    );
+  const privateTokens = { componentToken, integrationToken };
   const project = projectState();
   const items = new Map(project.items.filter((x) => x.content?.url).map((x) => [x.content.id, x]));
-  const prs = [
-    ...pages(`repos/${repository}/pulls?state=all`),
-    ...pages(`repos/${integrationRepository}/pulls?state=all`, { token: integrationToken }),
-  ];
+  const prs = projectPullRequestRepositories.flatMap((repo) => {
+    const token = projectPullRequestToken(repo, privateTokens);
+    return pages(`repos/${repo}/pulls?state=all`, token ? { token } : {});
+  });
   for (const item of items.values()) {
     const issue = item.content,
       f = fieldValues(item);
@@ -46,13 +54,14 @@ try {
     const active = [];
     for (const p of linked.filter((x) => !x.merged_at && x.state === 'open')) {
       const prRepository = p.base?.repo?.full_name;
-      if (![repository, integrationRepository].includes(prRepository)) continue;
-      const token = prRepository === integrationRepository ? integrationToken : undefined;
+      if (!projectPullRequestRepositories.includes(prRepository)) continue;
+      const token = projectPullRequestToken(prRepository, privateTokens);
+      const requestOptions = token ? { token } : {};
       const checks =
         api(`repos/${prRepository}/commits/${p.head.sha}/check-runs?filter=latest&per_page=100`, {
-          token,
+          ...requestOptions,
         }).check_runs ?? [];
-      const reviews = pages(`repos/${prRepository}/pulls/${p.number}/reviews`, { token });
+      const reviews = pages(`repos/${prRepository}/pulls/${p.number}/reviews`, requestOptions);
       const latest = new Map();
       for (const r of reviews) if (r.user?.login) latest.set(r.user.login, r);
       active.push({

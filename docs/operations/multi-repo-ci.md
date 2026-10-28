@@ -25,6 +25,42 @@ Lire [la décision](../architecture/multi-repo.md) et les
    des preuves de ses seuls fichiers publics. Ne pas activer une publication
    à partir de ce seul gate.
 
+## Suites qui lisent plusieurs dépôts privés
+
+La CI native d'un composant ne compose que ce dépôt avec la politique Workbench.
+Un test qui lit un autre composant privé ne doit donc pas être ajouté aux suites
+déclarées dans `workspace.components.<id>.suites`. Déclarer une suite croisée
+dans `tools/config/lanes.json`, lister chaque composant lu dans `sources`, et la
+laisser hors des suites natives. `Integration` matérialise alors uniquement ces
+sources épinglées, avec un jeton de lecture limité à ces dépôts.
+
+Pour Network, `network-integration` couvre les tests locaux au dépôt ; les
+assertions qui ont besoin du programme ou du SDK Solana sont isolées dans
+`network-contract`, avec `sources: [network, solana]`. Le plan de composant
+Network ne lance pas cette suite. Le plan privé Integration la lancera avec les
+deux dépôts quand leurs pins intègreront les changements correspondants. Le
+chemin attendu du SDK est `chain/sdk/src/index.ts`, selon la structure du dépôt
+Solana ; ne pas réintroduire les anciens chemins du monorepo
+`packages/solana-sdk`. La suite privée reste non qualifiée tant que les Actions
+Integration et son quota sont suspendus.
+
+## Routage des suites publiques
+
+Workbench sélectionne les suites publiques à partir des chemins réellement
+modifiés. Une PR limitée à `docs/` lance la validation documentaire ; les
+changements des workflows, outils partagés, contrats ou chemins inconnus
+élargissent la matrice publique complète. Les fichiers propres à un composant
+privé restent reportés vers Integration. `dev ci plan --scope public --base
+origin/main --head HEAD --json` doit expliquer les chemins, les suites retenues
+et les validations privées différées avant qu'un agent lance les contrôles.
+
+La qualification native ne relance que les suites enregistrées pour le
+composant concerné. Avant tout accès à sa source, le contrôle de budget exige
+également un run Workbench réussi sur le SHA épinglé, avec `ci/required` et la
+vérification de stockage tous deux terminés avec succès. Les suites publiques
+ne sont donc pas reconstruites dans chaque dépôt privé ; Integration reste
+responsable de la matrice complète avant livraison.
+
 Le workflow réutilisable s'exécute dans le contexte d'Integration : son jeton
 reste en lecture seule sur le dépôt appelant et ne gagne aucun droit sur
 Workbench. Le reçu de métadonnées et sa signature détachée restent privés
@@ -35,6 +71,18 @@ encore de candidat. La signature Ed25519 remplace l'attestation native
 indisponible pour un dépôt privé sur GitHub Free ; elle n'ajoute pas de journal
 de transparence et fait de l'accès en écriture à Integration sa frontière de
 confiance.
+
+Le dépôt `Integration` exécute la qualification et appelle, dans le même run,
+`private-integration-evidence.yml` via `workflow_call`. Le workflow réutilisable
+conserve le contexte et le `GITHUB_TOKEN` du workflow appelant ; le jeton limité
+à Integration, avec `Actions: read`, suffit pour vérifier le run et télécharger
+ses artefacts. L'App `Silicium Integration Reader`, installée avec
+`Actions: read` et `Metadata: read` sur `Integration`, n'est pas utilisée par
+ce parcours. Ne pas créer une seconde App de lecture des preuves ni copier une
+clé privée ou un Client ID d'App dans Workbench. Si l'architecture doit un jour
+déplacer la collecte hors de ce run privé, documenter d'abord le besoin d'accès
+inter-dépôts, le dépôt cible et les permissions minimales avant de créer une
+App distincte.
 
 La qualification native utilise un commit synthétique **local et temporaire**,
 parent du SHA Workbench épinglé. Il permet de qualifier une nouvelle version du
@@ -184,18 +232,22 @@ sources privées dans des workflows publics ou ouvrir un budget facturable.
 
 ## Synchronisation du Project 12 entre dépôts
 
-La réconciliation publique `project-sync.yml` lit les PR liées de Workbench et
-d'Integration privé. Elle utilise son jeton Project existant pour Workbench et
-un second jeton d'installation de courte durée limité à Integration, avec
-seulement `pull_requests: read` et `checks: read`. Le gate Workbench est
-`ci/required` ; celui d'Integration est `integration/required`. Un jeton ou une
-réponse de dépôt manquante bloque la réconciliation ; un gate absent ou ambigu
-laisse la PR en attente. Les
-données des PR privées ne sont jamais imprimées dans les logs publics, qui ne
-contiennent que des totaux ; leurs références et les blocages détaillés restent
-dans le Project 12 privé. Les changements Integration sont réconciliés par la
-planification existante toutes les quinze minutes ; la synchronisation ne donne
-aucun droit d'écriture ni d'accès au Project dans Integration.
+La réconciliation publique `project-sync.yml` lit les PR explicitement liées de
+Workbench, des cinq dépôts composants privés et d'Integration. Elle utilise
+trois jetons d'installation éphémères séparés : le jeton Project existant pour
+Workbench et `planning-private`, un jeton limité à Integration, puis un jeton
+limité à BackEnd, FrontEnd, DesktopApp, Network et Solana. Les deux derniers
+n'ont que `pull_requests: read` et `checks: read`. Le gate Workbench et celui
+des composants sont `ci/required` ; celui d'Integration est
+`integration/required`. Un jeton ou une réponse de dépôt manquante bloque la
+réconciliation ; un gate absent, en attente, dupliqué ou produit par une autre
+App laisse la PR en cours. Les données des PR privées ne sont jamais imprimées
+dans les logs publics, qui ne contiennent que des totaux ; leurs références et
+les blocages détaillés restent dans le Project 12 privé. La planification
+existante toutes les quinze minutes détecte les PR privées, qui ne déclenchent
+pas directement le workflow public. Le workflow ne clone ni n'exécute le code
+des PR privées et ne reçoit aucun droit d'écriture sur ces dépôts ou sur le
+Project depuis leurs jetons de preuve.
 
 ## Accès aux sources
 

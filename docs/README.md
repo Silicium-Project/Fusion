@@ -19,7 +19,8 @@ par sous-modules. Leurs commandes ne sont pas les procédures actuelles.
 ## Activation multi-dépôts
 
 - [CI privée, activation et limites](operations/multi-repo-ci.md)
-- [Inventaire mesuré de la CI/CD (26 octobre 2026)](operations/ci-inventory-2026-10-26.md)
+- [Inventaire mesuré de la CI/CD (27 octobre 2026)](operations/ci-inventory-2026-10-27.md) · [données JSON](operations/ci-inventory-2026-10-27.json)
+- [Capture historique de la CI/CD (26 octobre 2026)](operations/ci-inventory-2026-10-26.md)
 
 L'[architecture monorepo](architecture/monorepo.md) est conservée comme trace
 historique ; la décision actuelle est le Workbench public avec des composants

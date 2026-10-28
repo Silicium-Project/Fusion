@@ -35,12 +35,36 @@ le `main` courant et que son contrôle public `ci/required` a réussi :
 publique, sans jeton ; une preuve absente, ancienne, paginée ou non réussie
 bloque la suite avant toute demande de jeton Source Reader.
 
+Pour une PR Workbench, lire aussi `./dev ci plan --scope public --base
+origin/main --head HEAD --json`. Les suites publiques suivent les chemins
+modifiés ; une PR documentaire exécute la validation documentaire, alors que
+les workflows, outils partagés, contrats et chemins inconnus élargissent la
+matrice. Les suites privées différées ne sont pas des réussites : elles exigent
+la qualification Integration avant livraison.
+
+Une CI native n'exécute que les suites de son composant. Elle ne doit pas
+relancer les suites publiques de Workbench : le workflow exige auparavant un
+`ci/required` réussi et une observation de stockage fraîche pour le SHA exact
+de la politique épinglée. Vérifier `not_applicable` et `deferred_suites` pour
+distinguer ces cas ; les autres composants restent à qualifier dans Integration.
+
+Pour les runs et artefacts privés, garder la lecture dans le workflow
+`Integration` : `workflow_call` conserve le contexte et le `GITHUB_TOKEN` du
+run appelant, avec `Actions: read`. Ne pas créer une seconde App « Actions
+Evidence Reader » ni copier une clé privée ou un Client ID d'App dans Workbench :
+l'installation `Silicium Integration Reader` n'est pas requise par le parcours actuel. Voir
+[la procédure multi-dépôts](../operations/multi-repo-ci.md) avant de modifier
+ce flux.
+
 ## Implémenter une tranche
 
 1. Lire l'issue, son parent, ses dépendances et la cible de validation du Project.
 2. Ne démarrer que si préparation, responsable, taille et prérequis sont définis.
 3. Créer une branche courte et une PR brouillon avec les URL des issues.
 4. Lire les contrats affectés ; demander au plan CI les suites nécessaires.
+   Lorsqu'un test lit plusieurs dépôts privés, le déclarer comme suite croisée
+   avec tous ses `sources` ; ne pas l'ajouter aux suites de CI native d'un seul
+   composant. Garder ces sources hors des workflows publics.
 5. Implémenter le changement avec le contre-exemple et les tests applicables.
    Appliquer `dev format --write` puis les [normes de qualité](../development/quality.md).
 6. Exécuter les suites communes et conserver leurs rapports. Ne pas inventer
@@ -49,10 +73,14 @@ bloque la suite avant toute demande de jeton Source Reader.
 8. Présenter les changements, résultats observés et limites ; laisser la
    décision de revue/acceptation à un humain autorisé.
 
-La synchronisation du Project 12 observe aussi les PR et checks du dépôt privé
-Integration, avec un délai maximal nominal de quinze minutes. Les logs publics
-ne contiennent que des totaux ; un PR privé sans gate requis unique reste en
-attente. Ne saisis pas toi-même un statut comme preuve d'acceptation.
+La synchronisation du Project 12 observe les PR, revues et checks de Workbench,
+des cinq dépôts composants privés et d'Integration, avec un délai maximal
+nominal de quinze minutes pour les dépôts privés. Elle utilise des jetons App
+éphémères en lecture seule limités à `pull_requests` et `checks` pour les
+composants privés ; elle ne récupère ni n'exécute leur code. Les logs publics
+ne contiennent que des totaux. Une PR privée sans gate `ci/required` unique reste
+en attente et ne passe pas en revue. Ne saisis pas toi-même un statut comme
+preuve d'acceptation.
 Dans `dev capabilities --json`, `features.project_automation: available` décrit
 le synchroniseur distant activé dans Workbench. Les commandes locales
 `issue start` et `issue accept` gardent leurs propres exigences de droits, de

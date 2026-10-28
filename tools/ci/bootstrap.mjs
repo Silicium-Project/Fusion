@@ -53,7 +53,7 @@ try {
         : ['pkg-config', 'libssl-dev', 'libudev-dev', 'clang', 'cmake'];
     output(['sudo', 'apt-get', 'install', '-y', '--no-install-recommends', ...packages]);
   }
-  if (['network-integration', 'infrastructure'].includes(suite))
+  if (['network-integration', 'network-contract', 'infrastructure'].includes(suite))
     output([
       'python3',
       '-m',

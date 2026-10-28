@@ -42,13 +42,22 @@ Une PR brouillon indique du travail commencé. `Revue` exige que toutes les PR
 actives soient prêtes et que leur contrôle `ci/required` soit réussi pour leur
 dernier commit. Une PR fermée sans fusion ne vaut pas livraison.
 
-`main` utilise le mode mainteneur unique décidé par le propriétaire le
-25 octobre 2026 : PR obligatoire, contrôle CI obligatoire lié à GitHub Actions,
-branche à jour et discussions résolues. Aucune approbation par un autre compte
-n'est imposée ; CODEOWNERS conserve la carte des responsabilités. Le mainteneur
-examine les changements et décide de la fusion, même s'il en est l'auteur.
+Sur `Workbench/main`, le ruleset public actif impose une PR, `ci/required`
+réussi sur le SHA courant, une branche à jour et la résolution des discussions.
+Il n'impose aucune approbation externe : CODEOWNERS conserve la carte des
+responsabilités, et un humain décide de la fusion, même s'il en est l'auteur.
 La revue automatisée reste une aide. Les protections de production et la
 décision humaine d'acceptation des issues ne sont pas supprimées.
+
+Les dépôts composants privés et Integration sont sur GitHub Free. L'API GitHub
+refuse d'y lire ou configurer les rulesets et protections de branche, avec
+`Upgrade to GitHub Pro or make this repository public`. En conséquence, les
+règles PR/CI y décrivent le processus attendu, mais GitHub ne bloque pas un
+push direct d'un membre `write`. L'organisation garde `read` par défaut et
+l'équipe `Project management` reçoit `write` sur les dépôts privés : cela
+restreint les personnes autorisées, sans rendre le processus techniquement
+obligatoire. Aucun agent ne doit présenter la protection des composants comme
+active ou équivalente à `Workbench/main`.
 
 Après fusion, l'issue reste en `Validation`. Ni un ancien événement CI, ni une
 fusion ne suffisent à la déclarer terminée. La réconciliation consulte les
@@ -101,9 +110,15 @@ et les cartes sans issue. Le Project 12 reste privé.
 Le déclenchement manuel `workflow_dispatch` utilise `mode=dry-run` par défaut,
 uniquement depuis `main`. Il utilise un jeton App avec les droits du Project en
 lecture seule et n'affiche que le nombre d'items et les changements prévus, sans
-URL d'issue ni texte de blocage. Ce mode reste disponible même si le flag vaut
-`0`. Le mode `apply`, les événements d'issue/PR/CI et le rapprochement périodique
-toutes les quinze minutes exigent tous le flag à `1`.
+URL d'issue, PR privée ni texte de blocage. Les lectures des PR et des checks
+Workbench, Integration et des cinq composants utilisent des jetons distincts,
+éphémères et limités à `pull_requests:read` et `checks:read` pour les dépôts
+privés. Le workflow ne clone et n'exécute jamais le code d'une PR privée. Les
+événements GitHub reçus par Workbench et le rapprochement toutes les quinze
+minutes couvrent aussi les dépôts privés, qui ne déclenchent pas le workflow
+public directement. Ce mode reste disponible même si le flag vaut `0`. Le mode
+`apply`, les événements d'issue/PR/CI et le rapprochement périodique exigent le
+flag à `1`.
 
 L'automatisation modifie seulement les champs `Status` et `Blocage` du Project.
 Elle ne crée, ne ferme, n'assigne et ne commente aucune issue. Elle ignore les
@@ -113,8 +128,10 @@ issues `HOLD` ou `Arbitrage`. La règle de statut est :
   `Backlog` ; une issue préparée, assignée et sans dépendance ouverte peut
   passer à `Prêt` ;
 - PR liée brouillon, CI en attente/échec ou demande de changement : `En cours` ;
-- toutes les PR liées actives prêtes, `ci/required` réussi et aucune demande de
-  changement : `Revue` ;
+- toutes les PR liées actives de Workbench, des composants et d'Integration
+  prêtes, avec leur gate requis réussi et sans demande de changement : `Revue` ;
+- une PR privée sans gate `ci/required` unique ou avec contrôle en attente reste
+  en `En cours` avec un blocage automatique ; elle ne vaut pas une qualification ;
 - fusion d'une PR ou fermeture manuelle comme terminée sans preuve complète :
   `Validation` ;
 - `Terminé` exige l'acceptation humaine, une preuve de la cible et les

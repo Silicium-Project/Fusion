@@ -20,8 +20,14 @@ publiques restent publiques ; ne pas promettre de les rendre confidentielles.
 La CI publique utilise `dev ci plan --scope public`. Les suites applicatives
 restent obligatoires dans la qualification privée `--scope integration`. Un
 gate public vert ne qualifie aucune application ni livraison. Ne pas copier de
-clé de lecture des composants dans Workbench. Quota privé épuisé : blocage
-explicite, budget à zéro, aucun runner VPS de secours.
+clé de lecture des composants dans Workbench. Au 28 octobre 2026, l'organisation
+utilise un essai Enterprise temporaire ; revérifier le plan avant chaque
+campagne privée et après son expiration. Les workflows n'appliquent pas de
+coupe-circuit de facturation à 0 $. Avant tout run coûteux, vérifier dans la
+facturation GitHub que le solde de minutes incluses couvre le pire cas du plan,
+qu'aucun run privé concurrent ne consomme ce solde et que le stockage requis
+est disponible. Si l'observation est absente ou insuffisante, garder les flags
+fermés. Aucun dépassement facturé ni runner VPS de secours n'est autorisé.
 
 ## Carte
 
@@ -75,11 +81,22 @@ production restent des décisions humaines explicites.
 
 ## Qualité et fin de tâche
 
-`main` utilise le mode mainteneur unique : PR obligatoire, `ci/required` réussi
-pour le commit courant, branche à jour et discussions résolues. La revue externe
-est facultative ; un mainteneur humain décide de la fusion, y compris pour sa
-propre PR. Une analyse automatisée ne constitue pas une approbation humaine.
-Les approbations des environnements de production restent indépendantes.
+Sur `Workbench/main`, le ruleset public impose une PR, `ci/required` réussi
+pour le commit courant, une branche à jour et des discussions résolues. Le mode
+mainteneur unique n'exige pas d'approbation externe ; un humain décide de la
+fusion, y compris pour sa propre PR.
+
+Au 28 octobre 2026, `Workbench/main`, `Integration/main` et les cinq dépôts
+composants ont des rulesets actifs. Integration exige `integration/required` ;
+les composants exigent `qualify / ci/required`. Les six règles privées imposent
+une PR, des checks stricts sur une branche à jour, la résolution des discussions,
+et n'exigent aucune approbation. Seul le mode merge commit est permis, sans
+contournement. Ces règles sont configurées, mais leur réussite doit être
+vérifiée sur le SHA exact. Les flags de CI composant restent à `0` jusqu'à
+vérification du solde ; revérifier les règles après l'essai Enterprise.
+L'organisation garde `read` par défaut et l'équipe `Project management` porte
+l'écriture. Les approbations des environnements de production restent
+indépendantes.
 
 Les imports et rattachements d'historiques utilisent **Merge commit** ; aucun
 squash ou rebase. Vérifier l'ascendance Git après fusion. Pendant la migration
