@@ -35,6 +35,14 @@ le `main` courant et que son contrôle public `ci/required` a réussi :
 publique, sans jeton ; une preuve absente, ancienne, paginée ou non réussie
 bloque la suite avant toute demande de jeton Source Reader.
 
+Pour les runs et artefacts privés, garder la lecture dans le workflow
+`Integration` : `workflow_call` conserve le contexte et le `GITHUB_TOKEN` du
+run appelant, avec `Actions: read`. Ne pas créer une seconde App « Actions
+Evidence Reader » ni copier une clé privée ou un Client ID d'App dans Workbench :
+l'installation `Silicium Integration Reader` n'est pas requise par le parcours actuel. Voir
+[la procédure multi-dépôts](../operations/multi-repo-ci.md) avant de modifier
+ce flux.
+
 ## Implémenter une tranche
 
 1. Lire l'issue, son parent, ses dépendances et la cible de validation du Project.
