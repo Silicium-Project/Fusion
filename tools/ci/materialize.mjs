@@ -2,12 +2,14 @@
 import { resolve } from 'node:path';
 import { root, run, Failure } from '../lib/process.mjs';
 import { registry } from '../lib/planner.mjs';
+import { sourcesForSuite } from '../lib/materialization.mjs';
 import {
   workspaceConfig,
   workspaceLock,
   validateWorkspace,
   workspaceStatus,
 } from '../lib/workspace.mjs';
+
 const config = workspaceConfig(),
   lock = validateWorkspace(config, workspaceLock());
 if (
@@ -24,10 +26,7 @@ if (
 )
   throw new Failure('Materialize only into a clean checkout with no component sources', 3);
 const suiteId = process.env.SILICIUM_SOURCE_SUITE;
-const suite = registry().suites[suiteId];
-const sources = [...new Set(suite?.sources ?? [])];
-if (!suite || !sources.length || sources.some((id) => !config.components[id]))
-  throw new Failure('A registered suite with declared private sources is required', 3);
+const sources = sourcesForSuite(suiteId, config, registry().suites);
 const token = process.env.SILICIUM_SOURCE_TOKEN;
 delete process.env.SILICIUM_SOURCE_TOKEN;
 if (!token)

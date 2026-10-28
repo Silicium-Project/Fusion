@@ -2,19 +2,34 @@
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { api, repository, canonicalRepository } from '../lib/github.mjs';
-import { Failure } from '../lib/process.mjs';
+import { Failure, git } from '../lib/process.mjs';
 
-export function requireBudgetProof(record, jobs, now = Date.now()) {
+// Reserve for qualification artifacts, the detached receipt-signature envelope,
+// bounded Linux/Windows installer candidates, and the public Workbench budget
+// run itself. The query runs before this workflow uploads its bounded plan and
+// public-suite reports; the signature envelope consumes part of the 6 MiB headroom.
+export const organizationArtifactReservation = 392 * 1024 ** 2;
+
+export function requireBudgetProof(record, jobs, expectedSourceSha, now = Date.now()) {
+  const requiredJobs = jobs.filter((job) => job.name === 'ci/required');
+  const required =
+    requiredJobs.length === 1 &&
+    requiredJobs[0].status === 'completed' &&
+    requiredJobs[0].conclusion === 'success';
   const budget = jobs.find((job) => job.name === 'budget');
   const step = budget?.steps?.find((item) => item.name === 'Check organization artifact headroom');
   const completed = Date.parse(step?.completed_at);
+  if (!/^[a-f0-9]{40}$/.test(expectedSourceSha ?? ''))
+    throw new Failure('Exact Workbench policy SHA is required for the storage proof', 4);
   if (record.event !== 'push' && record.event !== 'workflow_dispatch')
     throw new Failure('Budget proof must come from trusted main', 4);
   if (
     canonicalRepository(record.head_repository?.full_name) !== repository ||
     record.head_branch !== 'main' ||
+    record.head_sha !== expectedSourceSha ||
     record.path?.split('@')[0] !== '.github/workflows/ci.yml' ||
     record.conclusion !== 'success' ||
+    !required ||
     budget?.conclusion !== 'success' ||
     step?.conclusion !== 'success' ||
     !Number.isFinite(completed) ||
@@ -22,7 +37,7 @@ export function requireBudgetProof(record, jobs, now = Date.now()) {
     now - completed > 15 * 60_000
   )
     throw new Failure(
-      'No fresh protected-main organization storage check; dispatch Workbench CI on main, then retry once it succeeds',
+      'No fresh successful ci/required and organization storage check on protected Workbench main; dispatch Workbench CI on main, then retry once it succeeds',
       4,
     );
   return {
@@ -32,18 +47,22 @@ export function requireBudgetProof(record, jobs, now = Date.now()) {
     source_sha: record.head_sha,
     checked_at: step.completed_at,
     expires_at: new Date(completed + 15 * 60_000).toISOString(),
-    incoming_bytes_reserved: 220200960,
+    incoming_bytes_reserved: organizationArtifactReservation,
   };
 }
 
-export function privateBudget({ request = api, now = Date.now() } = {}) {
+export function privateBudget({
+  request = api,
+  now = Date.now(),
+  expectedSourceSha = git('rev-parse', 'HEAD'),
+} = {}) {
   const runs = request(
     `repos/${repository}/actions/workflows/ci.yml/runs?branch=main&status=success&per_page=20`,
   ).workflow_runs;
   for (const run of runs) {
     const jobs = request(`repos/${repository}/actions/runs/${run.id}/jobs?per_page=100`).jobs;
     try {
-      return requireBudgetProof(run, jobs, now);
+      return requireBudgetProof(run, jobs, expectedSourceSha, now);
     } catch (error) {
       if (error.exitCode !== 4) throw error;
     }

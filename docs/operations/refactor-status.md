@@ -1,16 +1,53 @@
 # Refonte : état de référence et conditions d'activation
 
+## Mise à jour opérationnelle — 27 octobre 2026
+
+État vérifié sur Workbench `main` au commit `cc5e7a1cfadc73ca910264aad28e5658a311069b` :
+
+- Les PR #332, #322 et #323 sont fusionnées. Le CI du nouveau `main` a réussi ;
+  les suites publiques sont qualifiées et les suites privées restent réservées
+  à Integration.
+- La PR #325 a été actualisée puis fusionnée dans le commit
+  `96c9067371d73c4d3fb46ffdb055e877904bc753` ; ses suites publiques et
+  `ci/required` ont réussi au run [40469466715](https://github.com/Silicium-Project/Workbench/actions/runs/40469466715).
+  La PR #324 est en cours de réintégration sur le `main` courant.
+- La synchronisation du Project est active. Le premier apply
+  [40469270941](https://github.com/Silicium-Project/Workbench/actions/runs/40469270941)
+  a modifié 9 statuts et 139 champs de blocage sur les 139 issues Workbench ;
+  les éléments de `planning-private` restent exclus. Le dry-run de contrôle
+  [40471477621](https://github.com/Silicium-Project/Workbench/actions/runs/40471477621)
+  a ensuite prévu zéro changement après la qualification de #325 ; les journaux
+  restent agrégés et ne révèlent pas les issues privées.
+- Integration reste privé. Son dernier relevé ne montrait aucune variable
+  d'activation ; la dernière capture de facturation fournie signalait les
+  2 000 minutes privées incluses consommées. Aucune qualification privée n'a
+  été lancée et aucun runner VPS n'est utilisé.
+- `SILICIUM_DELIVERY_ENABLED=0` et `SILICIUM_DIAGNOSTICS_ENABLED=0` ; aucun
+  déploiement n'a été déclenché. La PR privée Integration #4 reste à qualifier
+  après vérification humaine du quota.
+
+Les sections suivantes conservent le rapport détaillé antérieur et ses preuves
+historiques ; leurs nombres et états ne décrivent pas tous le `main` courant.
+
 La [PR centrale #317](https://github.com/Silicium-Project/Fusion/pull/317) a été
 intégrée le 25 octobre 2026, après réussite de la qualification de sa révision
-`24c7590c`. Le squash utilisé a conservé exactement le code qualifié mais pas
-l'ascendance des imports. Le [rattachement des historiques](git-history-recovery.md)
-est préparé dans une PR distincte, avec sauvegarde et preuve d'identité des
-arbres. Son intégration et la qualification `push main` restent à vérifier.
-Ni cette page ni une qualification de PR ne valent acceptation ou livraison.
+`24c7590c`. Son squash a conservé le code qualifié, mais pas l'ascendance des
+imports. Le [rattachement des historiques](git-history-recovery.md) a ensuite
+été intégré par la [PR #319](https://github.com/Silicium-Project/Workbench/pull/319)
+avec un merge commit. Le commit de rattachement `ed5983d8` et la tête qualifiée
+`873ed2f2` sont ancêtres de `main` au SHA observé
+`90bec77675ca7a67c7202126386ef5dd9033b761`. Le [run `push main`
+40359090517](https://github.com/Silicium-Project/Workbench/actions/runs/40359090517)
+est réussi sur ce SHA exact et son contrôle `ci/required` a réussi. Le job privé
+`validate` a été ignoré car ce run utilisait le scope public. L'intégration des
+historiques et cette qualification `push main` sont vérifiées pour ce SHA ;
+elles ne qualifient ni les composants privés ni une livraison. Ni cette page ni
+une qualification CI ne valent acceptation ou déploiement.
 
 ## Décisions conservées
 
-- Fusion est **public** depuis le 25 octobre 2026 à 18:30 UTC, après validation
+- Workbench (anciennement Fusion) est **public** depuis le 25 octobre 2026 à
+  18:30 UTC, après validation
   du rapport, des historiques, des échanges et des ressources fournies par le propriétaire.
 - Le Project 12, `planning-private` et les trois anciens dépôts restent privés.
 - Aucune dépense Actions supplémentaire ; arrêt des dépassements à zéro.
@@ -29,8 +66,8 @@ Ni cette page ni une qualification de PR ne valent acceptation ou livraison.
 |---|---|---|
 | L0 | Références Git et GitHub, sauvegardes des historiques, patchs et fichiers locaux, inventaire des CI et runners | Conserver l'inventaire privé comme référence de restauration ; actualiser les nouvelles preuves |
 | L1 | Audit d'exposition actualisé, ouverture et publication des visuels validées, HOLD isolés, contribution et consignes IA | Conserver les rapports privés et contrôler les nouveaux contenus |
-| L2 | Imports historiques conservés dans la branche source, gitlinks retirés, chemins corrigés, issues et relations transférées ; rattachement au squash préparé | Fusion normale du rattachement, preuve d'ascendance sur `main` et qualification du SHA intégré |
-| L3 | Fusion public, `main` protégé, environnements restreints, approbation des workflows externes et retrait des anciens runners | Vérifier la qualification publique complète et les accès avant toute livraison |
+| L2 | #319 a rétabli l'ascendance ; cinq dépôts composants privés existent et Workbench les référence par gitlinks/locks ; vérification locale matérialisée réussie | Les pins actuels sont les têtes des cinq PR d'export, pas des ancêtres des `main` natifs. Qualifier et intégrer ces PR, puis repinner les commits acceptés. Déplacer aussi le runtime IA desktop encore présent comme dossier public ordinaire |
+| L3 | Workbench public, runners CI VPS retirés, règles de contribution et mode mainteneur unique définis | Confirmer les protections et environnements privés ; le gate public ne qualifie pas les composants privés |
 | L4 | `dev`/`dev.ps1`, registre, routage, contrôle final, normes, diagnostics et métriques | Résultat GitHub complet du commit évalué et parcours Windows/Anchor ; voir les checks de la PR |
 | L5 | Construction sur GitHub, manifeste, signatures et snapshots, tests d'installation, application et rollback API/web | Provisionner les signatures/SSH, qualifier installations et mises à niveau, adopter le VPS et démontrer le rollback ; drainage/canari runtime toujours bloquants |
 | L6 | Champs du Project, App installée et accès protégés provisionnés, réconciliation qualifiée en lecture, acceptation avec preuves et procédures IA | Intégrer le workflow revu, qualifier son exécution GitHub puis activer la synchronisation et retirer les automatismes natifs remplacés |
@@ -63,11 +100,29 @@ a ensuite réussi les **14 suites**, dont Windows et Solana, pour la tête de PR
 obtenir leur propre qualification ; ces résultats ne valent pas déploiement.
 
 La [qualification 40232356923](https://github.com/Silicium-Project/Fusion/actions/runs/40232356923)
-a ensuite réussi les 14 suites et `ci/required` sur `24c7590c`, avant la fusion
-de #317. Le job Solana a pris 13 min 13 s et l'outillage a exécuté 93 tests.
-Le SHA squash intégré n'a pas reçu de qualification `push` : une ancienne
-directive CI a été recopiée dans son message. Cette absence reste un blocage
-de livraison, malgré l'identité du code et la réussite de la qualification PR.
+a réussi les 14 suites et `ci/required` sur `24c7590c`, avant la fusion de #317.
+Le job Solana a pris 13 min 13 s et l'outillage a exécuté 93 tests. Après le
+rattachement #319, le [run `push main` 40359090517](https://github.com/Silicium-Project/Workbench/actions/runs/40359090517)
+a réussi sur le SHA exact `90bec77675ca7a67c7202126386ef5dd9033b761` ;
+`ci/required` est réussi et `validate` est ignoré car le scope est public. Le
+blocage d'ascendance et de qualification `push` décrit dans le rapport initial
+est levé pour ce SHA. Les validations privées et la livraison restent distinctes.
+
+Le contrôle `dev workspace verify --materialized --json` réussit sur le checkout
+de référence : les cinq gitlinks correspondent aux SHA de `components.lock.json`
+et les cinq sources sont matérialisées. L'API GitHub confirme que BackEnd,
+FrontEnd, DesktopApp, Network et Solana sont privés. À la date de ce relevé, les
+SHA verrouillés correspondent aux têtes des PR natives d'export ; aucun n'est
+encore ancêtre du `main` natif. Les PR doivent être qualifiées et intégrées avant
+que les pins représentent des versions acceptées.
+
+Le tree public observé contient aussi `apps/silicium-ai-runtime` comme dossier
+ordinaire : le code Tauri du composant DesktopApp le charge par chemins relatifs.
+La PR native DesktopApp a été actualisée pour intégrer ce paquet dans le dépôt
+privé et corriger les chemins ; le gitlink Workbench reste à l'ancien SHA tant
+qu'une PR d'intégration distincte ne l'a pas repinné et retiré du tree courant.
+Le snapshot et son historique antérieur restent publics, selon la décision
+explicite du propriétaire ; cette migration ne réécrit aucun commit.
 
 Le run a exécuté notamment 151 tests Go, 112 unités web et 56 scénarios
 navigateur, 34 unités natives Linux, 323 tests runtime et 69 tests WASM. Les
@@ -92,24 +147,26 @@ unitaires de scripts ne remplacent pas ces preuves.
 
 ## Activation restante, dans l'ordre
 
-1. Qualifier et intégrer le rattachement des historiques avec Merge commit,
-   puis vérifier les ancêtres et la qualification du SHA exact de `main`.
-   La revue externe est facultative dans le mode mainteneur unique.
-2. Conserver les livraisons désactivées pendant la qualification publique et
+1. Repinner DesktopApp sur le commit qui contient son runtime IA privé et retirer
+   `apps/silicium-ai-runtime` du tree Workbench courant, sans purger son historique.
+2. Garder les qualifications privées suspendues tant que quota et budget strict
+   à zéro ne permettent pas une preuve sans dépassement. Les jobs différés restent
+   bloquants pour toute livraison.
+3. Conserver les livraisons désactivées pendant la qualification publique et
    la préparation des signatures et accès. L'ouverture du code n'est pas une
    qualification du candidat ni une acceptation de livraison.
-3. Après intégration et revue du workflow, qualifier la réconciliation GitHub
+4. Après intégration et revue du workflow, qualifier la réconciliation GitHub
    avec l'App déjà installée avant toute synchronisation active. Conserver les
    anciens automatismes jusqu'à validation de leur remplacement.
-4. Rétablir la clé d'auto-update correspondant à celle des clients, ou qualifier
+5. Rétablir la clé d'auto-update correspondant à celle des clients, ou qualifier
    une migration de confiance revue. La dérive constatée reste bloquante.
-5. Provisionner les environnements de signature et déploiement par un canal
+6. Provisionner les environnements de signature et déploiement par un canal
    sécurisé ; qualifier les paquets et leur mise à niveau sur GitHub.
-6. Adopter les artefacts actuellement servis comme référence de rollback,
+7. Adopter les artefacts actuellement servis comme référence de rollback,
    préserver volumes et identités et retirer le publisher historique.
-7. Qualifier drainage, canari et reprise avant tout changement d'image réseau.
+8. Qualifier drainage, canari et reprise avant tout changement d'image réseau.
    Une télémétrie absente ou un simple healthcheck n'autorisent pas un arrêt.
-8. Démontrer dev, promotion prod et rollback, puis demander les acceptations
+9. Démontrer dev, promotion prod et rollback, puis demander les acceptations
    humaines des issues de gouvernance/CI/QRE concernées.
 
 Voir [l'activation détaillée](bootstrap.md), [la livraison](delivery.md),

@@ -36,9 +36,10 @@ export function parseChanges(raw) {
   return [...new Set(paths)].sort();
 }
 export function route(paths, config = registry()) {
-  const direct = new Set(['tooling', 'docs']);
+  const direct = new Set();
   const reasons = {};
-  let full = false;
+  let full = paths.length === 0;
+  if (full) reasons.__no_changed_paths__ = 'empty or unavailable change set';
   for (const path of paths) {
     if (
       path.startsWith('.github/workflows/') ||
@@ -57,6 +58,7 @@ export function route(paths, config = registry()) {
       path.startsWith('.github/ISSUE_TEMPLATE/') ||
       ['LICENSE', 'NOTICE'].includes(path)
     ) {
+      direct.add('docs');
       reasons[path] = 'documentation';
       continue;
     }
@@ -72,6 +74,7 @@ export function route(paths, config = registry()) {
         'package.json',
       ].includes(path)
     ) {
+      direct.add('tooling');
       reasons[path] = 'repository tooling';
       continue;
     }
@@ -111,11 +114,12 @@ export function scopeSelection(selected, scope, config, workspace) {
   if (scope === 'public' && config.workspace_mode !== 'multi-repo')
     return { ...selected, scope: 'legacy' };
   let suites;
-  if (scope === 'public') suites = workspace.public_suites;
+  if (scope === 'public')
+    suites = workspace.public_suites.filter((id) => selected.suites.includes(id));
   else if (scope === 'integration')
     suites = Object.keys(config.suites).filter((id) => config.suites[id].tier === 'pr');
   else if (scope.startsWith('component:') && workspace.components[scope.slice(10)])
-    suites = [...workspace.public_suites, ...workspace.components[scope.slice(10)].suites];
+    suites = [...workspace.components[scope.slice(10)].suites];
   else throw new Error(`Unknown qualification scope: ${scope}`);
   if (suites.some((id) => !config.suites[id])) throw new Error('Unregistered workspace suite');
   return { ...selected, scope, suites: [...new Set(suites)].sort() };
@@ -157,7 +161,12 @@ export function makePlan({
     deferred_suites:
       scope === 'public' || scope.startsWith('component:')
         ? Object.keys(config.suites)
-            .filter((id) => config.suites[id].tier === 'pr' && !selected.suites.includes(id))
+            .filter(
+              (id) =>
+                config.suites[id].tier === 'pr' &&
+                !selected.suites.includes(id) &&
+                !(scope.startsWith('component:') && workspace.public_suites.includes(id)),
+            )
             .map((suite) => ({
               suite,
               repository: workspace.integration_repository,
@@ -180,11 +189,17 @@ export function makePlan({
       .map(([suite, value]) => ({
         suite,
         reason:
-          scope !== 'local' && value.tier === 'pr'
-            ? 'outside this qualification scope; see deferred_suites'
-            : value.tier === 'pr'
-              ? 'component and consumers unchanged'
-              : 'requires a signed release candidate; not a source PR obligation',
+          scope === 'public' && workspace.public_suites.includes(suite)
+            ? 'unrelated to the changed paths in this PR'
+            : scope === 'public' && value.tier === 'pr'
+              ? 'private component suite deferred to Integration'
+              : scope.startsWith('component:') && workspace.public_suites.includes(suite)
+                ? 'public policy is checked at the exact pinned Workbench SHA'
+                : scope !== 'local' && value.tier === 'pr'
+                  ? 'outside this qualification scope; see deferred_suites'
+                  : value.tier === 'pr'
+                    ? 'component and consumers unchanged'
+                    : 'requires a signed release candidate; not a source PR obligation',
       })),
     matrix: {
       include: selected.suites.map((suite) => ({

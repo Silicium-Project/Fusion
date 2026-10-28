@@ -4,31 +4,114 @@ export const organization = 'Silicium-Project';
 export const repository = 'Silicium-Project/Workbench';
 export const canonicalRepository = (value) =>
   value === 'Silicium-Project/Fusion' ? repository : value;
-export function api(path, { method = 'GET', body } = {}) {
-  const args = ['gh', 'api', path, '--method', method];
-  if (body !== undefined) args.push('--input', '-');
-  const r = run(args, {
-    input: body === undefined ? undefined : JSON.stringify(body),
-    allowFailure: true,
-  });
-  if (r.status)
-    throw new Failure(
-      `GitHub API request failed: ${r.stderr.slice(-1200)}`,
-      /429|rate limit/i.test(r.stderr) ? 4 : 3,
-    );
-  return r.stdout.trim() ? JSON.parse(r.stdout) : null;
+
+const retryDelaysMs = [250, 750];
+const isTransientReadFailure = (message) =>
+  /\b(?:500|502|503|504)\b|stream error|http\/2.*(?:cancel|reset)|connection (?:reset|closed|timed out)|econnreset|etimedout|epipe|socket hang up|temporarily unavailable|temporary failure/i.test(
+    message,
+  );
+const isGraphqlQuery = (source) =>
+  typeof source === 'string' &&
+  /^(?:\uFEFF)?\s*(?:#[^\n]*(?:\n|$)\s*)*(?:query(?:\s|\(|$)|\{)/i.test(source);
+const waitSync = (milliseconds) => {
+  Atomics.wait(
+    new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT)),
+    0,
+    0,
+    milliseconds,
+  );
+};
+
+/** Create a GitHub API client; injected execution/wait functions keep retry behavior testable. */
+export function createClient({ execute = run, wait = waitSync } = {}) {
+  function api(path, { method = 'GET', body, token } = {}) {
+    const args = ['gh', 'api', path, '--method', method];
+    if (body !== undefined) args.push('--input', '-');
+    const input = body === undefined ? undefined : JSON.stringify(body);
+    // REST reads and GraphQL queries are idempotent. Never replay any mutation.
+    const retryable =
+      method === 'GET' || (path === 'graphql' && method === 'POST' && isGraphqlQuery(body?.query));
+    let result;
+    for (let attempt = 0; ; attempt++) {
+      result = execute(args, {
+        input,
+        allowFailure: true,
+        ...(token ? { env: { GH_TOKEN: token } } : {}),
+      });
+      if (!result.status) break;
+      const detail = `${result.error ?? ''}\n${result.stderr ?? ''}`.trim();
+      if (!retryable || attempt >= retryDelaysMs.length || !isTransientReadFailure(detail))
+        throw new Failure(
+          `GitHub API request failed: ${(result.stderr || result.error || '').slice(-1200)}`,
+          /429|rate limit/i.test(detail) ? 4 : 3,
+        );
+      wait(retryDelaysMs[attempt]);
+    }
+    return result.stdout.trim() ? JSON.parse(result.stdout) : null;
+  }
+
+  function graphql(query, variables = {}) {
+    const r = api('graphql', { method: 'POST', body: { query, variables } });
+    if (r.errors?.length)
+      throw new Failure(`GitHub GraphQL: ${r.errors.map((x) => x.message).join('; ')}`, 3);
+    return r.data;
+  }
+
+  return { api, graphql };
 }
-export function graphql(query, variables = {}) {
-  const r = api('graphql', { method: 'POST', body: { query, variables } });
-  if (r.errors?.length)
-    throw new Failure(`GitHub GraphQL: ${r.errors.map((x) => x.message).join('; ')}`, 3);
-  return r.data;
-}
-export function pages(path) {
+
+const client = createClient();
+export const { api, graphql } = client;
+export function pages(path, { token } = {}) {
   const result = [];
   for (let page = 1; ; page++) {
-    const values = api(`${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`);
+    const values = api(`${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`, {
+      token,
+    });
     if (!Array.isArray(values)) throw new Failure('Expected GitHub collection', 3);
+    result.push(...values);
+    if (values.length < 100) return result;
+  }
+}
+export function publicApi(path, { allowMissing = false } = {}) {
+  const url = new URL(path, 'https://api.github.com/');
+  if (url.origin !== 'https://api.github.com')
+    throw new Failure('Invalid public GitHub API path', 2);
+  const response = run(
+    [
+      'curl',
+      '--silent',
+      '--show-error',
+      '--max-time',
+      '15',
+      '--header',
+      'Accept: application/vnd.github+json',
+      '--header',
+      'X-GitHub-Api-Version: 2026-03-10',
+      '--write-out',
+      '\\n%{http_code}',
+      url.toString(),
+    ],
+    { allowFailure: true },
+  );
+  if (response.status) throw new Failure('Public GitHub API request failed');
+  const match = response.stdout.match(/\n([0-9]{3})$/);
+  if (!match) throw new Failure('Public GitHub API returned an invalid response');
+  const status = Number(match[1]);
+  if (status === 404 && allowMissing) return null;
+  if (status < 200 || status >= 300)
+    throw new Failure(`Public GitHub API request failed with HTTP ${status}`);
+  try {
+    return JSON.parse(response.stdout.slice(0, match.index));
+  } catch {
+    throw new Failure('Public GitHub API returned invalid JSON');
+  }
+}
+export function publicPages(path) {
+  const result = [];
+  for (let page = 1; ; page++) {
+    const values = publicApi(`${path}?per_page=100&page=${page}`);
+    if (!Array.isArray(values)) throw new Failure('Expected a public GitHub collection', 3);
     result.push(...values);
     if (values.length < 100) return result;
   }

@@ -8,8 +8,23 @@ test('capabilities lists actual commands, suites and unimplemented runtime deliv
   const result = JSON.parse(run(['node', 'tools/dev.mjs', 'capabilities', '--json']).stdout);
   assert.equal(result.schema_version, 1);
   assert.equal(result.features.worker_rolling_update, 'planned');
-  for (const name of ['doctor', 'ci plan', 'test', 'issue start', 'issue accept', 'deploy request'])
+  assert.equal(result.features.project_automation, 'available');
+  assert.equal(
+    result.commands.find((command) => command.command === 'issue start').availability,
+    'configuration_required',
+  );
+  for (const name of [
+    'doctor',
+    'ci plan',
+    'ci policy',
+    'ci public-evidence',
+    'test',
+    'issue start',
+    'issue accept',
+    'deploy request',
+  ])
     assert.ok(result.commands.some((c) => c.command === name));
+  assert.ok(!result.commands.some((c) => c.command === 'ci authorize-private'));
   assert.deepEqual(result.suites, Object.keys(readJson(root + '/tools/config/lanes.json').suites));
 });
 test('contract catalog refers to real definitions and registered suites', () => {

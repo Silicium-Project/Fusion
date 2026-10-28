@@ -43,6 +43,20 @@
       ]
     },
     {
+      "id": "ci-public-workbench-qualification",
+      "version": 1,
+      "owner": "tools",
+      "consumers": [
+        "tools",
+        "GitHub Actions",
+        "Silicium-Project/Integration"
+      ],
+      "definition": "contracts/ci/public-workbench-qualification-v1.schema.json",
+      "validation_suites": [
+        "tooling"
+      ]
+    },
+    {
       "id": "delivery-candidate",
       "version": "1",
       "owner": "infra",

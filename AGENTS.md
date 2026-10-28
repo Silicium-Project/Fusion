@@ -8,6 +8,9 @@ communes ci-dessous restent la référence locale et GitHub.
 
 Workbench est public ; les cinq composants sont des sous-modules privés. Lire
 [la décision](docs/architecture/multi-repo.md). Commencer par `dev workspace status`.
+Le registre `tools/config/workspace.json` et `components.lock.json` sont régis
+par leurs schémas versionnés sous `contracts/workspace/` ; toute évolution de
+format met à jour schéma, validateur, tests, consommateurs et cette procédure.
 Récupérer seulement les sources autorisées avec
 `dev workspace init --component ID --apply`. Préserver les checkouts divergents.
 Ne pas commiter les sources applicatives dans ce dépôt : une PR native, puis
@@ -67,11 +70,19 @@ production restent des décisions humaines explicites.
 
 ## Qualité et fin de tâche
 
-`main` utilise le mode mainteneur unique : PR obligatoire, `ci/required` réussi
-pour le commit courant, branche à jour et discussions résolues. La revue externe
-est facultative ; un mainteneur humain décide de la fusion, y compris pour sa
-propre PR. Une analyse automatisée ne constitue pas une approbation humaine.
-Les approbations des environnements de production restent indépendantes.
+Sur `Workbench/main`, le ruleset public impose une PR, `ci/required` réussi
+pour le commit courant, une branche à jour et des discussions résolues. Le mode
+mainteneur unique n'exige pas d'approbation externe ; un humain décide de la
+fusion, y compris pour sa propre PR.
+
+Les dépôts composants privés et Integration sont sur GitHub Free : GitHub y
+refuse les règles de protection de branche. La procédure PR et CI y est donc
+une règle d'équipe, pas un blocage serveur ; un membre qui a `write` peut encore
+pousser directement. Le `default_repository_permission` reste `read` et l'équipe
+`Project management` porte l'écriture. Ne présente jamais les contrôles privés
+comme imposés par GitHub. Réévaluer cette limite avant d'exiger une protection
+serveur côté composants. Les approbations des environnements de production
+restent indépendantes.
 
 Les imports et rattachements d'historiques utilisent **Merge commit** ; aucun
 squash ou rebase. Vérifier l'ascendance Git après fusion. Pendant la migration

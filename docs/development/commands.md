@@ -66,6 +66,25 @@ appelle `dev test --suite ...` ; un changement de dépendance ou de contrat
 qualifie aussi les consommateurs. Une surface inconnue impose la matrice.
 `dev check --changed --base origin/main` exécute l'ensemble des suites choisies.
 
+`dev workspace status --json` lit le registre versionné des dépôts, leur
+propriétaire, visibilité, branche par défaut et chemin, puis vérifie les pins
+contre `components.lock.json` et `.gitmodules`. Les dépendances vivent dans
+`tools/config/lanes.json`, les consommateurs de contrats dans
+`contracts/catalog.json`, et les versions de livraison dans
+`tools/config/delivery.json`.
+
+`dev ci policy --json` compare les métadonnées publiques de Workbench et le
+ruleset actif `Protect Main` au manifeste versionné. Une divergence échoue ;
+une erreur ou une pagination incomplète de l'API donne `blocked`, jamais un
+rapport propre. Ce contrôle ne lit pas les dépôts privés, le Project, les
+artefacts de release, les acteurs de contournement ou la protection de branche
+classique. La CI l'exécute quand les fichiers de politique concernés changent.
+
+`dev ci public-evidence --sha SHA --json` confirme sans jeton que le SHA
+correspond toujours au `main` courant et que son unique `ci/required` est
+terminé et réussi. Integration l'exécute avant de demander le jeton Source
+Reader ; un résultat absent, ancien ou incomplet bloque l'accès aux sources.
+
 ## Applications
 
 ```sh
@@ -89,27 +108,37 @@ localnet et des clés jetables ; Devnet est une opération explicite distincte.
 `--repository Silicium-Project/Integration` (ou le dépôt natif déclaré) pour
 une exécution privée avec les droits du compte GitHub courant. `dev issue start URL`
 prépare une transition du Project ; `--apply` la réalise après contrôle du WIP.
-`dev release plan` prépare un candidat ; `dev deploy request` prépare ou lance
-un workflow GitHub. Les étapes de production et d'acceptation sont humaines.
+`dev release plan` prépare un candidat et renvoie le schéma 2 : une CI publique
+Workbench réussie reste distincte de la qualification privée Integration,
+toujours requise. `dev deploy request` prépare ou lance un workflow GitHub ;
+l'application est bloquée tant que le raccordement CI-10 et ses marqueurs ne
+sont pas en place. Les étapes de production et d'acceptation sont humaines.
 
-`dev ci metrics --limit 20 --json` mesure les durées médianes et p95, le retour
-des contrôles rapides, l'attente des jobs, les échecs et les observations de
-cache disponibles. La commande lit les métadonnées GitHub et télécharge les
-petits rapports dans un répertoire temporaire supprimé après lecture. Elle ne
+`dev ci metrics --limit 20 --json` (schéma 2) mesure les durées médianes et p95,
+le retour des contrôles rapides, l'attente avant démarrage des workflows, l'attente
+des jobs, les échecs et les observations de cache disponibles. La commande lit
+les métadonnées GitHub et télécharge les petits rapports dans un répertoire
+temporaire supprimé après lecture. Ces téléchargements sont plafonnés à 16 Mio
+par run et 64 Mio au total ; les runs les plus récents sont traités en premier.
+La sortie indique le budget réservé et le nombre de runs ignorés si le plafond
+est atteint ; un lot supérieur à 16 Mio par run est ignoré et signalé. Elle ne
 relance aucun job. Les échantillons manquants et les caches désactivés restent
-distincts des valeurs nulles ou des échecs de cache ; le volume d'artefacts
-affiché porte sur Workbench, avec une indication de pagination incomplète.
+distincts des valeurs nulles ou des échecs de cache. Les
+artefacts Workbench sont paginés jusqu'à 10 000 entrées ;
+si le relevé reste incomplet ou change pendant la pagination, `bytes` vaut `null`
+et `bytes_observed` ne donne que le sous-total effectivement lu.
 
-L'attente part de `job.created_at` jusqu'à la première étape exécutée : elle
-inclut la file, la limitation de matrice et le provisionnement. `started_at`
-seul arrive trop tard pour mesurer cette attente. Une date de création absente
-est une observation indisponible.
+`workflow_start_wait` part de la création du run jusqu'à `run_started_at` : il
+mesure l'attente avant que les jobs existent. `job_queue_and_matrix_wait` part de
+`job.created_at` jusqu'à la première étape exécutée : il inclut ensuite la file,
+la limitation de matrice et le provisionnement du runner. Ces deux mesures ne
+doivent pas être confondues ; une date absente reste une observation indisponible.
 
-`dev ci authorize-private --head SHA --minutes 180` prépare une fenêtre de
-qualification privée du commit exact. `--apply` exige les droits administratifs,
-un budget Actions à zéro avec arrêt des dépassements, et suspend les anciens
-workflows avant d'autoriser cette seule qualification. Voir
-[la procédure](../operations/bootstrap.md#qualification-ponctuelle-tout-en-restant-privé).
+La qualification complète des composants privés s'exécute uniquement dans le
+dépôt privé [Integration](https://github.com/Silicium-Project/Integration), via
+le workflow manuel **Full private integration**. Vérifier le quota et le budget
+GitHub avant de le lancer ; Workbench ne fournit pas de commande pour ouvrir une
+fenêtre privée. Voir la [procédure d'activation](../operations/bootstrap.md).
 
 `dev ops diagnose --environment dev --json` prépare les observations CPU,
 disque, conteneurs et RPC. `--apply` demande le workflow protégé : voir

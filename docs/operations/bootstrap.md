@@ -1,77 +1,64 @@
-# Activation contrôlée de la nouvelle livraison
+# État et activation contrôlée des workflows
 
 ## État actuel
 
-Fusion est public depuis le 25 octobre 2026, après validation du rapport
-d'exposition par le propriétaire. La qualification CI est réactivée avec les
-protections publiques. Les workflows de publication, déploiement et suivi
-restent désactivés pendant leur préparation. La
-publication/diffusion exige en plus `SILICIUM_DELIVERY_ENABLED=1`. Leur présence
-ne constitue pas une preuve de livraison. Le protocole de drainage des workers
-reste à qualifier ; le programme d'application bloque un changement d'image
-réseau plutôt que de tuer une tâche active.
+Workbench (anciennement Fusion) est public. Sa CI qualifie le périmètre public
+et `ci/required` rend obligatoires les suites prévues par le plan ; les suites
+applicatives privées restent exclues de ce résultat. Les workflows privés
+distincts des dépôts composants et d'Integration n'obtiennent aucune preuve
+quand ils sont ignorés ou désactivés. Aucun runner CI n'est hébergé sur le VPS.
 
-Le premier report d'ouverture a été levé par le propriétaire après validation
-des historiques, échanges et droits de publication des visuels. Les plafonds
-restent à zéro et les runners du VPS restent retirés. Les suites restent aussi
-exécutables localement. La procédure privée ci-dessous est conservée pour un
-dépôt privé ; elle ne s'applique plus à la qualification publique de Fusion.
+La qualification complète des composants est isolée dans le dépôt privé
+[Integration](https://github.com/Silicium-Project/Integration), via son workflow
+manuel **Full private integration**. Elle exige un commit Workbench intégré à
+`main`, les sources privées à leurs SHA exacts, un flag d'activation et un
+budget Actions disponible avec plafond de dépense à zéro. Au dernier contrôle
+du dépôt Integration, aucune variable d'activation n'était définie. La dernière
+capture de facturation fournie montrait 2 000 minutes privées utilisées sur
+2 000 incluses ; cette capture n'est pas une mesure actuelle du quota. Vérifier
+le compte et le plafond avant tout lancement. Ne pas contourner un refus, payer
+un dépassement ni utiliser un runner VPS.
 
-## Qualification ponctuelle d'un dépôt privé
+La commande `dev ci authorize-private` a été supprimée : elle contrôlait une
+fenêtre dans Workbench et ne pouvait pas autoriser le workflow privé distinct
+d'Integration.
 
-```sh
-./dev ci authorize-private --head SHA --minutes 180 --json
-./dev ci authorize-private --head SHA --minutes 180 --apply
-```
+La synchronisation du Project est active (`SILICIUM_PROJECT_AUTOMATION_ENABLED=1`).
+Le premier apply GitHub du 27 octobre a réussi sur 139 issues Workbench et
+modifié 9 statuts et 139 champs « Blocage » ; les 32 éléments de `planning-private`
+restent exclus. Le dry-run qui a suivi n'a annoncé qu'une transition et un
+blocage supplémentaires après la qualification de la PR #325. Les champs
+« Blocage » saisis manuellement sont préservés. Publication et déploiement
+restent désactivés (`SILICIUM_DELIVERY_ENABLED=0`), tout comme les diagnostics
+distants (`SILICIUM_DIAGNOSTICS_ENABLED=0`).
 
-Le SHA doit être celui du checkout propre qui va être poussé dans la PR.
-La commande vérifie par l'API de facturation un budget Actions **0, avec arrêt
-automatique** et contrôle l'usage réel des artefacts sur toute l'organisation.
-Elle conserve la configuration précédente dans `.artifacts/admin`, désactive
-les anciens workflows, limite les actions autorisées et ouvre une fenêtre
-administrateur réservée à ce SHA (quatre heures au maximum). Aucune clé de
-déploiement ni d'App ne passe dans la qualification.
+Le protocole de drainage des workers reste à qualifier ; le programme
+d'application bloque un changement d'image réseau plutôt que d'interrompre une
+tâche active.
 
-Le workflow n'accepte que les PR internes de l'équipe. Il sépare les contrôles
-rapides des quatre validations lourdes simultanées ; une suite manquante reste
-un échec du contrôle final. Les caches et uploads de binaires sont désactivés
-pendant cette qualification privée ; seuls le plan et les petits rapports
-expirant après un jour sont transférés. Un quota GitHub épuisé bloque le run.
+## Qualification privée
 
-La présence du budget à zéro protège les dépenses ; elle ne garantit pas que
-GitHub acceptera d'allouer un runner. Le run
-[40199389136](https://github.com/Silicium-Project/Fusion/actions/runs/40199389136)
-a été refusé avant toute étape, avec un message relatif à la facturation ou
-à la limite de dépenses. `dev ci inspect --run ID --json` lit ces annotations
-et les distingue d'un test exécuté en échec. Ne pas augmenter le plafond,
-ouvrir le dépôt ou relancer en boucle pour contourner ce refus. La cause
-précise exige la lecture de l'état de facturation et du quota du compte.
+Lancer **Full private integration** uniquement depuis Integration, après avoir
+vérifié le quota et les flags. La procédure et les conditions d'acceptation
+font autorité dans le [README Integration](https://github.com/Silicium-Project/Integration/blob/main/README.md).
+Le résultat doit identifier le SHA Workbench, les cinq pins privés, toutes les
+suites requises et leurs rapports. Un run public Workbench ou un job ignoré ne
+remplace pas cette qualification et n'autorise ni publication ni déploiement.
 
-Une qualification PR n'est pas un push `main` qualifié et n'autorise aucune
-publication. Après collecte des résultats, supprimer `SILICIUM_PRIVATE_CI_WINDOW`
-et suspendre de nouveau Actions jusqu'à la prochaine fenêtre revue. Ne jamais
-réactiver les workflows des trois dépôts sources ou les runners VPS.
+## Protections GitHub observées
 
-## GitHub et droits
+Le rapport d'exposition a été validé et Workbench est public. La protection
+effective de `main` exige une PR, le contrôle `ci/required` strict et la
+résolution des discussions. Elle s'applique aux administrateurs et interdit le
+force-push et la suppression. Le mode mainteneur unique conserve zéro revue
+requise. Les anciens runners CI VPS sont retirés ; aucun build, test ou
+packaging ne revient sur le VPS.
 
-1. Valider le rapport d'exposition avant l'ouverture publique.
-2. Suspendre Actions, vérifier l'absence de jobs VPS actifs, puis désenregistrer
-   les runners des quatre dépôts. Ne pas interrompre leurs services applicatifs.
-3. Après ouverture : protéger `main`, imposer les PR, `ci/required` lié à GitHub
-   Actions, la branche à jour et la résolution des conversations, administrateurs
-   compris. Le mode mainteneur unique n'impose aucune approbation externe ;
-   CODEOWNERS indique les responsables et la révocation des anciennes approbations
-   reste activée. Exiger l'approbation des workflows de tous les contributeurs
-   externes et ne pas les approuver pendant la stabilisation.
-4. Restreindre les environnements à `main`. `production` et
-   `signing-production` exigent une approbation humaine indépendante.
-5. Migrer les secrets de déploiement actuellement au niveau dépôt vers les
-   environnements protégés. Retirer les anciens droits d'écriture et clés de
-   synchronisation des parcours désormais inutiles.
-
-L'organisation transmet actuellement un droit d'écriture par défaut. L'audit
-des membres et l'attribution nominative doivent précéder une éventuelle
-modification de ce défaut, qui affecterait aussi les autres dépôts.
+Les environnements de production et de signature restent limités à `main` et
+exigent une validation humaine indépendante. Les workflows de contributeurs
+externes ne sont pas approuvés pendant la stabilisation. L'audit des membres et
+des droits hérités de l'organisation reste nécessaire avant toute modification
+du rôle d'écriture par défaut.
 
 ### Mode mainteneur unique
 
@@ -83,7 +70,7 @@ sont désactivées. Les conversations, la CI stricte liée à l'App GitHub Actio
 l'application aux administrateurs et l'interdiction des pushes forcés et des
 suppressions restent actives. Aucun nouveau droit de contournement n'est créé.
 
-Vérifier aussi `repos/Silicium-Project/Fusion/rules/branches/main` : les règles
+Vérifier aussi `repos/Silicium-Project/Workbench/rules/branches/main` : les règles
 s'ajoutent à la protection classique. L'ancienne règle `Protect Main` exigeait
 elle aussi une approbation et celle du dernier push ; seule cette exigence est
 adaptée, avec les éventuels approbateurs spécifiques et l'approbation des
@@ -155,23 +142,34 @@ Le manifeste est `tools/config/project-app-manifest.json`. L'App doit avoir
 uniquement les permissions de lecture nécessaires aux preuves, la gestion des
 issues et des Projects. Aucun secret de livraison et aucun droit d'écriture du
 code ne lui sont attribués. Pour mesurer le budget global, l'installation doit
-viser **tous les dépôts** de l'organisation. Les jetons de synchronisation du
-Project sont ensuite limités à Fusion et planning-private. Le jeton budget
-demande seulement `actions: read` ; un JWT de courte durée vérifie que
-l'installation couvre bien toute l'organisation, sans être enregistré.
+viser **tous les dépôts** de l'organisation. Le jeton `Project sync` est ensuite
+limité à `Workbench` et `planning-private`, avec `checks: read`, `issues: read`,
+`pull_requests: read` et `organization_projects: write`. Le jeton budget demande
+seulement `actions: read` ; un JWT de courte durée vérifie que l'installation
+couvre bien toute l'organisation, sans être enregistré.
 
-La création d'une App requiert la session GitHub d'un propriétaire : le jeton
-CLI ne permet pas de la créer via REST. Placer `PROJECT_APP_CLIENT_ID` et
-`PROJECT_APP_PRIVATE_KEY` dans `project-automation`, puis vérifier une exécution
-sans `--apply` avant de définir `SILICIUM_PROJECT_AUTOMATION_ENABLED=1`.
+Pour suivre les PR privées, le workflow crée aussi deux jetons de preuve
+distincts : un limité à `Integration`, l'autre aux cinq dépôts composants.
+Chacun ne reçoit que `pull_requests: read` et `checks: read`. Ils ne peuvent ni
+lire le contenu des sources, ni modifier les PR ou accéder au Project. Les
+jetons restent distincts du jeton Project et sont révoqués à la fin du job.
 
 L'App `Silicium Project Automation` est créée et installée depuis le 25 octobre
 2026. Les deux secrets sont provisionnés dans cet environnement. La
-réconciliation locale a été qualifiée avec un jeton temporaire limité à
-Fusion/planning-private et à la lecture, puis révoqué : 134 issues observées,
-aucune écriture. L'observateur de stockage a aussi été vérifié avec un jeton
-Actions/metadata en lecture sur les huit dépôts. L'activation du workflow reste
-conditionnée à son intégration revue dans `main`.
+réconciliation GitHub `40469270941` a réussi le 27 octobre 2026 : elle a traité
+139 issues Workbench, avec 9 changements de statut et 139 mises à jour du champ
+`Blocage`. Les 32 éléments `planning-private` restent exclus. La synchronisation
+est maintenant active via `SILICIUM_PROJECT_AUTOMATION_ENABLED=1`; les événements
+PR/CI et le rapprochement toutes les quinze minutes partagent la même règle.
+Le dry-run GitHub de vérification
+(`40471477621`) a ensuite traité les 139 issues et prédit zéro changement, après
+réconciliation de l'événement CI de #325. Les blocages saisis par un mainteneur
+sont conservés ; les résumés `[auto]` sont recalculés. Les journaux ne contiennent
+que des compteurs agrégés, car le Project 12 reste privé.
+
+L'observateur de stockage a aussi été vérifié avec un jeton Actions/metadata en
+lecture sur les huit dépôts. Aucun job ne crée, modifie ou clôture une issue ;
+le workflow ne change que les champs `Status` et `Blocage` du Project.
 
 L'authentification de l'App pour vérifier son installation utilise un JWT
 envoyé avec `Authorization: Bearer`, directement en mémoire. Un HTTP 401 ou une
@@ -179,15 +177,15 @@ réponse invalide bloque la mesure ; aucun corps de réponse ni jeton n'entre
 dans les diagnostics. Le jeton d'installation utilisé pour lire les artefacts
 est distinct du JWT et ne reçoit que les permissions Actions nécessaires.
 
-Retirer seulement ensuite les anciens workflows natifs qui clôturent ou
-déplacent une issue sur une fusion. Conserver l'ajout automatique et les
-relations parent/enfant. Tester une réconciliation et un événement dupliqué.
+Les workflows natifs qui ajoutent les issues et leurs relations sont conservés.
+Ne les retirer qu'après vérification que les nouveaux éléments et relations
+continuent d'apparaître dans le Project.
 
 ## Budget et preuves
 
 Conserver les limites de dépenses GitHub à zéro. Le contrôle de budget doit
 avoir une vue Actions en lecture sur tous les dépôts de l'organisation ; un
-jeton limité à Fusion ne prouve pas l'usage global. Le plafond cible des
+jeton limité à Workbench ne prouve pas l'usage global. Le plafond cible des
 artefacts temporaires est de 400 Mio. Un défaut de mesure ou de quota reste
 bloquant. Aucun runner VPS ne sert de solution de secours.
 

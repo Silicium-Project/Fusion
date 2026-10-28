@@ -12,6 +12,7 @@ import { releasePlan, requestDeploy } from './lib/release.mjs';
 import { diagnosticRequest } from './lib/operations.mjs';
 import { inspectMetrics } from './lib/metrics.mjs';
 import { inspectRun } from './lib/ci-inspect.mjs';
+import { auditRepositoryPolicy } from './lib/repository-policy.mjs';
 import {
   workspaceStatus,
   initializeWorkspace,
@@ -22,6 +23,10 @@ import {
   workspaceConfig,
 } from './lib/workspace.mjs';
 import { prepareComponent } from './lib/component.mjs';
+import {
+  verifyPublicWorkbenchQualification,
+  writePublicQualificationOutputs,
+} from './lib/public-ci-evidence.mjs';
 
 const commands = [
   { command: 'workspace status', effect: 'read', usage: 'workspace status --json' },
@@ -68,10 +73,11 @@ const commands = [
     usage: 'ci inspect --run ID [--repository Silicium-Project/Integration]',
   },
   { command: 'ci metrics', effect: 'read', usage: 'ci metrics [--limit 20] --json' },
+  { command: 'ci policy', effect: 'read', usage: 'ci policy --json' },
   {
-    command: 'ci authorize-private',
-    effect: 'bounded Actions authorization with --apply; no delivery',
-    usage: 'ci authorize-private [--head SHA] [--minutes 180] [--apply]',
+    command: 'ci public-evidence',
+    effect: 'read',
+    usage: 'ci public-evidence --sha SHA --json',
   },
   { command: 'check', effect: 'local validation', usage: 'check --changed --base origin/main' },
   {
@@ -136,7 +142,7 @@ async function main() {
         private_integration: 'configuration_required',
         validation: 'available',
         signed_delivery: 'configuration_required',
-        project_automation: 'configuration_required',
+        project_automation: 'available',
         worker_rolling_update: 'planned',
       },
       suites: Object.keys(registry().suites),
@@ -238,11 +244,20 @@ async function main() {
   }
   if (command === 'ci' && subcommand === 'metrics')
     return output(inspectMetrics(Number(o.limit ?? 20)));
-  if (command === 'ci' && subcommand === 'authorize-private') {
-    const result = run(['node', 'tools/admin/qualify-private.mjs', ...process.argv.slice(4)], {
-      timeout: 120_000,
+  if (command === 'ci' && subcommand === 'policy') {
+    const sourceSha = process.env.GITHUB_SHA || run(['git', 'rev-parse', 'HEAD']).stdout.trim();
+    const report = await auditRepositoryPolicy({ sourceSha });
+    output(report);
+    process.exitCode = report.status === 'success' ? 0 : report.status === 'drift' ? 1 : 2;
+    return;
+  }
+  if (command === 'ci' && subcommand === 'public-evidence') {
+    const result = await verifyPublicWorkbenchQualification({
+      workbenchSha: o.sha,
     });
-    process.stdout.write(result.stdout);
+    writePublicQualificationOutputs(result, process.env.GITHUB_OUTPUT);
+    output(result);
+    process.exitCode = result.status === 'success' ? 0 : 1;
     return;
   }
   if (command === 'test') {

@@ -15,6 +15,13 @@ politique et utiliser son lanceur `dev`. Sa qualification crée une composition
 temporaire dont les rapports enregistrent le SHA source et celui de la politique.
 Ne jamais pousser ce commit synthétique de qualification.
 
+Pour toute modification du registre ou des pins, lire les schémas
+`contracts/workspace/registry-v1.schema.json` et
+`contracts/workspace/pins-v1.schema.json`. Mettre à jour les schémas versionnés,
+le validateur, les tests et les procédures IA dans la même PR ; conserver la
+cohérence entre propriétaire, dépôt, sous-module et SHA. Ne jamais ajuster les
+pins, la visibilité ou les identités par automatisation.
+
 La CI publique `--scope public` ne qualifie pas les applications. La qualification
 privée `--scope integration` doit couvrir les cinq pins avant livraison. Un
 quota privé épuisé reste un blocage. Lire `deferred_suites` et rapporter toutes
@@ -22,12 +29,42 @@ les validations manquantes. Mettre à jour les deux pins ensemble avec
 `dev workspace pin --component ID --revision SHA --apply`, puis créer une PR
 Workbench liée aux PR natives.
 
+Avant une qualification privée, vérifier aussi que le SHA Workbench exact est
+le `main` courant et que son contrôle public `ci/required` a réussi :
+`./dev ci public-evidence --sha SHA --json`. Le contrôle lit uniquement l'API
+publique, sans jeton ; une preuve absente, ancienne, paginée ou non réussie
+bloque la suite avant toute demande de jeton Source Reader.
+
+Pour une PR Workbench, lire aussi `./dev ci plan --scope public --base
+origin/main --head HEAD --json`. Les suites publiques suivent les chemins
+modifiés ; une PR documentaire exécute la validation documentaire, alors que
+les workflows, outils partagés, contrats et chemins inconnus élargissent la
+matrice. Les suites privées différées ne sont pas des réussites : elles exigent
+la qualification Integration avant livraison.
+
+Une CI native n'exécute que les suites de son composant. Elle ne doit pas
+relancer les suites publiques de Workbench : le workflow exige auparavant un
+`ci/required` réussi et une observation de stockage fraîche pour le SHA exact
+de la politique épinglée. Vérifier `not_applicable` et `deferred_suites` pour
+distinguer ces cas ; les autres composants restent à qualifier dans Integration.
+
+Pour les runs et artefacts privés, garder la lecture dans le workflow
+`Integration` : `workflow_call` conserve le contexte et le `GITHUB_TOKEN` du
+run appelant, avec `Actions: read`. Ne pas créer une seconde App « Actions
+Evidence Reader » ni copier une clé privée ou un Client ID d'App dans Workbench :
+l'installation `Silicium Integration Reader` n'est pas requise par le parcours actuel. Voir
+[la procédure multi-dépôts](../operations/multi-repo-ci.md) avant de modifier
+ce flux.
+
 ## Implémenter une tranche
 
 1. Lire l'issue, son parent, ses dépendances et la cible de validation du Project.
 2. Ne démarrer que si préparation, responsable, taille et prérequis sont définis.
 3. Créer une branche courte et une PR brouillon avec les URL des issues.
 4. Lire les contrats affectés ; demander au plan CI les suites nécessaires.
+   Lorsqu'un test lit plusieurs dépôts privés, le déclarer comme suite croisée
+   avec tous ses `sources` ; ne pas l'ajouter aux suites de CI native d'un seul
+   composant. Garder ces sources hors des workflows publics.
 5. Implémenter le changement avec le contre-exemple et les tests applicables.
    Appliquer `dev format --write` puis les [normes de qualité](../development/quality.md).
 6. Exécuter les suites communes et conserver leurs rapports. Ne pas inventer
@@ -35,6 +72,19 @@ Workbench liée aux PR natives.
 7. Mettre à jour documentation, exemples et instructions locales.
 8. Présenter les changements, résultats observés et limites ; laisser la
    décision de revue/acceptation à un humain autorisé.
+
+La synchronisation du Project 12 observe les PR, revues et checks de Workbench,
+des cinq dépôts composants privés et d'Integration, avec un délai maximal
+nominal de quinze minutes pour les dépôts privés. Elle utilise des jetons App
+éphémères en lecture seule limités à `pull_requests` et `checks` pour les
+composants privés ; elle ne récupère ni n'exécute leur code. Les logs publics
+ne contiennent que des totaux. Une PR privée sans gate `ci/required` unique reste
+en attente et ne passe pas en revue. Ne saisis pas toi-même un statut comme
+preuve d'acceptation.
+Dans `dev capabilities --json`, `features.project_automation: available` décrit
+le synchroniseur distant activé dans Workbench. Les commandes locales
+`issue start` et `issue accept` gardent leurs propres exigences de droits, de
+preuves et d'approbation humaine.
 
 ### Faire intégrer une PR
 
@@ -66,6 +116,21 @@ ni repli sur un runner VPS n'est autorisé.
 `dev ci metrics --limit 20 --json` donne les distributions et le nombre
 d'observations. Vérifier le SHA des runs avant de comparer ; ne pas présenter
 une absence de rapport ou un cache désactivé comme un gain de performance.
+Le téléchargement des rapports est borné à 64 Mio au total ; consulter
+`runs_skipped_for_download_budget` avant d'interpréter les métriques de cache.
+Lire séparément `workflow_start_wait` (création du run jusqu'au démarrage du
+workflow) et `job_queue_and_matrix_wait` (création du job jusqu'à sa première
+étape). Si le premier est élevé et le second bas, l'attente précède les jobs ;
+les métadonnées seules ne prouvent pas sa cause. Pour les artefacts, ne présenter
+`bytes` comme total que si `complete` vaut `true` ; sinon `bytes_observed` n'est
+qu'un sous-total.
+
+Quand un changement touche la politique GitHub ou son vérificateur, lancer
+`dev ci policy --json`. `success` ne couvre que le dépôt public Workbench et
+son ruleset `Protect Main`. `drift` indique les écarts observés ; `blocked`
+signifie que l'API ou ses données étaient incomplètes. Ce contrôle ne prouve
+pas la protection de branche classique, les acteurs de contournement, les
+dépôts privés, le Project ou la chaîne d'artefacts.
 
 Pour un service : préparer `dev ops diagnose --environment dev --json`, puis
 utiliser `--apply` si l'automatisation est configurée et autorisée. Lire
@@ -79,6 +144,13 @@ Qualifier les deux côtés et la compatibilité avec les données existantes.
 Pour Solana : garder ID de programme, autorités et clés hors du changement
 sauf demande explicite distincte ; localnet est l'oracle de CI.
 
+Avant d’affirmer qu’un résultat P2P ou Solana est vérifié, final, indépendant
+du site ou sûr pendant une partition, lire [les frontières de confiance et les
+états de finalité](../architecture/trust-boundaries.md). Ce document sépare les
+observations aux SHA étudiés des invariants visés et liste les limites encore
+ouvertes ; ne pas présenter une signature, un hash, une copie locale ou un vote
+comme preuve plus forte que son contrat.
+
 ## Qualification privée
 
 Lire [le runbook multi-dépôts](../operations/multi-repo-ci.md). Les workflows
@@ -88,12 +160,32 @@ ne doivent pas être décrites comme équivalentes aux protections publiques.
 Les preuves d’acceptation inter-dépôts et le transport privé des artefacts
 restent à qualifier ; ne pas accepter une fonctionnalité sur le seul gate public.
 
+Le changement CI-01 en cours introduit dans `DesktopApp` un flag de validation
+`SILICIUM_COMPONENT_CI_ENABLED` séparé de `SILICIUM_MIRROR_ENABLED`. Ne change
+pas ce dernier en activant ou diagnostiquant la CI : il autorise une écriture
+dans le dépôt Epitech et reste à `0` sans demande explicite de publication du
+miroir. Tant que la PR n'est pas fusionnée et qualifiée, ne présente pas ce
+contrôle comme actif sur `main`.
+
 ## Publier et déployer
 
 Lire [le runbook](../operations/delivery.md). Utiliser un SHA exact, le canal
-explicite et le manifeste qualifié. Préparer avec `dev release plan` et
-`dev deploy request`. L'option `--apply` demande l'action GitHub ; elle ne
-permet pas de contourner les protections ou l'approbation production.
+explicite et le manifeste qualifié. Traiter le manifeste de release comme une
+entrée non fiable : valider sa structure puis vérifier sa signature avec le
+trust anchor avant de l'appliquer. Le tag doit correspondre au champ GitHub
+`prerelease` du canal ; chaque fichier du candidat doit aussi correspondre au
+jeu exact, à la taille et au digest du manifeste. `dev release plan` distingue maintenant
+le succès public Workbench de la qualification privée requise ; il ne marque
+pas le public comme livraison qualifiée. C'est une commande de
+préparation. Au 27 octobre 2026, le raccordement de la qualification privée à la
+release et au déploiement n'est pas opérationnel (issue
+[CI-10](https://github.com/Silicium-Project/Workbench/issues/331)). Ne lance
+pas `dev deploy request --apply`, ne change pas les variables de livraison et
+ne traite pas une CI publique verte comme qualification des cinq dépôts. Les
+tests privés restent suspendus tant que quota et plafond à zéro ne sont pas
+vérifiés. Après acceptation de CI-10, l'option `--apply` demandera l'action
+GitHub autorisée ; elle ne contournera pas les protections ni l'approbation
+production.
 
 ## Utiliser les fonctions produit existantes
 
