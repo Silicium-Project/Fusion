@@ -41,8 +41,10 @@ Network ne lance pas cette suite. Le plan privé Integration la lancera avec les
 deux dépôts quand leurs pins intègreront les changements correspondants. Le
 chemin attendu du SDK est `chain/sdk/src/index.ts`, selon la structure du dépôt
 Solana ; ne pas réintroduire les anciens chemins du monorepo
-`packages/solana-sdk`. La suite privée reste non qualifiée tant que les Actions
-Integration et son quota sont suspendus.
+`packages/solana-sdk`. La suite privée reste non qualifiée tant que les PR de
+restauration des sources et de routage ne sont pas intégrées, puis que la
+qualification complète ne passe pas depuis `Integration/main`. Les flags et le
+quota doivent aussi être revérifiés avant ce run.
 
 ## Routage des suites publiques
 

@@ -96,9 +96,15 @@ suites privées `workspace-sources` et `solana`.
 Les workflows publics ne récupèrent aucun composant et n'ont pas de clé de
 lecture des sources privées. Les workflows natifs utilisent une version précise
 de la politique publique. La qualification complète s'exécute dans Integration.
-Les GitHub runners privés consomment le quota de l'organisation. Son budget
-Actions reste à zéro avec arrêt des dépassements ; quota épuisé = blocage, sans
-repli VPS ni exécution de nouvelles sources privées dans des logs publics.
+Les GitHub runners privés consomment le quota inclus de l'organisation. Le
+trial Enterprise observé le 28 octobre 2026 inclut des minutes Actions, mais
+exclut les budgets avec limite d'usage : il n'existe donc pas de coupe-circuit
+GitHub à 0 $ pendant cet essai. L'objectif reste zéro dépassement payé. Avant
+chaque exécution privée, vérifier le solde inclus et le pire cas pondéré du
+plan, ne lancer qu'un run manuel borné et refermer son flag après l'exécution.
+Une attestation de quota n'est pas un plafond de facturation. Si la réserve ne
+peut pas être confirmée, bloquer le run ; aucun repli VPS ni transfert de code
+privé vers les workflows publics n'est autorisé.
 
 ## Activation et limites
 

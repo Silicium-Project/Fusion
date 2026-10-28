@@ -112,8 +112,11 @@ fonctionnel identifié. Une relance d'erreur fonctionnelle ne remplace pas une
 correction. Une nouvelle révision invalide les anciens résultats applicables.
 
 Si aucun runner n'a démarré, lire `diagnostics` : un refus de facturation ou
-de limite de dépenses ne dit rien du résultat des tests. Conserver le plafond
-à zéro, la visibilité décidée et les échecs visibles ; aucune relance répétée
+de limite de dépenses ne dit rien du résultat des tests. L'objectif est zéro
+dépassement payé, mais le trial Enterprise observé le 28 octobre n'inclut pas
+les budgets avec arrêt sur limite : aucune attestation du workflow ne constitue
+un coupe-circuit. Vérifier le solde et le pire cas avant chaque run privé ;
+laisser les flags fermés si l'une des mesures manque. Aucune relance répétée
 ni repli sur un runner VPS n'est autorisé.
 
 `dev ci metrics --limit 20 --json` donne les distributions et le nombre
@@ -156,10 +159,13 @@ comme preuve plus forte que son contrat.
 
 ## Qualification privée
 
-Lire [le runbook multi-dépôts](../operations/multi-repo-ci.md). Les workflows
-natifs et Integration restent suspendus tant que leurs PR, flags et quota ne
-sont pas prêts. Ne pas contourner ce blocage. Les protections privées Free
-ne doivent pas être décrites comme équivalentes aux protections publiques.
+Lire [le runbook multi-dépôts](../operations/multi-repo-ci.md). Les PR des
+workflows composants et Integration doivent être fusionnées avant que ces
+contrôles soient actifs sur `main`. Les validations de branches de PR ne
+qualifient pas la composition complète ; celle-ci se lance seulement depuis
+`Integration/main`, après confirmation du solde et du plan. Ne pas contourner
+ces gardes. Les protections privées Free ne doivent pas être décrites comme
+équivalentes aux protections publiques.
 Les preuves d’acceptation inter-dépôts et le transport privé des artefacts
 restent à qualifier ; ne pas accepter une fonctionnalité sur le seul gate public.
 
@@ -167,8 +173,9 @@ Le changement CI-01 en cours introduit dans `DesktopApp` un flag de validation
 `SILICIUM_COMPONENT_CI_ENABLED` séparé de `SILICIUM_MIRROR_ENABLED`. Ne change
 pas ce dernier en activant ou diagnostiquant la CI : il autorise une écriture
 dans le dépôt Epitech et reste à `0` sans demande explicite de publication du
-miroir. Tant que la PR n'est pas fusionnée et qualifiée, ne présente pas ce
-contrôle comme actif sur `main`.
+miroir. Le flag de validation ne prend effet sur `main` qu'après fusion de la
+PR native correspondante ; un flag à `1` sans workflow intégré ne prouve pas
+que le contrôle est actif.
 
 ## Publier et déployer
 
@@ -185,8 +192,10 @@ release et au déploiement n'est pas opérationnel (issue
 [CI-10](https://github.com/Silicium-Project/Workbench/issues/331)). Ne lance
 pas `dev deploy request --apply`, ne change pas les variables de livraison et
 ne traite pas une CI publique verte comme qualification des cinq dépôts. Les
-tests privés restent suspendus tant que quota et plafond à zéro ne sont pas
-vérifiés. Après acceptation de CI-10, l'option `--apply` demandera l'action
+tests privés restent bloqués tant que les PR et le flag Integration ne sont
+pas prêts, ou si le solde inclus ne couvre pas le plan. Le trial ne fournit pas
+de coupe-circuit à 0 $ ; l'attestation de minute n'est pas une garantie de
+facturation. Après acceptation de CI-10, l'option `--apply` demandera l'action
 GitHub autorisée ; elle ne contournera pas les protections ni l'approbation
 production.
 

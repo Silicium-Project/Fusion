@@ -67,13 +67,15 @@ opérationnelle après la séparation de Workbench et des cinq dépôts privés.
   dépôts, la validation complète d'installation, la publication immuable et le
   déploiement restent à raccorder dans Integration ; aucun candidat n'est livré.
 - `SILICIUM_DELIVERY_ENABLED=0` dans Workbench et son marqueur de contrat est
-  absent. Dans Integration, `SILICIUM_INTEGRATION_ENABLED`,
-  `SILICIUM_DELIVERY_PREFLIGHT_ENABLED`, `SILICIUM_CANDIDATE_BUILD_ENABLED` et
-  le marqueur de contrat sont absents.
+  absent. Dans Integration, `SILICIUM_INTEGRATION_ENABLED=0` ; les flags
+  `SILICIUM_DELIVERY_PREFLIGHT_ENABLED` et `SILICIUM_CANDIDATE_BUILD_ENABLED`,
+  ainsi que le marqueur de contrat, sont absents.
   Aucun run privé, préflight, déploiement dev ou déploiement prod n'est
   autorisé par cet état. Le budget privé Actions était épuisé lors de la
-  vérification du 26 octobre ; il faut vérifier le solde avant tout run, sans
-  dépassement facturé ni runner VPS.
+  vérification du 26 octobre. Le trial Enterprise du 28 octobre fournit des
+  minutes incluses, mais pas de budget avec arrêt à 0 $ ; vérifier le solde et
+  le pire cas avant tout run. L'attestation n'est pas un coupe-circuit. Aucun
+  dépassement payé ni runner VPS n'est autorisé.
 - L'App Source Reader est installée uniquement sur les cinq dépôts privés et ses
   deux secrets chiffrés existent dans Integration. Elle garde `contents: read`
   seulement ; elle ne télécharge pas les artefacts et ne publie rien.
