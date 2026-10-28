@@ -201,11 +201,16 @@ livraison, 16 Mio pour le plan et les rapports privés, 1 Mio pour le reçu de
 qualification, 64 Kio pour sa signature détachée, 1 Mio pour l'identité de candidat, jusqu'à 120 Mio pour
 l'installateur Linux privé, 40 Mio pour l'installateur Windows privé, puis
 jusqu'à 5 Mio pour le plan et les quatre rapports publics du run Workbench
-lui-même. L'enveloppe de signature consomme une partie de la marge de 6 Mio,
-laissant environ 5,94 Mio. Cette réserve
-tient compte du fait que le contrôle de stockage s'exécute avant les
-téléversements du run courant. Les workflows privés exigent que cette étape
-exacte ait réussi depuis moins de quinze minutes et que son SHA corresponde
+lui-même. Cette réserve tient compte du fait que le contrôle de stockage
+s'exécute avant les téléversements du run courant. Le contrôle applique un
+plafond interne de 512 Mio quand l'API de l'organisation rapporte le plan
+Enterprise et de 400 Mio dans les autres cas ; un plan absent ou inconnu retombe
+sur le plafond plus bas. Le plafond Enterprise reste volontairement petit au
+regard des 50 Go de stockage Actions/Packages inclus sur ce plan
+([quota](https://docs.github.com/en/billing/reference/product-usage-included)).
+Il s'agit d'une garde de stockage, pas d'une limite de facturation. Les
+workflows privés exigent que cette étape exacte ait réussi depuis moins de
+quinze minutes et que son SHA corresponde
 exactement au Workbench utilisé pour la qualification. Il s'agit d'une
 observation bornée, pas d'un verrou global de stockage entre tous les dépôts.
 Les campagnes complètes sont sérialisées, les rapports limités à 1 Mio et les
@@ -240,9 +245,13 @@ symboliques, les réécritures et les identités d'artefact incomplètes. La
 construction du candidat et la signature/publication restent des étapes
 distinctes et non activées.
 
-Ne pas autoriser de dépenses Actions au-delà du quota inclus. Un plafond avec
-arrêt est préférable lorsqu'il est disponible. Si le plan ou le trial ne donne
-pas accès à ce contrôle, ne prétendre pas que le compte est protégé contre les
+Ne pas autoriser de dépenses Actions au-delà du quota inclus. Le trial
+Enterprise donne jusqu'à 3 000 minutes standard hébergées
+([conditions du trial](https://docs.github.com/en/enterprise-cloud%40latest/admin/overview/setting-up-a-trial-of-github-enterprise-cloud)) ;
+ce quota doit être contrôlé séparément du stockage. Un plafond avec arrêt est
+préférable lorsqu'il
+est disponible. Si le plan ou le trial ne donne pas accès à ce contrôle, ne
+prétendre pas que le compte est protégé contre les
 dépassements : ne lancer que des workflows manuels dont la borne pondérée tient
 dans le solde inclus, et laisser les flags à zéro en dehors de cette fenêtre.
 L'épuisement du quota bloque la qualification. Ne pas utiliser de runner VPS,

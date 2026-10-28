@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { generateKeyPairSync, verify } from 'node:crypto';
 import {
   installationRecord,
+  organizationArtifactLimit,
   remainingBudget,
   requireCoverage,
 } from '../../tools/ci/storage-budget.mjs';
@@ -16,6 +17,16 @@ test('temporary storage has a hard ceiling and invalid usage fails closed', () =
     [1, Infinity],
   ])
     assert.throws(() => remainingBudget(a, b, 400));
+});
+test('the organization plan selects a conservative artifact cap and unknown plans fail closed', () => {
+  const enterprise = organizationArtifactLimit({ plan: { name: 'enterprise' } });
+  const free = organizationArtifactLimit({ plan: { name: 'free' } });
+  const unknown = organizationArtifactLimit({});
+  assert.equal(enterprise, 512 * 1024 ** 2);
+  assert.equal(free, 400 * 1024 ** 2);
+  assert.equal(unknown, free);
+  assert.ok(remainingBudget(12 * 1024 ** 2, 392 * 1024 ** 2, enterprise) > 0);
+  assert.throws(() => remainingBudget(12 * 1024 ** 2, 392 * 1024 ** 2, free));
 });
 test('an App restricted to selected repositories cannot measure the organization budget', () => {
   const installation = { repository_selection: 'all', account: { login: 'Silicium-Project' } };
