@@ -207,6 +207,17 @@ Les campagnes complètes sont sérialisées, les rapports limités à 1 Mio et l
 installateurs limités à 120/40 Mio expirent après un jour ; les caches privés
 sont désactivés pendant la migration.
 
+Cette preuve porte uniquement sur le stockage des artefacts. `private-budget.mjs`
+ne lit pas le solde Actions inclus, ne calcule pas un montant facturable et ne
+prouve pas qu'un plafond de dépenses bloque les dépassements. Le trial
+Enterprise observé le 2026-10-28 ne donne pas accès à un budget avec arrêt à
+0 $. Tant que cette limite existe, laisser les flags privés à zéro hors d'un
+lancement manuel borné, vérifier le solde inclus juste avant le lancement et
+comparer ce solde à tous les timeouts pondérés par type de runner. Le contrôle
+Integration proposé dans la PR #4 demande un solde vérifié et bloque le run
+avant tout jeton privé si la réserve calculée ne tient pas ; cette attestation
+reste une vérification humaine et ne remplace pas un plafond GitHub.
+
 Les suites `api`, `web`, `node-ui` et `network-integration` téléversent aussi
 leurs sorties de compilation privées sous `delivery-<suite>-<run_attempt>`.
 Le vérificateur de Workbench exige les quatre noms exacts, enregistre leurs
@@ -224,11 +235,14 @@ symboliques, les réécritures et les identités d'artefact incomplètes. La
 construction du candidat et la signature/publication restent des étapes
 distinctes et non activées.
 
-Le budget Actions de l'organisation doit rester à zéro avec blocage du
-dépassement. Les runners standards des dépôts privés consomment le quota
-inclus ; le statut public de Workbench ne change pas cette règle. Son
-épuisement bloque la qualification. Ne pas utiliser de runner VPS, copier des
-sources privées dans des workflows publics ou ouvrir un budget facturable.
+Ne pas autoriser de dépenses Actions au-delà du quota inclus. Un plafond avec
+arrêt est préférable lorsqu'il est disponible. Si le plan ou le trial ne donne
+pas accès à ce contrôle, ne prétendre pas que le compte est protégé contre les
+dépassements : ne lancer que des workflows manuels dont la borne pondérée tient
+dans le solde inclus, et laisser les flags à zéro en dehors de cette fenêtre.
+L'épuisement du quota bloque la qualification. Ne pas utiliser de runner VPS,
+copier des sources privées dans des workflows publics ou ouvrir un budget
+facturable.
 
 ## Synchronisation du Project 12 entre dépôts
 
