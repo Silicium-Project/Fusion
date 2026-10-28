@@ -6,7 +6,7 @@
     "network": {
       "repository": "Silicium-Project/Network",
       "path": "network",
-      "commit": "7763582912a6cf50144963f0bf20e764f02f3a9d"
+      "commit": "9ceb191cf155b3b740467965cc951ef46c9c6094"
     },
     "api": {
       "repository": "Silicium-Project/BackEnd",
