@@ -11,6 +11,11 @@ import { Failure, git } from '../lib/process.mjs';
 export const organizationArtifactReservation = 392 * 1024 ** 2;
 
 export function requireBudgetProof(record, jobs, expectedSourceSha, now = Date.now()) {
+  const requiredJobs = jobs.filter((job) => job.name === 'ci/required');
+  const required =
+    requiredJobs.length === 1 &&
+    requiredJobs[0].status === 'completed' &&
+    requiredJobs[0].conclusion === 'success';
   const budget = jobs.find((job) => job.name === 'budget');
   const step = budget?.steps?.find((item) => item.name === 'Check organization artifact headroom');
   const completed = Date.parse(step?.completed_at);
@@ -24,6 +29,7 @@ export function requireBudgetProof(record, jobs, expectedSourceSha, now = Date.n
     record.head_sha !== expectedSourceSha ||
     record.path?.split('@')[0] !== '.github/workflows/ci.yml' ||
     record.conclusion !== 'success' ||
+    !required ||
     budget?.conclusion !== 'success' ||
     step?.conclusion !== 'success' ||
     !Number.isFinite(completed) ||
@@ -31,7 +37,7 @@ export function requireBudgetProof(record, jobs, expectedSourceSha, now = Date.n
     now - completed > 15 * 60_000
   )
     throw new Failure(
-      'No fresh protected-main organization storage check; dispatch Workbench CI on main, then retry once it succeeds',
+      'No fresh successful ci/required and organization storage check on protected Workbench main; dispatch Workbench CI on main, then retry once it succeeds',
       4,
     );
   return {

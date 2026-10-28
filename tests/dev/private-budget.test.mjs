@@ -17,6 +17,7 @@ const record = {
   conclusion: 'success',
 };
 const jobs = [
+  { name: 'ci/required', status: 'completed', conclusion: 'success' },
   {
     name: 'budget',
     conclusion: 'success',
@@ -62,6 +63,19 @@ test('private budget proof requires the actual protected organization check', ()
     assert.throws(() => requireBudgetProof({ ...record, ...changes }, jobs, record.head_sha, now));
   assert.throws(() => requireBudgetProof(record, jobs, 'short-sha', now));
   assert.throws(() => requireBudgetProof(record, [], record.head_sha, now));
+  assert.throws(() => requireBudgetProof(record, [jobs[1]], record.head_sha, now));
+  assert.throws(() =>
+    requireBudgetProof(
+      record,
+      [
+        jobs[0],
+        { ...jobs[1] },
+        { name: 'ci/required', status: 'completed', conclusion: 'failure' },
+      ],
+      record.head_sha,
+      now,
+    ),
+  );
   assert.throws(() =>
     requireBudgetProof(record, [{ ...jobs[0], steps: [] }], record.head_sha, now),
   );
