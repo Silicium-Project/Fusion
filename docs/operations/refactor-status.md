@@ -1,5 +1,28 @@
 # Refonte : état de référence et conditions d'activation
 
+## Mise à jour opérationnelle — 28 octobre 2026 (14:29 UTC)
+
+- Les contrôles de PR privés sont opérationnels sous la configuration Enterprise
+  actuelle : Integration #4 et #5 ont `integration/required` et CodeQL verts ;
+  les PR de restauration BackEnd #39, FrontEnd #28, Network #355, DesktopApp #1
+  et Solana #1 ont leurs suites de qualification vertes sur leur HEAD courant.
+  Cela confirme l'exécution des workflows hébergés privés, pas encore la
+  qualification complète de leur composition intégrée.
+- Le workflow complet reste volontairement limité à `Integration/main`, car
+  Workbench ne matérialise les sources privées que depuis cette référence. Le
+  run de branche [40701623830](https://github.com/Silicium-Project/Integration/actions/runs/40701623830)
+  s'est arrêté avant la récupération de tout code privé. Le flag de campagne
+  reste à `0` et aucun run complet n'est actif.
+- Les budgets avec limite ne sont pas disponibles pendant l'essai Enterprise :
+  ni l'attestation manuelle ni l'usage inclus ne constituent un coupe-circuit
+  fiable à 0 $. Avant une campagne complète, vérifier le solde courant, le pire
+  cas du plan, le stockage et l'absence de concurrence ; ne pas lancer si un
+  de ces éléments est inconnu ou insuffisant.
+- La campagne attend encore les fusions humaines des PR de restauration
+  nécessaires, de Workbench #344 (routage des sources privées) et des PR
+  Integration #4/#5. Après intégration, relancer d'abord les contrôles de
+  `main`, puis la qualification privée bornée.
+
 ## Mise à jour opérationnelle — 28 octobre 2026 (14:16 UTC)
 
 - `Workbench/main` est `2e563f28c1d03adb210ecc6c62043b6374c91be7`. Le run
