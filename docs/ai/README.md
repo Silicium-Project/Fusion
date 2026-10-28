@@ -48,6 +48,14 @@ relancer les suites publiques de Workbench : le workflow exige auparavant un
 de la politique épinglée. Vérifier `not_applicable` et `deferred_suites` pour
 distinguer ces cas ; les autres composants restent à qualifier dans Integration.
 
+Pour les runs et artefacts privés, garder la lecture dans le workflow
+`Integration` : `workflow_call` conserve le contexte et le `GITHUB_TOKEN` du
+run appelant, avec `Actions: read`. Ne pas créer une seconde App « Actions
+Evidence Reader » ni copier une clé privée ou un Client ID d'App dans Workbench :
+l'installation `Silicium Integration Reader` n'est pas requise par le parcours actuel. Voir
+[la procédure multi-dépôts](../operations/multi-repo-ci.md) avant de modifier
+ce flux.
+
 ## Implémenter une tranche
 
 1. Lire l'issue, son parent, ses dépendances et la cible de validation du Project.
