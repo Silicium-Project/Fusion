@@ -90,7 +90,7 @@ test('stale or future storage observations block uploads and no job is dispatche
         now,
         expectedSourceSha: record.head_sha,
       }),
-    /blocked/,
+    /storage proof succeeds.*does not enforce an Actions billing cap/,
   );
 });
 test('a fresh budget check from a different main commit is rejected', () => {

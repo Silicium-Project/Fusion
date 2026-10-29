@@ -72,6 +72,12 @@ export async function installationRecord(
     throw new Failure('Invalid App installation metadata; budget coverage is unknown', 3);
   }
 }
+export function organizationArtifactLimit(organization) {
+  // Enterprise plans include substantially more Actions/Packages storage. Keep
+  // this internal cap conservative during the trial, and fall back to the
+  // previous Free allowance as soon as the organization reports another plan.
+  return organization?.plan?.name === 'enterprise' ? 512 * 1024 ** 2 : 400 * 1024 ** 2;
+}
 export function remainingBudget(usage, incoming, limit = 400 * 1024 ** 2) {
   if (
     ![usage, incoming, limit].every(Number.isSafeInteger) ||
@@ -108,13 +114,15 @@ if (process.argv[1]?.endsWith('/storage-budget.mjs')) {
     }
   }
   const incoming = Number(process.env.SILICIUM_INCOMING_BYTES ?? 64 * 1024 ** 2);
+  const limit = organizationArtifactLimit(organization);
   console.log(
     JSON.stringify({
       schema_version: 1,
       repository,
       repositories_observed: repos.length,
       usage_bytes: usage,
-      remaining_bytes: remainingBudget(usage, incoming),
+      limit_bytes: limit,
+      remaining_bytes: remainingBudget(usage, incoming, limit),
     }),
   );
 }
