@@ -21,7 +21,10 @@ La CI publique utilise `dev ci plan --scope public`. Les suites applicatives
 restent obligatoires dans la qualification privée `--scope integration`. Un
 gate public vert ne qualifie aucune application ni livraison. Ne pas copier de
 clé de lecture des composants dans Workbench. Quota privé épuisé : blocage
-explicite, budget à zéro, aucun runner VPS de secours.
+explicite, aucun runner VPS de secours. Règle cible : budget Actions à zéro avec
+arrêt du dépassement. Pendant l'essai Enterprise (3 000 min), qui n'a pas de
+budget d'arrêt, suivi manuel des minutes avant chaque campagne lourde, seuil
+d'alerte, campagnes complètes sérialisées, et aucun abonnement Azure lié.
 
 ## Carte
 

@@ -72,8 +72,9 @@ opérationnelle après la séparation de Workbench et des cinq dépôts privés.
   le marqueur de contrat sont absents.
   Aucun run privé, préflight, déploiement dev ou déploiement prod n'est
   autorisé par cet état. Le budget privé Actions était épuisé lors de la
-  vérification du 26 octobre ; il faut vérifier le solde avant tout run, sans
-  dépassement facturé ni runner VPS.
+  vérification du 26 octobre ; l'essai Enterprise (3 000 minutes, rapporté le
+  28 octobre, non revérifié) a débloqué les runners privés. Relever le compteur
+  avant tout run, sans dépassement facturé, sans lien Azure ni runner VPS.
 - L'App Source Reader est installée uniquement sur les cinq dépôts privés et ses
   deux secrets chiffrés existent dans Integration. Elle garde `contents: read`
   seulement ; elle ne télécharge pas les artefacts et ne publie rien.

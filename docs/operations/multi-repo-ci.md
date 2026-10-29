@@ -41,8 +41,9 @@ Network ne lance pas cette suite. Le plan privé Integration la lancera avec les
 deux dépôts quand leurs pins intègreront les changements correspondants. Le
 chemin attendu du SDK est `chain/sdk/src/index.ts`, selon la structure du dépôt
 Solana ; ne pas réintroduire les anciens chemins du monorepo
-`packages/solana-sdk`. La suite privée reste non qualifiée tant que les Actions
-Integration et son quota sont suspendus.
+`packages/solana-sdk`. La suite privée reste non qualifiée tant qu'aucun run
+Integration n'a réussi : au 27 octobre 2026, ses variables d'activation sont
+absentes et la PR Integration #4 est en brouillon.
 
 ## Routage des suites publiques
 
@@ -165,9 +166,11 @@ déclarée signée rétroactivement.
 
 Les workflows natifs utilisent `SILICIUM_COMPONENT_CI_ENABLED=1`. Integration
 utilise `SILICIUM_INTEGRATION_ENABLED=1`. Les flags restent à zéro pendant la
-préparation ; les Actions des anciens composants restent suspendues jusqu'à
-l'intégration de leurs nouveaux workflows et la disponibilité du quota privé.
-Un workflow suspendu ou ignoré ne constitue jamais une qualification.
+préparation. Un composant n'active son flag qu'après la fusion de ses
+nouveaux workflows ; les anciens workflows VPS sont retirés par les PR de
+migration. Le blocage de quota du 26 octobre a été levé par l'essai Enterprise
+(rapporté le 28 octobre, non revérifié). Un workflow suspendu ou ignoré ne
+constitue jamais une qualification.
 
 Dans le changement CI-01 en cours, `DesktopApp` sépare le flag de validation
 `SILICIUM_COMPONENT_CI_ENABLED` du contrôle externe
@@ -224,11 +227,22 @@ symboliques, les réécritures et les identités d'artefact incomplètes. La
 construction du candidat et la signature/publication restent des étapes
 distinctes et non activées.
 
-Le budget Actions de l'organisation doit rester à zéro avec blocage du
+Règle cible : le budget Actions de l'organisation reste à zéro avec blocage du
 dépassement. Les runners standards des dépôts privés consomment le quota
 inclus ; le statut public de Workbench ne change pas cette règle. Son
 épuisement bloque la qualification. Ne pas utiliser de runner VPS, copier des
 sources privées dans des workflows publics ou ouvrir un budget facturable.
+
+Règle de remplacement pendant l'essai Enterprise (état rapporté le 28 octobre
+2026, non revérifié par API) : l'essai offre au plus 3 000 minutes standard et
+n'a pas de budget d'arrêt, donc le plafond à zéro n'est pas applicable. Relever
+le compteur dans la page de facturation de l'organisation avant chaque campagne
+lourde, fixer un seuil d'alerte humain, sérialiser les campagnes complètes
+(Windows coûte plus cher que Linux) et ne jamais lier d'abonnement Azure, ce qui
+mettrait fin à l'essai et déclencherait la facturation. À la fin de l'essai, une
+décision humaine choisit entre forfait payant et retour à Free (2 000 minutes
+incluses, sans règles de branche privées ; à confirmer auprès de GitHub). Le
+budget à zéro redevient alors la règle.
 
 ## Synchronisation du Project 12 entre dépôts
 

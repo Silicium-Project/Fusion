@@ -97,8 +97,11 @@ Les workflows publics ne récupèrent aucun composant et n'ont pas de clé de
 lecture des sources privées. Les workflows natifs utilisent une version précise
 de la politique publique. La qualification complète s'exécute dans Integration.
 Les GitHub runners privés consomment le quota de l'organisation. Son budget
-Actions reste à zéro avec arrêt des dépassements ; quota épuisé = blocage, sans
-repli VPS ni exécution de nouvelles sources privées dans des logs publics.
+Actions vise zéro avec arrêt des dépassements ; pendant l'essai Enterprise, qui
+n'a pas de budget d'arrêt, le suivi manuel décrit dans
+[la procédure CI](../operations/multi-repo-ci.md) le remplace. Quota épuisé =
+blocage, sans repli VPS ni exécution de nouvelles sources privées dans des logs
+publics.
 
 ## Activation et limites
 
