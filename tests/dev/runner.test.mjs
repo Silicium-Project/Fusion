@@ -34,6 +34,8 @@ test('the actual dev entry point executes a suite and writes complete evidence',
       { allowFailure: true },
     );
     assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.match(result.stderr, /^\[ci\] docs 1\/1 check: .* — started /m);
+    assert.match(result.stderr, /^\[ci\] docs 1\/1 check: .* — passed in \d+ ms$/m);
     const report = JSON.parse(readFileSync(output, 'utf8'));
     assert.equal(report.schema_version, 1);
     assert.equal(report.suite, 'docs');
