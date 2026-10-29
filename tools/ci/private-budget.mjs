@@ -10,7 +10,25 @@ import { Failure, git } from '../lib/process.mjs';
 // public-suite reports; the signature envelope consumes part of the 6 MiB headroom.
 export const organizationArtifactReservation = 392 * 1024 ** 2;
 
-export function requireBudgetProof(record, jobs, expectedSourceSha, now = Date.now()) {
+export const defaultProofMaxAgeMinutes = 15;
+export const pushProofMaxAgeMinutes = 60;
+// Only the component workflow widens the window, and only for a push to its main:
+// the pull request already passed the 15 minute gate before the merge.
+export function proofMaxAgeMinutes(env = process.env) {
+  const asked = Number(env.SILICIUM_PROOF_MAX_AGE_MINUTES);
+  return Number.isInteger(asked) &&
+    asked >= defaultProofMaxAgeMinutes &&
+    asked <= pushProofMaxAgeMinutes
+    ? asked
+    : defaultProofMaxAgeMinutes;
+}
+export function requireBudgetProof(
+  record,
+  jobs,
+  expectedSourceSha,
+  now = Date.now(),
+  maxAgeMinutes = defaultProofMaxAgeMinutes,
+) {
   const requiredJobs = jobs.filter((job) => job.name === 'ci/required');
   const required =
     requiredJobs.length === 1 &&
@@ -34,7 +52,7 @@ export function requireBudgetProof(record, jobs, expectedSourceSha, now = Date.n
     step?.conclusion !== 'success' ||
     !Number.isFinite(completed) ||
     completed > now ||
-    now - completed > 15 * 60_000
+    now - completed > maxAgeMinutes * 60_000
   )
     throw new Failure(
       'No fresh successful ci/required and organization storage check on protected Workbench main; dispatch Workbench CI on main, then retry once it succeeds',
@@ -46,7 +64,7 @@ export function requireBudgetProof(record, jobs, expectedSourceSha, now = Date.n
     run_id: record.id,
     source_sha: record.head_sha,
     checked_at: step.completed_at,
-    expires_at: new Date(completed + 15 * 60_000).toISOString(),
+    expires_at: new Date(completed + maxAgeMinutes * 60_000).toISOString(),
     incoming_bytes_reserved: organizationArtifactReservation,
   };
 }
@@ -55,6 +73,7 @@ export function privateBudget({
   request = api,
   now = Date.now(),
   expectedSourceSha = git('rev-parse', 'HEAD'),
+  maxAgeMinutes = proofMaxAgeMinutes(),
 } = {}) {
   const runs = request(
     `repos/${repository}/actions/workflows/ci.yml/runs?branch=main&status=success&per_page=20`,
@@ -62,7 +81,7 @@ export function privateBudget({
   for (const run of runs) {
     const jobs = request(`repos/${repository}/actions/runs/${run.id}/jobs?per_page=100`).jobs;
     try {
-      return requireBudgetProof(run, jobs, expectedSourceSha, now);
+      return requireBudgetProof(run, jobs, expectedSourceSha, now, maxAgeMinutes);
     } catch (error) {
       if (error.exitCode !== 4) throw error;
     }

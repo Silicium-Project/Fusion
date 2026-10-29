@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   organizationArtifactReservation,
+  proofMaxAgeMinutes,
   requireBudgetProof,
   privateBudget,
 } from '../../tools/ci/private-budget.mjs';
@@ -106,4 +107,25 @@ test('a fresh budget check from a different main commit is rejected', () => {
   });
   assert.equal(proof.run_id, currentRun.id);
   assert.equal(proof.source_sha, record.head_sha);
+});
+
+test('only a requested window between 15 and 60 minutes widens the proof age', () => {
+  assert.equal(proofMaxAgeMinutes({}), 15);
+  assert.equal(proofMaxAgeMinutes({ SILICIUM_PROOF_MAX_AGE_MINUTES: '60' }), 60);
+  assert.equal(proofMaxAgeMinutes({ SILICIUM_PROOF_MAX_AGE_MINUTES: '30' }), 30);
+  for (const bad of ['0', '14', '61', '1440', '-5', '15.5', 'abc', ''])
+    assert.equal(proofMaxAgeMinutes({ SILICIUM_PROOF_MAX_AGE_MINUTES: bad }), 15);
+  const stale = now + 40 * 60_000;
+  assert.throws(() => requireBudgetProof(record, jobs, record.head_sha, stale));
+  assert.throws(() => requireBudgetProof(record, jobs, record.head_sha, stale, 15));
+  assert.equal(requireBudgetProof(record, jobs, record.head_sha, stale, 60).run_id, 1);
+  assert.throws(() => requireBudgetProof(record, jobs, record.head_sha, now + 62 * 60_000, 60));
+  const workflow = readFileSync(
+    new URL('../../.github/workflows/component-ci.yml', import.meta.url),
+    'utf8',
+  );
+  assert.match(
+    workflow,
+    /SILICIUM_PROOF_MAX_AGE_MINUTES: \$\{\{ github\.event_name == 'push' && github\.ref == 'refs\/heads\/main' && '60' \|\| '15' \}\}/,
+  );
 });
