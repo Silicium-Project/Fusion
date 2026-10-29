@@ -6,27 +6,27 @@
     "network": {
       "repository": "Silicium-Project/Network",
       "path": "network",
-      "commit": "3bc1e3493842ba00adda83650d3ccf762e471421"
+      "commit": "0a8d813afab40538d072e736940d303f741eb209"
     },
     "api": {
       "repository": "Silicium-Project/BackEnd",
       "path": "apps/api",
-      "commit": "a24bab6d1f7607fcdca85b52b690de2b53578558"
+      "commit": "065bf9b56ab3e140c0afcb3c8351006c1f23377e"
     },
     "web": {
       "repository": "Silicium-Project/FrontEnd",
       "path": "apps/web",
-      "commit": "3b5f0975ca0cdbdcff430023214e718401e3e266"
+      "commit": "558e46243efe28d37c08fabbed8434ab00904b16"
     },
     "node": {
       "repository": "Silicium-Project/DesktopApp",
       "path": "apps/node",
-      "commit": "ef12c73350bc630579a9d2c3a56d985a64a871cf"
+      "commit": "783685aca0657df74f0ee8e998a6aba88792fe9d"
     },
     "solana": {
       "repository": "Silicium-Project/Solana",
       "path": "chain",
-      "commit": "ef8f07d4fbedf28db01ce258a1988e19e3f13f73"
+      "commit": "db31e90875a60b3d6511fd9a4ff0904251944c36"
     }
   }
 }
