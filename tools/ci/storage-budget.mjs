@@ -72,11 +72,21 @@ export async function installationRecord(
     throw new Failure('Invalid App installation metadata; budget coverage is unknown', 3);
   }
 }
-export function organizationArtifactLimit(organization) {
+const FREE_LIMIT = 400 * 1024 ** 2;
+const ENTERPRISE_LIMIT = 512 * 1024 ** 2;
+export function organizationArtifactLimit(organization, declaredMiB) {
   // Enterprise plans include substantially more Actions/Packages storage. Keep
   // this internal cap conservative during the trial, and fall back to the
   // previous Free allowance as soon as the organization reports another plan.
-  return organization?.plan?.name === 'enterprise' ? 512 * 1024 ** 2 : 400 * 1024 ** 2;
+  if (organization?.plan?.name)
+    return organization.plan.name === 'enterprise' ? ENTERPRISE_LIMIT : FREE_LIMIT;
+  // An installation token may not see `plan`. A human-declared cap then applies,
+  // never below the Free allowance nor above the Enterprise cap; anything else fails closed.
+  if (/^[1-9][0-9]{2,3}$/.test(declaredMiB ?? '')) {
+    const declared = Number(declaredMiB) * 1024 ** 2;
+    if (declared >= FREE_LIMIT && declared <= ENTERPRISE_LIMIT) return declared;
+  }
+  return FREE_LIMIT;
 }
 export function remainingBudget(usage, incoming, limit = 400 * 1024 ** 2) {
   if (
@@ -114,13 +124,18 @@ if (process.argv[1]?.endsWith('/storage-budget.mjs')) {
     }
   }
   const incoming = Number(process.env.SILICIUM_INCOMING_BYTES ?? 64 * 1024 ** 2);
-  const limit = organizationArtifactLimit(organization);
+  const limit = organizationArtifactLimit(
+    organization,
+    process.env.SILICIUM_ORG_ARTIFACT_LIMIT_MIB,
+  );
   console.log(
     JSON.stringify({
       schema_version: 1,
       repository,
       repositories_observed: repos.length,
+      plan_observed: organization?.plan?.name ?? null,
       usage_bytes: usage,
+      incoming_bytes: incoming,
       limit_bytes: limit,
       remaining_bytes: remainingBudget(usage, incoming, limit),
     }),

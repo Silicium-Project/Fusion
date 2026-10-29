@@ -205,7 +205,10 @@ lui-même. Cette réserve tient compte du fait que le contrôle de stockage
 s'exécute avant les téléversements du run courant. Le contrôle applique un
 plafond interne de 512 Mio quand l'API de l'organisation rapporte le plan
 Enterprise et de 400 Mio dans les autres cas ; un plan absent ou inconnu retombe
-sur le plafond plus bas. Le plafond Enterprise reste volontairement petit au
+sur le plafond plus bas. Si le jeton de l'App n'expose pas le plan (sortie
+`plan_observed: null`), un humain peut déclarer le plafond dans la variable de
+dépôt `SILICIUM_ORG_ARTIFACT_LIMIT_MIB` (entier de 400 à 512) ; toute autre
+valeur est ignorée et un plan observé l'emporte toujours. Le plafond Enterprise reste volontairement petit au
 regard des 50 Go de stockage Actions/Packages inclus sur ce plan
 ([quota](https://docs.github.com/en/billing/reference/product-usage-included)).
 Il s'agit d'une garde de stockage, pas d'une limite de facturation. Les
