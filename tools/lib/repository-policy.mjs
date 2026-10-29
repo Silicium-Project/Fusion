@@ -38,6 +38,15 @@ function validatePolicy(policy, workspace) {
     !Array.isArray(policy.ruleset.rule_types) ||
     !policy.ruleset.pull_request ||
     !Array.isArray(policy.ruleset.pull_request.allowed_merge_methods) ||
+    !policy.ruleset.required_status_checks ||
+    !Array.isArray(policy.ruleset.required_status_checks.checks) ||
+    !policy.ruleset.required_status_checks.checks.every(
+      (check) =>
+        typeof check?.context === 'string' &&
+        Number.isSafeInteger(check.integration_id) &&
+        check.integration_id > 0,
+    ) ||
+    typeof policy.ruleset.required_status_checks.strict !== 'boolean' ||
     !Array.isArray(policy.not_publicly_verifiable)
   )
     throw new AuditFailure('invalid_policy', 'Repository policy manifest is invalid');
@@ -222,20 +231,34 @@ function compareRuleset(policy, repository, ruleset, drifts) {
     );
   }
 
-  if (expected.empty_required_status_checks_rule) {
+  if (expected.required_status_checks) {
     const checksRules = (ruleset.rules ?? []).filter(
       (rule) => rule.type === 'required_status_checks',
     );
-    const empty =
-      checksRules.length === 1 &&
-      Array.isArray(checksRules[0].parameters?.required_status_checks) &&
-      checksRules[0].parameters.required_status_checks.length === 0;
-    if (!empty)
+    const actualChecks = checksRules[0]?.parameters?.required_status_checks;
+    const sortChecks = (checks) =>
+      Array.isArray(checks)
+        ? [...checks]
+            .map((check) => ({
+              context: check?.context ?? null,
+              integration_id: check?.integration_id ?? null,
+            }))
+            .sort((a, b) => String(a.context).localeCompare(String(b.context)))
+        : null;
+    if (
+      checksRules.length !== 1 ||
+      !equalValue(sortChecks(actualChecks), sortChecks(expected.required_status_checks.checks))
+    )
       drifts.push({
         path: 'ruleset.required_status_checks',
-        expected: 'one empty ruleset entry (classic branch protection is checked separately)',
-        actual: checksRules.map((rule) => rule.parameters?.required_status_checks ?? null),
+        expected: expected.required_status_checks.checks,
+        actual: actualChecks ?? null,
       });
+    check(
+      'ruleset.required_status_checks.strict',
+      expected.required_status_checks.strict,
+      checksRules[0]?.parameters?.strict_required_status_checks_policy,
+    );
   }
 
   return {
