@@ -70,8 +70,10 @@
   restent agrégés et ne révèlent pas les issues privées.
 - Integration reste privé. Son dernier relevé ne montrait aucune variable
   d'activation ; la dernière capture de facturation fournie signalait les
-  2 000 minutes privées incluses consommées. Aucune qualification privée n'a
-  été lancée et aucun runner VPS n'est utilisé.
+  2 000 minutes privées incluses consommées. Le 28 octobre 2026, un rapport non
+  revérifié indique que l'essai Enterprise (3 000 minutes) a débloqué les runners
+  privés. Aucune qualification privée complète n'est prouvée et aucun runner VPS
+  n'est utilisé.
 - `SILICIUM_DELIVERY_ENABLED=0` et `SILICIUM_DIAGNOSTICS_ENABLED=0` ; aucun
   déploiement n'a été déclenché. La PR privée Integration #4 reste à qualifier
   après vérification humaine du quota.
