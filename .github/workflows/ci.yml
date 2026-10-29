@@ -308,6 +308,7 @@ jobs:
         SILICIUM_BUDGET_APP_CLIENT_ID: ${{ secrets.PROJECT_APP_CLIENT_ID }}
         SILICIUM_BUDGET_APP_PRIVATE_KEY: ${{ secrets.PROJECT_APP_PRIVATE_KEY }}
         SILICIUM_INCOMING_BYTES: '411041792'
+        SILICIUM_ORG_ARTIFACT_LIMIT_MIB: ${{ vars.SILICIUM_ORG_ARTIFACT_LIMIT_MIB }}
       run: node tools/ci/storage-budget.mjs
       if: ${{ contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' }}
   quick:
