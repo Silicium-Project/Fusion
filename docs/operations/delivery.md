@@ -67,14 +67,15 @@ opérationnelle après la séparation de Workbench et des cinq dépôts privés.
   dépôts, la validation complète d'installation, la publication immuable et le
   déploiement restent à raccorder dans Integration ; aucun candidat n'est livré.
 - `SILICIUM_DELIVERY_ENABLED=0` dans Workbench et son marqueur de contrat est
-  absent. Dans Integration, `SILICIUM_INTEGRATION_ENABLED`,
-  `SILICIUM_DELIVERY_PREFLIGHT_ENABLED`, `SILICIUM_CANDIDATE_BUILD_ENABLED` et
-  le marqueur de contrat sont absents.
+  absent. Dans Integration, `SILICIUM_INTEGRATION_ENABLED=0` ; les flags
+  `SILICIUM_DELIVERY_PREFLIGHT_ENABLED` et `SILICIUM_CANDIDATE_BUILD_ENABLED`,
+  ainsi que le marqueur de contrat, sont absents.
   Aucun run privé, préflight, déploiement dev ou déploiement prod n'est
   autorisé par cet état. Le budget privé Actions était épuisé lors de la
-  vérification du 26 octobre ; l'essai Enterprise (3 000 minutes, rapporté le
-  28 octobre, non revérifié) a débloqué les runners privés. Relever le compteur
-  avant tout run, sans dépassement facturé, sans lien Azure ni runner VPS.
+  vérification du 26 octobre. Le trial Enterprise du 28 octobre fournit des
+  minutes incluses, mais pas de budget avec arrêt à 0 $ ; vérifier le solde et
+  le pire cas avant tout run. L'attestation n'est pas un coupe-circuit. Aucun
+  dépassement payé ni runner VPS n'est autorisé.
 - L'App Source Reader est installée uniquement sur les cinq dépôts privés et ses
   deux secrets chiffrés existent dans Integration. Elle garde `contents: read`
   seulement ; elle ne télécharge pas les artefacts et ne publie rien.
@@ -93,11 +94,14 @@ opérationnelle après la séparation de Workbench et des cinq dépôts privés.
   qualification privée ; aucun run privé n'a validé le raccordement.
 - La clé privée Ed25519 du reçu est un secret Integration, injecté seulement
   dans le job `integration/sign-evidence`. La clé publique versionnée est le
-  trust anchor des deux dépôts. C'est une signature vérifiable sans journal de
-  transparence public : GitHub Free ne fournit pas l'attestation native
-  d'artefact pour un dépôt privé. L'accès en écriture à Integration reste donc
-  la frontière de confiance ; une rotation exige de remplacer le secret et les
-  deux clés publiques ensemble.
+  trust anchor des deux dépôts. Les attestations natives sont disponibles pour
+  les dépôts privés Enterprise ([documentation GitHub](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)), mais le workflow actuel ne les émet ni ne les
+  vérifie. Les attestations privées GitHub ne publient pas dans le journal de
+  transparence public. Conserver le reçu Ed25519 jusqu'à ce qu'une migration
+  soit implémentée, vérifiée par des tests négatifs et acceptée ; l'accès en
+  écriture à Integration reste la frontière de confiance actuelle. Une rotation
+  de la clé Ed25519 exige de remplacer le secret et les deux clés publiques
+  ensemble.
 - Les environnements Workbench de signature et de déploiement n'ont aucun
   secret configuré. Les fingerprints APT/RPM sont présents dans les contrats,
   mais les clés privées APT/RPM/release et le trust anchor public release sont

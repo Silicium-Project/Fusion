@@ -84,8 +84,10 @@ export function executeSuite(id, { plan, output } = {}) {
     ),
   };
   const start = performance.now();
-  for (const step of suite.steps) {
+  for (const [index, step] of suite.steps.entries()) {
     const t = performance.now();
+    const label = `[ci] ${id} ${index + 1}/${suite.steps.length} ${step.kind}: ${step.command.join(' ')} (cwd: ${step.cwd ?? '.'})`;
+    process.stderr.write(`${label} — started ${new Date().toISOString()}\n`);
     const result = run(step.command, {
       cwd: inside(step.cwd ?? '.'),
       env: { NO_COLOR: '1', CARGO_TERM_COLOR: 'never', ...step.env },
@@ -97,6 +99,10 @@ export function executeSuite(id, { plan, output } = {}) {
     const text = result.stdout + result.stderr;
     const count = step.kind === 'test' ? countTests(text, step.format) : null;
     const exit = result.status || (step.kind === 'test' && count < 1 ? 1 : 0);
+    const duration = Math.round(performance.now() - t);
+    process.stderr.write(
+      `${label} — ${exit ? 'failed' : 'passed'} in ${duration} ms${count === null ? '' : ` (${count} tests)`}\n`,
+    );
     report.steps.push({
       command: step.command,
       env: step.env ?? {},
@@ -104,7 +110,7 @@ export function executeSuite(id, { plan, output } = {}) {
       kind: step.kind,
       exit_code: exit,
       tests_executed: count,
-      duration_ms: Math.round(performance.now() - t),
+      duration_ms: duration,
       error: result.error,
     });
     if (exit) {

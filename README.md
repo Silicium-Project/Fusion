@@ -54,8 +54,11 @@ cet historique.** Les versions futures utilisent les dépôts séparés. Voir
 
 `ci/required` sur Workbench qualifie ses fichiers publics. La compatibilité
 applicative exige une qualification privée complète des cinq pins. Une CI
-publique verte ne suffit pas à publier une application. GitHub Free limite la
-CI des dépôts privés ; aucun dépassement facturé ni runner VPS de secours.
+publique verte ne suffit pas à publier une application. La qualification privée
+reste désactivée tant que le solde inclus courant ne couvre pas le pire cas du
+plan et qu'aucun run concurrent ne consomme ce solde. Aucun plafond de dépense
+Actions à zéro n'est appliqué par le workflow ; aucun dépassement facturé ni
+runner VPS de secours n'est autorisé.
 Les publications automatiques restent suspendues pendant cette transition.
 La preuve du `ci/required` courant peut être vérifiée sans jeton avec
 `./dev ci public-evidence --sha SHA --json`.

@@ -20,11 +20,14 @@ publiques restent publiques ; ne pas promettre de les rendre confidentielles.
 La CI publique utilise `dev ci plan --scope public`. Les suites applicatives
 restent obligatoires dans la qualification privée `--scope integration`. Un
 gate public vert ne qualifie aucune application ni livraison. Ne pas copier de
-clé de lecture des composants dans Workbench. Quota privé épuisé : blocage
-explicite, aucun runner VPS de secours. Règle cible : budget Actions à zéro avec
-arrêt du dépassement. Pendant l'essai Enterprise (3 000 min), qui n'a pas de
-budget d'arrêt, suivi manuel des minutes avant chaque campagne lourde, seuil
-d'alerte, campagnes complètes sérialisées, et aucun abonnement Azure lié.
+clé de lecture des composants dans Workbench. Au 28 octobre 2026, l'organisation
+est sur un essai Enterprise temporaire ; revérifier le plan avant chaque
+campagne privée et après l'expiration de l'essai. Le workflow n'applique pas de
+coupe-circuit de facturation à 0 $. Avant tout run coûteux, vérifier dans la
+facturation GitHub que le solde de minutes incluses couvre le pire cas du plan,
+qu'aucun run privé concurrent ne consomme ce solde et que le stockage requis
+est disponible. Si l'observation est absente ou insuffisante, garder les flags
+fermés. Aucun dépassement facturé ni runner VPS de secours n'est autorisé.
 
 ## Carte
 
@@ -78,14 +81,17 @@ pour le commit courant, une branche à jour et des discussions résolues. Le mod
 mainteneur unique n'exige pas d'approbation externe ; un humain décide de la
 fusion, y compris pour sa propre PR.
 
-Les dépôts composants privés et Integration sont sur GitHub Free : GitHub y
-refuse les règles de protection de branche. La procédure PR et CI y est donc
-une règle d'équipe, pas un blocage serveur ; un membre qui a `write` peut encore
-pousser directement. Le `default_repository_permission` reste `read` et l'équipe
-`Project management` porte l'écriture. Ne présente jamais les contrôles privés
-comme imposés par GitHub. Réévaluer cette limite avant d'exiger une protection
-serveur côté composants. Les approbations des environnements de production
-restent indépendantes.
+Au 28 octobre 2026, `Workbench/main` et `Integration/main` ont des rulesets actifs
+avec leurs contrôles requis. Les cinq dépôts composants ont aussi des rulesets
+actifs : PR obligatoire, discussions résolues, `qualify / ci/required` strict,
+commit de fusion, zéro approbation imposée et aucun contournement. Ce contexte
+vient du workflow réutilisable Workbench et doit réussir sur le SHA exact ; ne
+confondre pas la règle configurée avec une exécution réussie. Les flags de CI
+composant restent à `0` jusqu'à vérification du solde. L'organisation est sur un
+essai Enterprise temporaire ; revérifier les règles après son expiration.
+L'organisation garde `read` par défaut et l'équipe `Project management` porte
+l'écriture. Les approbations des environnements de production restent
+indépendantes.
 
 Les imports et rattachements d'historiques utilisent **Merge commit** ; aucun
 squash ou rebase. Vérifier l'ascendance Git après fusion. Pendant la migration

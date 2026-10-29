@@ -41,9 +41,10 @@ Network ne lance pas cette suite. Le plan privé Integration la lancera avec les
 deux dépôts quand leurs pins intègreront les changements correspondants. Le
 chemin attendu du SDK est `chain/sdk/src/index.ts`, selon la structure du dépôt
 Solana ; ne pas réintroduire les anciens chemins du monorepo
-`packages/solana-sdk`. La suite privée reste non qualifiée tant qu'aucun run
-Integration n'a réussi : au 27 octobre 2026, ses variables d'activation sont
-absentes et la PR Integration #4 est en brouillon.
+`packages/solana-sdk`. La suite privée reste non qualifiée tant que les PR de
+restauration des sources et de routage ne sont pas intégrées, puis que la
+qualification complète ne passe pas depuis `Integration/main`. Les flags et le
+quota doivent aussi être revérifiés avant ce run.
 
 ## Routage des suites publiques
 
@@ -68,10 +69,13 @@ Workbench. Le reçu de métadonnées et sa signature détachée restent privés
 pendant un jour. Le préflight `workflow_run` vérifie la signature et l'identité
 du run avant de télécharger les binaires privés ; Workbench vérifie de nouveau
 la signature avant d'accepter le reçu. Cette preuve ne publie ni ne déploie
-encore de candidat. La signature Ed25519 remplace l'attestation native
-indisponible pour un dépôt privé sur GitHub Free ; elle n'ajoute pas de journal
-de transparence et fait de l'accès en écriture à Integration sa frontière de
-confiance.
+encore de candidat. La signature Ed25519 est le mécanisme actuellement utilisé
+pour le reçu privé ; elle n'ajoute pas de journal de transparence et fait de
+l'accès en écriture à Integration sa frontière de confiance. Les attestations
+natives GitHub sont disponibles pour les dépôts privés Enterprise
+([documentation GitHub](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)), mais ne sont pas intégrées ni vérifiées par ce parcours. Une migration devra préserver les
+contrôles de signature et être qualifiée séparément avant de retirer le reçu
+Ed25519.
 
 Le dépôt `Integration` exécute la qualification et appelle, dans le même run,
 `private-integration-evidence.yml` via `workflow_call`. Le workflow réutilisable
@@ -199,16 +203,32 @@ livraison, 16 Mio pour le plan et les rapports privés, 1 Mio pour le reçu de
 qualification, 64 Kio pour sa signature détachée, 1 Mio pour l'identité de candidat, jusqu'à 120 Mio pour
 l'installateur Linux privé, 40 Mio pour l'installateur Windows privé, puis
 jusqu'à 5 Mio pour le plan et les quatre rapports publics du run Workbench
-lui-même. L'enveloppe de signature consomme une partie de la marge de 6 Mio,
-laissant environ 5,94 Mio. Cette réserve
-tient compte du fait que le contrôle de stockage s'exécute avant les
-téléversements du run courant. Les workflows privés exigent que cette étape
-exacte ait réussi depuis moins de quinze minutes et que son SHA corresponde
+lui-même. Cette réserve tient compte du fait que le contrôle de stockage
+s'exécute avant les téléversements du run courant. Le contrôle applique un
+plafond interne de 512 Mio quand l'API de l'organisation rapporte le plan
+Enterprise et de 400 Mio dans les autres cas ; un plan absent ou inconnu retombe
+sur le plafond plus bas. Le plafond Enterprise reste volontairement petit au
+regard des 50 Go de stockage Actions/Packages inclus sur ce plan
+([quota](https://docs.github.com/en/billing/reference/product-usage-included)).
+Il s'agit d'une garde de stockage, pas d'une limite de facturation. Les
+workflows privés exigent que cette étape exacte ait réussi depuis moins de
+quinze minutes et que son SHA corresponde
 exactement au Workbench utilisé pour la qualification. Il s'agit d'une
 observation bornée, pas d'un verrou global de stockage entre tous les dépôts.
 Les campagnes complètes sont sérialisées, les rapports limités à 1 Mio et les
 installateurs limités à 120/40 Mio expirent après un jour ; les caches privés
 sont désactivés pendant la migration.
+
+Cette preuve porte uniquement sur le stockage des artefacts. `private-budget.mjs`
+ne lit pas le solde Actions inclus, ne calcule pas un montant facturable et ne
+prouve pas qu'un plafond de dépenses bloque les dépassements. Le trial
+Enterprise observé le 2026-10-28 ne donne pas accès à un budget avec arrêt à
+0 $. Tant que cette limite existe, laisser les flags privés à zéro hors d'un
+lancement manuel borné, vérifier le solde inclus juste avant le lancement et
+comparer ce solde à tous les timeouts pondérés par type de runner. Le contrôle
+Integration proposé dans la PR #4 demande un solde vérifié et bloque le run
+avant tout jeton privé si la réserve calculée ne tient pas ; cette attestation
+reste une vérification humaine et ne remplace pas un plafond GitHub.
 
 Les suites `api`, `web`, `node-ui` et `network-integration` téléversent aussi
 leurs sorties de compilation privées sous `delivery-<suite>-<run_attempt>`.
@@ -227,22 +247,26 @@ symboliques, les réécritures et les identités d'artefact incomplètes. La
 construction du candidat et la signature/publication restent des étapes
 distinctes et non activées.
 
-Règle cible : le budget Actions de l'organisation reste à zéro avec blocage du
-dépassement. Les runners standards des dépôts privés consomment le quota
-inclus ; le statut public de Workbench ne change pas cette règle. Son
-épuisement bloque la qualification. Ne pas utiliser de runner VPS, copier des
-sources privées dans des workflows publics ou ouvrir un budget facturable.
+Ne pas autoriser de dépenses Actions au-delà du quota inclus. Le trial
+Enterprise donne jusqu'à 3 000 minutes standard hébergées
+([conditions du trial](https://docs.github.com/en/enterprise-cloud%40latest/admin/overview/setting-up-a-trial-of-github-enterprise-cloud)) ;
+ce quota doit être contrôlé séparément du stockage. Un plafond avec arrêt est
+préférable lorsqu'il
+est disponible. Si le plan ou le trial ne donne pas accès à ce contrôle, ne
+prétendre pas que le compte est protégé contre les
+dépassements : ne lancer que des workflows manuels dont la borne pondérée tient
+dans le solde inclus, et laisser les flags à zéro en dehors de cette fenêtre.
+L'épuisement du quota bloque la qualification. Ne pas utiliser de runner VPS,
+copier des sources privées dans des workflows publics ou ouvrir un budget
+facturable.
 
-Règle de remplacement pendant l'essai Enterprise (état rapporté le 28 octobre
-2026, non revérifié par API) : l'essai offre au plus 3 000 minutes standard et
-n'a pas de budget d'arrêt, donc le plafond à zéro n'est pas applicable. Relever
-le compteur dans la page de facturation de l'organisation avant chaque campagne
-lourde, fixer un seuil d'alerte humain, sérialiser les campagnes complètes
-(Windows coûte plus cher que Linux) et ne jamais lier d'abonnement Azure, ce qui
-mettrait fin à l'essai et déclencherait la facturation. À la fin de l'essai, une
-décision humaine choisit entre forfait payant et retour à Free (2 000 minutes
-incluses, sans règles de branche privées ; à confirmer auprès de GitHub). Le
-budget à zéro redevient alors la règle.
+Pendant l'essai, fixer un seuil d'alerte humain sur le compteur de minutes et
+sérialiser les campagnes complètes (Windows coûte plus cher que Linux). Ne
+jamais lier d'abonnement Azure : cela met fin à l'essai et déclenche la
+facturation. Avant l'échéance, une décision humaine choisit entre forfait payant
+et retour à Free (2 000 minutes incluses, sans règles de branche privées ; à
+confirmer auprès de GitHub). Le budget à zéro avec arrêt redevient alors la
+règle.
 
 ## Synchronisation du Project 12 entre dépôts
 
@@ -293,11 +317,17 @@ révoque son jeton à la fin du job. Une absence d'App bloque la récupération 
 aucun accès du propriétaire n'est utilisé en secours. La création/installation
 initiale de l'App exige une session propriétaire GitHub et reste une étape humaine.
 
-GitHub Free ne fournit pas les mêmes protections sur les dépôts privés que sur
-Workbench public. Les conventions PR/CODEOWNERS ne sont pas présentées comme
-des protections serveur effectives. Les membres autorisés à écrire dans ces
-dépôts constituent donc une frontière de confiance ; maintenir des accès
-limités et ne pas y approuver de code extérieur pendant la stabilisation.
+Au 28 octobre 2026, des rulesets actifs couvrent `main` dans Workbench,
+Integration et les cinq dépôts composants. Integration exige
+`integration/required` ; Workbench exige `ci/required`. Les rulesets composants
+exigent une PR, la résolution des discussions et le check strict
+`qualify / ci/required`, sans approbation imposée ni contournement. Ce nom suit
+le [format GitHub des checks de workflows réutilisables](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/troubleshooting-rules#troubleshooting-required-status-checks)
+(`job appelant / job réutilisable`) ; il faut encore prouver un succès sur le
+SHA exact avant toute fusion. L'organisation est sur un essai Enterprise
+temporaire ; revérifier les règles après son expiration et documenter tout changement de capacité. Les
+membres autorisés à écrire restent une frontière de confiance ; maintenir des
+accès limités et ne pas approuver de code extérieur pendant la stabilisation.
 
 ## Livraison et miroir Epitech
 

@@ -49,15 +49,14 @@ responsabilités, et un humain décide de la fusion, même s'il en est l'auteur.
 La revue automatisée reste une aide. Les protections de production et la
 décision humaine d'acceptation des issues ne sont pas supprimées.
 
-Les dépôts composants privés et Integration sont sur GitHub Free. L'API GitHub
-refuse d'y lire ou configurer les rulesets et protections de branche, avec
-`Upgrade to GitHub Pro or make this repository public`. En conséquence, les
-règles PR/CI y décrivent le processus attendu, mais GitHub ne bloque pas un
-push direct d'un membre `write`. L'organisation garde `read` par défaut et
-l'équipe `Project management` reçoit `write` sur les dépôts privés : cela
-restreint les personnes autorisées, sans rendre le processus techniquement
-obligatoire. Aucun agent ne doit présenter la protection des composants comme
-active ou équivalente à `Workbench/main`.
+Au 28 octobre 2026, l'organisation est sur un essai Enterprise temporaire.
+`Integration/main` exige `integration/required`; les cinq dépôts composants ont
+des rulesets actifs qui imposent les PR, la résolution des discussions et le
+check strict `qualify / ci/required`, sans approbation externe ni contournement.
+Ne pas présenter une PR de composant comme qualifiée avant la réussite de ce
+check sur son SHA exact ; revérifier les règles après la fin de l'essai.
+L'organisation garde `read` par défaut et l'équipe `Project management` reçoit
+`write` sur les dépôts privés.
 
 Après fusion, l'issue reste en `Validation`. Ni un ancien événement CI, ni une
 fusion ne suffisent à la déclarer terminée. La réconciliation consulte les

@@ -1,5 +1,55 @@
 # Refonte : état de référence et conditions d'activation
 
+## Mise à jour opérationnelle — 28 octobre 2026 (14:29 UTC)
+
+- Les contrôles de PR privés sont opérationnels sous la configuration Enterprise
+  actuelle : Integration #4 et #5 ont `integration/required` et CodeQL verts ;
+  les PR de restauration BackEnd #39, FrontEnd #28, Network #355, DesktopApp #1
+  et Solana #1 ont leurs suites de qualification vertes sur leur HEAD courant.
+  Cela confirme l'exécution des workflows hébergés privés, pas encore la
+  qualification complète de leur composition intégrée.
+- Le workflow complet reste volontairement limité à `Integration/main`, car
+  Workbench ne matérialise les sources privées que depuis cette référence. Le
+  run de branche [40701623830](https://github.com/Silicium-Project/Integration/actions/runs/40701623830)
+  s'est arrêté avant la récupération de tout code privé. Le flag de campagne
+  reste à `0` et aucun run complet n'est actif.
+- Les budgets avec limite ne sont pas disponibles pendant l'essai Enterprise :
+  ni l'attestation manuelle ni l'usage inclus ne constituent un coupe-circuit
+  fiable à 0 $. Avant une campagne complète, vérifier le solde courant, le pire
+  cas du plan, le stockage et l'absence de concurrence ; ne pas lancer si un
+  de ces éléments est inconnu ou insuffisant.
+- La campagne attend encore les fusions humaines des PR de restauration
+  nécessaires, de Workbench #344 (routage des sources privées) et des PR
+  Integration #4/#5. Après intégration, relancer d'abord les contrôles de
+  `main`, puis la qualification privée bornée.
+
+## Mise à jour opérationnelle — 28 octobre 2026 (14:16 UTC)
+
+- `Workbench/main` est `2e563f28c1d03adb210ecc6c62043b6374c91be7`. Le run
+  public [40701113568](https://github.com/Silicium-Project/Workbench/actions/runs/40701113568)
+  a passé `ci/required`. Le dry-run Project
+  [40703262976](https://github.com/Silicium-Project/Workbench/actions/runs/40703262976)
+  a traité 139 issues et prédit zéro changement de statut ou de blocage.
+- Les PR de restauration privées BackEnd #39, FrontEnd #28, Network #355,
+  DesktopApp #1 et Solana #1 ont toutes leurs checks de qualification verts sur
+  leur HEAD courant ; elles restent des PR de branche, certaines en brouillon.
+- Le trial Enterprise fournit des minutes Actions incluses, mais ne comprend
+  pas de budget avec arrêt à une limite. L'attestation Integration n'est donc
+  pas un plafond de facturation. La matrice actuelle réserve au plus 555 minutes
+  Linux équivalentes ; vérifier le solde réel juste avant tout lancement.
+- Le flag `SILICIUM_INTEGRATION_ENABLED` est `0` et aucun run Integration n'est
+  en cours. Le dispatch de branche
+  [40701623830](https://github.com/Silicium-Project/Integration/actions/runs/40701623830)
+  a validé le plan et la preuve de stockage, puis Workbench a refusé la
+  matérialisation depuis une ref autre que `Integration/main`. Aucun contenu
+  privé n'a été récupéré et aucune suite applicative n'a été exécutée ; le run
+  a été arrêté.
+- Integration #4 (`a02bda5`) a `integration/required` et CodeQL verts et impose
+  maintenant le dispatch sur `main`. Workbench #344, qui corrige le routage des
+  sources de deux suites privées, reste en brouillon ; Integration #5 reste
+  également ouverte. La qualification complète attend leur résolution et une
+  fusion humaine des PR nécessaires.
+
 ## Mise à jour opérationnelle — 27 octobre 2026
 
 État vérifié sur Workbench `main` au commit `cc5e7a1cfadc73ca910264aad28e5658a311069b` :
@@ -52,7 +102,10 @@ une qualification CI ne valent acceptation ou déploiement.
   18:30 UTC, après validation
   du rapport, des historiques, des échanges et des ressources fournies par le propriétaire.
 - Le Project 12, `planning-private` et les trois anciens dépôts restent privés.
-- Aucune dépense Actions supplémentaire ; arrêt des dépassements à zéro.
+- Objectif : aucun dépassement Actions payé. Le trial courant n'inclut pas de
+  budget GitHub avec arrêt à 0 $ ; les qualifications sont manuelles et
+  bornées, avec contrôle du solde juste avant le lancement. L'attestation n'est
+  pas un coupe-circuit et aucun runner VPS ne sert de secours.
 - Les six anciennes inscriptions de runners VPS sont retirées. Aucun build,
   test ou packaging ne revient sur le VPS.
 - Le checkout initial et ses changements restent conservés. Les travaux sont
@@ -72,7 +125,7 @@ une qualification CI ne valent acceptation ou déploiement.
 | L3 | Workbench public, runners CI VPS retirés, règles de contribution et mode mainteneur unique définis | Confirmer les protections et environnements privés ; le gate public ne qualifie pas les composants privés |
 | L4 | `dev`/`dev.ps1`, registre, routage, contrôle final, normes, diagnostics et métriques | Résultat GitHub complet du commit évalué et parcours Windows/Anchor ; voir les checks de la PR |
 | L5 | Construction sur GitHub, manifeste, signatures et snapshots, tests d'installation, application et rollback API/web | Provisionner les signatures/SSH, qualifier installations et mises à niveau, adopter le VPS et démontrer le rollback ; drainage/canari runtime toujours bloquants |
-| L6 | Champs du Project, App installée et accès protégés provisionnés, réconciliation qualifiée en lecture, acceptation avec preuves et procédures IA | Intégrer le workflow revu, qualifier son exécution GitHub puis activer la synchronisation et retirer les automatismes natifs remplacés |
+| L6 | Champs du Project, App installée et accès protégés provisionnés, acceptation avec preuves et procédures IA ; la réconciliation a réussi en dry-run sur 139 issues avec zéro changement prédit | Intégrer les workflows revus, qualifier l'exécution GitHub après fusion et retirer les automatismes natifs uniquement après vérification de leurs remplacements |
 
 Les imports mécaniques, la mise à niveau Go et l'alignement SDK disposent de
 PR de revue séparées (#314, #315, #316). La normalisation initiale est isolée
@@ -93,7 +146,9 @@ a été refusée par GitHub avant l'allocation de runners, pour un motif de
 facturation ou de limite de dépenses. Aucun test de cette tentative n'a
 démarré. L'écran de facturation fourni ensuite par le propriétaire confirme
 **2 000 minutes utilisées sur 2 000 incluses** pour l'organisation. Cette
-tentative privée précède l'ouverture ; le plafond reste à zéro.
+tentative privée précède l'ouverture ; à cette date, le propriétaire indiquait
+que les dépassements étaient bloqués. Ce relevé ne décrit pas la capacité du
+trial Enterprise ultérieur.
 
 La [qualification publique 40223122663](https://github.com/Silicium-Project/Fusion/actions/runs/40223122663)
 a ensuite réussi les **14 suites**, dont Windows et Solana, pour la tête de PR
@@ -151,10 +206,11 @@ unitaires de scripts ne remplacent pas ces preuves.
 
 1. Repinner DesktopApp sur le commit qui contient son runtime IA privé et retirer
    `apps/silicium-ai-runtime` du tree Workbench courant, sans purger son historique.
-2. Lancer les qualifications privées seulement sur un SHA figé, après relevé du
-   compteur de minutes (essai Enterprise, 3 000 minutes au plus ; voir
-   [la règle de remplacement](multi-repo-ci.md)). Les jobs différés restent
-   bloquants pour toute livraison.
+2. Garder les flags privés fermés hors des runs manuels bornés. Le trial ne
+   fournit pas de budget avec arrêt à 0 $ : mesurer le solde juste avant le run,
+   vérifier l'absence de concurrence et comparer le plan pondéré au solde. La
+   qualification Integration attend aussi l'intégration des PR de composition
+   et de workflow ; les jobs différés restent bloquants pour toute livraison.
 3. Conserver les livraisons désactivées pendant la qualification publique et
    la préparation des signatures et accès. L'ouverture du code n'est pas une
    qualification du candidat ni une acceptation de livraison.

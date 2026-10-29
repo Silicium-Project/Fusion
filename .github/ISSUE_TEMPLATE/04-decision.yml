@@ -1,5 +1,5 @@
-name: Décision publique
-description: Décision technique publiable ; les arbitrages HOLD et documents internes vont dans planning-private.
+name: Décision d’architecture ou arbitrage
+description: Documenter les options, preuves et décision attendue.
 title: '[Décision] '
 type: Task
 projects:
@@ -7,8 +7,10 @@ projects:
 body:
 - type: markdown
   attributes:
-    value: Les éléments HOLD et les arbitrages internes restent dans le dépôt privé planning-private.
-      Ne pas coller leur contenu ici.
+    value: >-
+      Les décisions HOLD et documents internes restent dans le dépôt privé
+      planning-private. Ne publiez ici que des arbitrages destinés à la roadmap
+      publique.
 - type: markdown
   attributes:
     value: Consultez les issues existantes et le Project commun. Ne publiez aucune clé, jeton, donnée
