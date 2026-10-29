@@ -204,6 +204,9 @@ unitaires de scripts ne remplacent pas ces preuves.
 
 ## Activation restante, dans l'ordre
 
+Le détail des PR et de leur ordre de fusion est dans
+[l'ordre de fusion du réalignement](alignment-merge-order.md).
+
 1. Repinner DesktopApp sur le commit qui contient son runtime IA privé et retirer
    `apps/silicium-ai-runtime` du tree Workbench courant, sans purger son historique.
 2. Garder les flags privés fermés hors des runs manuels bornés. Le trial ne
