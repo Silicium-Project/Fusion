@@ -1,29 +1,38 @@
-## Objet et périmètre
+## Issue et périmètre
 
-Décrire le comportement livré, ses limites et les composants touchés.
+Refs: https://github.com/Silicium-Project/Workbench/issues/NUMERO
 
-## Issues associées
+<!-- Une modification cohérente ; liens complets entre dépôts. Utiliser Refs tant que la fusion ne suffit pas à accepter le résultat. -->
 
-Refs: URL canonique de chaque issue. Plusieurs PR peuvent contribuer à une issue.
-La clôture intervient après acceptation, avec ses preuves de validation.
+## Changement et raison
 
-## Contrats et migration
+<!-- Comportement attendu, code touché et consommateurs. -->
 
-- Contrats/consommateurs affectés :
-- Migration, compatibilité et retour arrière :
-- Données, identités et droits conservés :
+## Critères d'acceptation couverts
 
-## Validation observée
+<!-- Pour chaque critère : lien vers l'issue, résultat et preuve ; expliciter ce qui reste à qualifier. -->
 
-- Commande `./dev ci plan --base origin/main --head HEAD --json` :
-- Suites réellement exécutées, résultat et SHA :
-- Suites non exécutées et motif :
-- Cible d'acceptation : Documentation / CI / Dev / Prod
+## Validation réellement effectuée
 
-## Documentation et revue
+| Vérification / commande | Environnement et SHA | Résultat / preuve |
+| --- | --- | --- |
+| À compléter | À compléter | Exécuté, non exécuté ou non applicable — préciser |
 
-- [ ] Contrats, exemples et erreurs documentés dans la même PR.
-- [ ] Instructions humaines et IA actualisées.
-- [ ] Aucune donnée sensible dans le diff, les captures ou les preuves.
-- [ ] Changements examinés et décision de fusion demandée au mainteneur ; revue externe facultative.
-- [ ] Changements de politique CI identifiés et obligations de base conservées.
+<!-- Ne pas cocher ou annoncer des tests qui n'ont pas été exécutés. Une revue documentaire peut suffire à un changement documentaire. -->
+
+## Risques, compatibilité et restauration
+
+<!-- Sécurité, données, contrats, migrations et retour à une version compatible ; indiquer non applicable avec raison si pertinent. -->
+
+## Qualification restante après fusion
+
+<!-- Déploiement, parcours réel, intégration d'autres dépôts, validation humaine, ou aucune avec justification. -->
+
+- [ ] Auto-relecture effectuée et périmètre relisible.
+- [ ] Préconditions et dépendances applicables satisfaites.
+- [ ] Critères, contrôles pertinents et documentation traités.
+- [ ] Aucune donnée secrète dans le diff ou les preuves.
+- [ ] Après fusion : passage en Validation ; clôture de l'issue après preuves d'acceptation.
+
+Workflow commun : https://github.com/Silicium-Project/Workbench/issues/208
+Project : https://github.com/orgs/Silicium-Project/projects/12

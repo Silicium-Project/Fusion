@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Politique de contribution pendant la stabilisation
-    url: https://github.com/Silicium-Project/Workbench/blob/main/CONTRIBUTING.md
-    about: Contributions et exécution des workflows réservées à l'équipe pendant la stabilisation.
+- name: Roadmap, backlog et arbitrages
+  url: https://github.com/orgs/Silicium-Project/projects/12
+  about: Consulter le travail existant avant de créer une nouvelle demande.
+- name: Politique de contribution pendant la stabilisation
+  url: https://github.com/Silicium-Project/Workbench/blob/main/CONTRIBUTING.md
+  about: Contributions et exécution des workflows réservées à l'équipe pendant la stabilisation.
