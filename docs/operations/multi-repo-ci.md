@@ -170,9 +170,11 @@ déclarée signée rétroactivement.
 
 Les workflows natifs utilisent `SILICIUM_COMPONENT_CI_ENABLED=1`. Integration
 utilise `SILICIUM_INTEGRATION_ENABLED=1`. Les flags restent à zéro pendant la
-préparation ; les Actions des anciens composants restent suspendues jusqu'à
-l'intégration de leurs nouveaux workflows et la disponibilité du quota privé.
-Un workflow suspendu ou ignoré ne constitue jamais une qualification.
+préparation. Un composant n'active son flag qu'après la fusion de ses
+nouveaux workflows ; les anciens workflows VPS sont retirés par les PR de
+migration. Le blocage de quota du 26 octobre a été levé par l'essai Enterprise
+(rapporté le 28 octobre, non revérifié). Un workflow suspendu ou ignoré ne
+constitue jamais une qualification.
 
 Dans le changement CI-01 en cours, `DesktopApp` sépare le flag de validation
 `SILICIUM_COMPONENT_CI_ENABLED` du contrôle externe
@@ -260,6 +262,14 @@ dans le solde inclus, et laisser les flags à zéro en dehors de cette fenêtre.
 L'épuisement du quota bloque la qualification. Ne pas utiliser de runner VPS,
 copier des sources privées dans des workflows publics ou ouvrir un budget
 facturable.
+
+Pendant l'essai, fixer un seuil d'alerte humain sur le compteur de minutes et
+sérialiser les campagnes complètes (Windows coûte plus cher que Linux). Ne
+jamais lier d'abonnement Azure : cela met fin à l'essai et déclenche la
+facturation. Avant l'échéance, une décision humaine choisit entre forfait payant
+et retour à Free (2 000 minutes incluses, sans règles de branche privées ; à
+confirmer auprès de GitHub). Le budget à zéro avec arrêt redevient alors la
+règle.
 
 ## Synchronisation du Project 12 entre dépôts
 
