@@ -17,11 +17,14 @@
       "required_approving_review_count": 0,
       "required_review_thread_resolution": true
     },
-    "empty_required_status_checks_rule": true
+    "required_status_checks": {
+      "checks": [{"context": "ci/required", "integration_id": 15368}],
+      "strict": true
+    }
   },
   "not_publicly_verifiable": [
     "ruleset bypass actors",
-    "classic branch protection and its required ci/required status check",
+    "classic branch protection settings",
     "private component repositories, Project items, and release artifacts"
   ]
 }

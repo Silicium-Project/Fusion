@@ -11,13 +11,27 @@ quand ils sont ignorés ou désactivés. Aucun runner CI n'est hébergé sur le 
 La qualification complète des composants est isolée dans le dépôt privé
 [Integration](https://github.com/Silicium-Project/Integration), via son workflow
 manuel **Full private integration**. Elle exige un commit Workbench intégré à
-`main`, les sources privées à leurs SHA exacts, un flag d'activation et un
-budget Actions disponible avec plafond de dépense à zéro. Au dernier contrôle
-du dépôt Integration, aucune variable d'activation n'était définie. La dernière
-capture de facturation fournie montrait 2 000 minutes privées utilisées sur
-2 000 incluses ; cette capture n'est pas une mesure actuelle du quota. Vérifier
-le compte et le plafond avant tout lancement. Ne pas contourner un refus, payer
-un dépassement ni utiliser un runner VPS.
+`main`, les sources privées à leurs SHA exacts et un flag d'activation. Le
+le trial Enterprise fournit des minutes Actions incluses, mais pas de budget
+GitHub avec arrêt à une limite. Vérifier le solde réel, le stockage disponible
+et l'absence de runs concurrents avant chaque lancement ; ces valeurs changent
+et ne constituent pas une réservation. Le workflow réserve 555 minutes Linux
+équivalentes pour les 16 suites actuelles ; son attestation manuelle ne
+constitue pas un plafond de facturation.
+
+La variable `SILICIUM_INTEGRATION_ENABLED` existe et vaut `0`. Le run de
+qualification [40701623830](https://github.com/Silicium-Project/Integration/actions/runs/40701623830)
+a validé le plan et le stockage, puis a été arrêté : Workbench refuse
+volontairement de matérialiser des sources privées depuis une branche autre
+que `Integration/main`. Aucun contenu de composant n'a été récupéré et aucune
+suite applicative n'a été exécutée. La PR Integration #4 impose maintenant
+`main` dès le départ ; elle doit être fusionnée après les changements de
+composition Workbench nécessaires avant une vraie qualification.
+
+Avant chaque lancement, vérifier le quota inclus, le pire cas pondéré, le
+stockage et l'absence de runs privés concurrents. Garder le flag à `0` si une
+mesure manque ou si le plan ne tient pas dans le solde ; ne pas contourner un
+refus, payer un dépassement ni utiliser un runner VPS.
 
 La commande `dev ci authorize-private` a été supprimée : elle contrôlait une
 fenêtre dans Workbench et ne pouvait pas autoriser le workflow privé distinct
@@ -31,6 +45,11 @@ blocage supplémentaires après la qualification de la PR #325. Les champs
 « Blocage » saisis manuellement sont préservés. Publication et déploiement
 restent désactivés (`SILICIUM_DELIVERY_ENABLED=0`), tout comme les diagnostics
 distants (`SILICIUM_DIAGNOSTICS_ENABLED=0`).
+
+Un nouveau dry-run manuel [40703262976](https://github.com/Silicium-Project/Workbench/actions/runs/40703262976)
+du 28 octobre a traité 139 issues et prédit zéro transition de statut et zéro
+modification de blocage. `SILICIUM_PROJECT_AUTOMATION_ENABLED=1` reste actif ;
+aucun état d'issue n'a été modifié par ce run.
 
 Le protocole de drainage des workers reste à qualifier ; le programme
 d'application bloque un changement d'image réseau plutôt que d'interrompre une
@@ -183,11 +202,14 @@ continuent d'apparaître dans le Project.
 
 ## Budget et preuves
 
-Conserver les limites de dépenses GitHub à zéro. Le contrôle de budget doit
-avoir une vue Actions en lecture sur tous les dépôts de l'organisation ; un
-jeton limité à Workbench ne prouve pas l'usage global. Le plafond cible des
-artefacts temporaires est de 400 Mio. Un défaut de mesure ou de quota reste
-bloquant. Aucun runner VPS ne sert de solution de secours.
+L'objectif est zéro dépassement Actions payé, mais le trial Enterprise observé
+le 28 octobre n'inclut pas la fonction de budget avec arrêt à une limite. Le
+workflow Workbench `budget` vérifie l'espace de stockage ; il ne lit ni le solde
+de minutes ni le montant facturable. La qualification Integration exige une
+attestation humaine distincte du solde inclus et du pire cas pondéré du plan ;
+elle ne remplace pas un plafond GitHub. Revalider ces capacités après le trial.
+Le plafond cible des artefacts temporaires est de 400 Mio. Une mesure absente
+ou insuffisante bloque le run. Aucun runner VPS ne sert de solution de secours.
 
 Les validations de `main` et la publication partagent un groupe de concurrence.
 Une exécution en cours va à son terme ; GitHub peut remplacer une exécution

@@ -72,7 +72,10 @@ function liveResponses() {
           },
           {
             type: 'required_status_checks',
-            parameters: { required_status_checks: [] },
+            parameters: {
+              required_status_checks: [{ context: 'ci/required', integration_id: 15368 }],
+              strict_required_status_checks_policy: true,
+            },
           },
         ],
       },
@@ -154,6 +157,32 @@ test('visibility, branch, enforcement and merge-method drift are reported togeth
   assert.ok(paths.includes('repository.default_branch'));
   assert.ok(paths.includes('ruleset.enforcement'));
   assert.ok(paths.includes('ruleset.pull_request.allowed_merge_methods'));
+});
+
+test('the required CI check must remain bound to GitHub Actions and require an up-to-date branch', async () => {
+  const responses = liveResponses();
+  responses.set(rulesetUrl, {
+    ...responses.get(rulesetUrl),
+    rules: responses.get(rulesetUrl).rules.map((rule) =>
+      rule.type === 'required_status_checks'
+        ? {
+            ...rule,
+            parameters: {
+              required_status_checks: [{ context: 'ci/other', integration_id: 15368 }],
+              strict_required_status_checks_policy: false,
+            },
+          }
+        : rule,
+    ),
+  });
+  const report = await auditRepositoryPolicy({
+    ...fixed,
+    policy,
+    fetchImpl: mockFetch(responses),
+  });
+  assert.equal(report.status, 'drift');
+  assert.ok(report.drift.some((item) => item.path === 'ruleset.required_status_checks'));
+  assert.ok(report.drift.some((item) => item.path === 'ruleset.required_status_checks.strict'));
 });
 
 test('ruleset list pagination is followed and duplicate named rulesets fail visibly', async () => {

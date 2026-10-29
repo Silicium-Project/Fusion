@@ -9,6 +9,8 @@ test('a billing refusal before allocation is never reported as an executed test 
   assert.equal(result.kind, 'infrastructure');
   assert.equal(result.code, 'billing_or_spending_limit');
   assert.equal(result.tests_executed, false);
+  assert.match(result.action, /No automatic \$0 spending cap is verified/);
+  assert.match(result.action, /No VPS fallback/);
   assert.equal(
     allocationDiagnostic({ ...job, steps: [{ name: 'Run test' }] }, [{ message }]),
     null,

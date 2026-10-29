@@ -68,7 +68,7 @@ export function privateBudget({
     }
   }
   throw new Failure(
-    'Private CI is blocked until a fresh Workbench main budget check succeeds. The zero-spend organization stop still applies; no VPS fallback.',
+    'Private CI is blocked until a fresh Workbench main storage proof succeeds. This check does not enforce an Actions billing cap; verify included usage before dispatch. No VPS fallback.',
     4,
   );
 }
