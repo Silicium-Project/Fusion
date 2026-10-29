@@ -276,6 +276,7 @@ export function combinePlans(plan, previous, env = process.env) {
         suite,
         runner: config.suites[suite].runner,
         timeout: config.suites[suite].timeout_minutes,
+        sources: [...(config.suites[suite].sources ?? [])],
       })),
     },
   };
