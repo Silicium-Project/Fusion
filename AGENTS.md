@@ -63,8 +63,13 @@ production restent des décisions humaines explicites.
   dépendant du fonctionnement du site ou de l'automatisation GitHub.
 - Aucun build ni campagne de tests sur le VPS applicatif. Les livraisons passent
   par GitHub ; le VPS vérifie et applique des artefacts immuables.
-- Runtime réseau Rust, API Go, interfaces/SDK TypeScript ; Python pour l'outillage.
-  L'ancien runtime Python, ses CLI/MCP, la chaîne C++ et Qt ne doivent pas revenir.
+- Runtime réseau Rust, API Go, interfaces/SDK TypeScript ; Python pour l'outillage
+  et le runtime d'inférence local de DesktopApp. L'ancien runtime Python de
+  tâches réseau, ses CLI/MCP, la chaîne C++ et Qt ne doivent pas revenir.
+- Le runtime d'inférence utilisé par DesktopApp appartient au dépôt privé
+  `DesktopApp/silicium-ai-runtime`, pas à l'arbre courant de Workbench. Toute
+  évolution suit une PR DesktopApp puis une mise à jour du sous-module et du
+  verrou Workbench ; ne pas en recopier le code ici.
 - Les instructions anciennes de `docs/archive` décrivent un historique. Elles
   ne doivent pas servir de procédure actuelle ni de preuve de disponibilité.
 - Ne pas créer ou changer un programme Solana, son ID ou ses autorités dans une

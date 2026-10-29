@@ -684,7 +684,9 @@
     },
     "infrastructure": {
       "components": [
-        "infra"
+        "infra",
+        "network",
+        "solana"
       ],
       "steps": [
         {
@@ -717,7 +719,8 @@
       "runner": "ubuntu-24.04",
       "tier": "pr",
       "sources": [
-        "network"
+        "network",
+        "solana"
       ]
     },
     "security": {

@@ -76,6 +76,23 @@ réécrit les pins ni ne modifie automatiquement une visibilité ou une identit�
 - Les développements du composant se font dans sa branche native ; ne pas
   commiter ses sources directement dans Workbench.
 
+## Sources propres à DesktopApp
+
+Le runtime d'inférence local utilisé par l'application de bureau est versionné
+dans le dépôt privé `DesktopApp/silicium-ai-runtime`. Ses ressources Python,
+manifestes et verrous de dépendances font partie de ce composant et sont
+embarqués par DesktopApp au moment de la compilation. Workbench ne conserve
+aucune copie active de ces sources : seul le gitlink `apps/node` identifie la
+révision qui les contient.
+
+Une modification du runtime suit donc le même flux que le reste de DesktopApp :
+PR native, qualification disponible, mise à jour du gitlink et de
+`components.lock.json` dans une PR Workbench. Le runtime est intégré au `main`
+de DesktopApp par la PR native #1 (fusionnée le 29 octobre 2026), qualifiée par
+la CI composant. Ce pin ne constitue ni une qualification Integration ni une
+livraison. L'ancien chemin public reste visible dans l'historique de Workbench,
+qui n'a pas été réécrit.
+
 ## Qualification et coût
 
 Le registre commun conserve les suites applicatives. Les scopes sont :
