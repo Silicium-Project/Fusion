@@ -216,7 +216,12 @@ regard des 50 Go de stockage Actions/Packages inclus sur ce plan
 Il s'agit d'une garde de stockage, pas d'une limite de facturation. Les
 workflows privés exigent que cette étape exacte ait réussi depuis moins de
 quinze minutes et que son SHA corresponde
-exactement au Workbench utilisé pour la qualification. Il s'agit d'une
+exactement au Workbench utilisé pour la qualification. Seul le push sur `main`
+d'un dépôt composant accepte une preuve de moins de soixante minutes : la PR a
+déjà passé le contrôle de quinze minutes avant la fusion, et un `main` rouge
+pour une simple preuve périmée masque les vrais échecs. La fenêtre vient de
+`SILICIUM_PROOF_MAX_AGE_MINUTES` (15 à 60, sinon 15) et ne s'applique qu'après
+repin du composant sur un Workbench qui contient ce changement. Il s'agit d'une
 observation bornée, pas d'un verrou global de stockage entre tous les dépôts.
 Les campagnes complètes sont sérialisées, les rapports limités à 1 Mio et les
 installateurs limités à 120/40 Mio expirent après un jour ; les caches privés

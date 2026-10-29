@@ -63,6 +63,7 @@ jobs:
     - name: Require a fresh organization storage observation
       env:
         GH_TOKEN: ${{ github.token }}
+        SILICIUM_PROOF_MAX_AGE_MINUTES: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && '60' || '15' }}
       run: node policy/tools/ci/private-budget.mjs
     - &id003
       uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
