@@ -28,6 +28,15 @@ test('the organization plan selects a conservative artifact cap and unknown plan
   assert.ok(remainingBudget(12 * 1024 ** 2, 392 * 1024 ** 2, enterprise) > 0);
   assert.throws(() => remainingBudget(12 * 1024 ** 2, 392 * 1024 ** 2, free));
 });
+test('a declared cap applies only when the plan is unobservable and stays within bounds', () => {
+  const MiB = 1024 ** 2;
+  assert.equal(organizationArtifactLimit({}, '512'), 512 * MiB);
+  assert.equal(organizationArtifactLimit({}, '450'), 450 * MiB);
+  for (const bad of ['399', '513', '5120', '0', '-1', '512.5', 'abc', '', undefined])
+    assert.equal(organizationArtifactLimit({}, bad), 400 * MiB);
+  assert.equal(organizationArtifactLimit({ plan: { name: 'free' } }, '512'), 400 * MiB);
+  assert.equal(organizationArtifactLimit({ plan: { name: 'enterprise' } }, '450'), 512 * MiB);
+});
 test('an App restricted to selected repositories cannot measure the organization budget', () => {
   const installation = { repository_selection: 'all', account: { login: 'Silicium-Project' } };
   const repos = [{ id: 1, private: true, owner: { login: 'Silicium-Project' } }];
