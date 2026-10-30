@@ -1,5 +1,5 @@
 /** Runs only inside the disposable network/PID namespace prepared by solana.mjs. */
-import { run, root, readJson, Failure } from '../lib/process.mjs';
+import { run, runLive, root, readJson, Failure } from '../lib/process.mjs';
 import { assertIsolatedLocalnet } from '../lib/localnet-isolation.mjs';
 import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -20,6 +20,8 @@ const cwd = resolve(root, 'chain/solana'),
 const env = { ANCHOR_WALLET: wallet, RUSTUP_TOOLCHAIN: '1.89.0' };
 const digest = () => createHash('sha256').update(readFileSync(binary)).digest('hex');
 if (digest() !== before) throw new Failure('SBF changed before isolated tests');
+// Shorter than the 15 minute localnet limit of solana.mjs, so the validator log is printed.
+const testTimeoutMs = 12 * 60_000;
 let validator, log;
 async function freePort() {
   const server = createServer();
@@ -78,7 +80,7 @@ try {
     });
   }
   if (!ready) throw new Failure('Disposable validator did not become ready');
-  const result = run(
+  const result = runLive(
     [
       'anchor',
       'test',
@@ -90,10 +92,10 @@ try {
       '--provider.wallet',
       wallet,
     ],
-    { cwd, env: { ...env, ANCHOR_PROVIDER_URL: url }, timeout: 2_400_000, allowFailure: true },
+    { cwd, env: { ...env, ANCHOR_PROVIDER_URL: url }, timeout: testTimeoutMs },
   );
-  process.stdout.write(result.stdout);
-  process.stderr.write(result.stderr);
+  if (result.timedOut)
+    throw new Failure(`anchor test timed out after ${testTimeoutMs / 60_000} min`, 4);
   if (digest() !== before) throw new Failure('Program changed between build and qualification');
   if (result.status) throw new Failure('Anchor localnet qualification failed');
   console.log(`Qualified SBF sha256: ${before}`);

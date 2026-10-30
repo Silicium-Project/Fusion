@@ -47,6 +47,22 @@ export function run(
     );
   return result;
 }
+/** Run with output streamed to this process, so a hung child leaves a readable log. */
+export function runLive(command, { cwd = root, env = {}, timeout = 600_000 } = {}) {
+  const [exe, ...args] = command;
+  const p = spawnSync(exe, args, {
+    cwd,
+    env: { ...process.env, ...env },
+    stdio: 'inherit',
+    timeout,
+    windowsHide: true,
+  });
+  return {
+    status: p.status ?? 1,
+    timedOut: p.error?.code === 'ETIMEDOUT',
+    error: p.error?.message,
+  };
+}
 export const git = (...args) => run(['git', ...args]).stdout.trim();
 export const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
 export function writeJson(path, value) {
