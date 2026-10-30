@@ -12,6 +12,7 @@ import {
 } from 'node:fs';
 import { resolve } from 'node:path';
 import { run, root, readJson, Failure } from './process.mjs';
+import { fetchBytes } from './fetch-bytes.mjs';
 export function verifyCachedTool(path, expected) {
   if (createHash('sha256').update(readFileSync(path)).digest('hex') !== expected) {
     throw new Failure(
@@ -31,9 +32,7 @@ export async function installTool({ repository, version, name, destination }) {
     verifyCachedTool(executable, pin.binary_sha256);
     return executable;
   }
-  const response = await fetch(pin.url, { signal: AbortSignal.timeout(30_000) });
-  if (!response.ok) throw new Failure(`Tool download failed: HTTP ${response.status}`, 4);
-  const bytes = Buffer.from(await response.arrayBuffer());
+  const bytes = await fetchBytes(pin.url, { timeoutMs: 30_000 });
   if (createHash('sha256').update(bytes).digest('hex') !== pin.sha256)
     throw new Failure(`Archive checksum mismatch for ${name}`, 3);
   mkdirSync(destination, { recursive: true });

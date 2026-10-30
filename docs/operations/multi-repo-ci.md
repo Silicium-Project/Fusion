@@ -276,6 +276,13 @@ et retour à Free (2 000 minutes incluses, sans règles de branche privées ; à
 confirmer auprès de GitHub). Le budget à zéro avec arrêt redevient alors la
 règle.
 
+Les outils épinglés (Anchor, Solana, AppImage, outils de sécurité) se
+téléchargent avec au plus trois tentatives et une attente de 2 s puis 8 s, pour
+une coupure réseau ou une réponse 408, 429 ou 5xx. Les autres erreurs HTTP et
+tout écart de somme SHA-256 échouent tout de suite : un binaire différent du pin
+n'est jamais retenté. Un changement de ces outils demande un repin des cinq
+composants, car ils lisent la politique au SHA épinglé.
+
 ## Synchronisation du Project 12 entre dépôts
 
 La réconciliation publique `project-sync.yml` lit les PR explicitement liées de

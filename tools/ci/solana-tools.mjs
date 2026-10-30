@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { root, readJson, run, Failure } from '../lib/process.mjs';
+import { fetchBytes } from '../lib/fetch-bytes.mjs';
 export async function installSolana(directory, version) {
   const pin = readJson(resolve(root, 'tools/config/solana-tools.json'));
   if (pin.version !== version)
@@ -10,10 +11,7 @@ export async function installSolana(directory, version) {
   mkdirSync(directory, { recursive: true });
   const bin = resolve(directory, 'solana-release/bin');
   if (!existsSync(resolve(bin, 'solana'))) {
-    const response = await fetch(pin.url, { signal: AbortSignal.timeout(120_000) });
-    if (!response.ok)
-      throw new Failure(`Official Solana archive download failed: HTTP ${response.status}`, 4);
-    const bytes = Buffer.from(await response.arrayBuffer());
+    const bytes = await fetchBytes(pin.url);
     if (createHash('sha256').update(bytes).digest('hex') !== pin.sha256)
       throw new Failure('Solana archive checksum mismatch', 3);
     const archive = resolve(directory, 'release.tar.bz2');
