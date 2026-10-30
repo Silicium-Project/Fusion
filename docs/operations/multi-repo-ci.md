@@ -287,6 +287,13 @@ tout écart de somme SHA-256 échouent tout de suite : un binaire différent du 
 n'est jamais retenté. Un changement de ces outils demande un repin des cinq
 composants, car ils lisent la politique au SHA épinglé.
 
+La suite `solana` diffuse la sortie de `anchor build`, du validateur local et de
+`anchor test` au fur et à mesure. Ses phases ont des limites propres (build 25
+min, localnet 15 min, `anchor test` 12 min) inférieures à celle du job (45 min) :
+un blocage échoue avec son journal et son message au lieu d'être annulé sans
+rapport. Un blocage de cette suite se traite par une issue du dépôt Solana, pas
+par une relance.
+
 ## Synchronisation du Project 12 entre dépôts
 
 La réconciliation publique `project-sync.yml` lit les PR explicitement liées de
