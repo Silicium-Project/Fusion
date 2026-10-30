@@ -146,6 +146,27 @@ humaine ; elle est prise ici et révisable par PR.
 À remettre en cause : si la clé de release change de custodie, ou si une
 version `0.3.0` existe déjà avant la première publication signée.
 
+### D12. Ancre de confiance de release
+
+Constat du 30 octobre 2026 : `contracts/trust/release.gpg` était absent, alors
+que le préflight `gpgv` de `candidate.mjs` et `deploy.mjs` en a besoin. Aucune
+clé de release n'existait dans le dépôt. Décision : une nouvelle clé ed25519 de
+signature, sans lien avec les clés APT, RPM et de mise à jour, qui restent
+intactes.
+
+- Empreinte : `CA5D93C2016B20A87CB2FA1A977A3975BD15FD41`, expiration 2028-10-29.
+- Seule la partie publique est versionnée, dans `contracts/trust/release.gpg`.
+- La clé privée est dans le trousseau GPG de la machine de l'équipe, protégée
+  par une passphrase générée. La passphrase est dans le Gestionnaire
+  d'identification Windows, cible `silicium-release-gpg`. Ni l'une ni l'autre
+  ne sont dans le dépôt.
+- Aucune signature n'a encore été produite. Le déploiement reste fermé.
+
+À faire avant toute release : déplacer la clé privée hors de la machine
+(coffre de mots de passe ou support chiffré), révoquer le certificat de
+révocation généré à la création si la clé est abandonnée, et décider si elle
+est fournie à l'environnement `signing-development` par secret GitHub.
+
 ## Revue
 
 Réviser ces décisions à chaque fin d'essai Enterprise, à chaque ajout de
