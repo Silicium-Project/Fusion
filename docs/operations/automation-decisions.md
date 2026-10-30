@@ -91,16 +91,34 @@ Signature, publication, déploiement et production exigent des clés, une App
 Publisher, des secrets SSH et la décision CI-10. L'automatisation les consomme
 quand ils existent ; elle ne les crée pas et ne les copie jamais dans Workbench.
 
-### D9. Les secrets et accès inutiles se retirent
+### D9. Les secrets et accès se retirent après leur dernier consommateur
 
-Un secret ou une App sans consommateur est une surface d'attaque. Sont à
-retirer par un propriétaire de l'organisation, après vérification qu'aucun
-workflow ne les lit : les clés de miroir des dépôts composants qui n'ont plus de
-workflow de miroir, les secrets d'ancien déploiement par VPS, les Apps de lecture
-non utilisées et les droits d'écriture excessifs d'Apps tierces. La double
-authentification doit être exigée pour l'organisation. Le compte utilisé par
-l'agent n'a pas le droit `admin` sur les dépôts : ces réglages restent une
-action humaine.
+Un secret ou une App sans consommateur est une surface d'attaque, mais « aucun
+workflow de `main` ne le lit » ne prouve pas qu'il est inutile. Au 30 octobre
+2026, la branche `dev` de Workbench garde les anciens workflows de déploiement
+par VPS (`deploy-dev-vps`, `deploy-vps`, `rollback-vps`, `release-dev`,
+`reclaim-runner`, `build`, `sync-submodules`, `mirror-epitech`). Ils lisent les
+secrets `VPS_*`, `SILICIUM_DEPLOY_APP_*`, `SILICIUM_SYNC_*` et
+`SILICIUM_WINDOWS_CERTIFICATE_*`, ainsi que la variable
+`SILICIUM_WINDOWS_ALLOW_SELF_SIGNED`. Le dernier déploiement par cette voie date
+du 24 octobre. Tant que la chaîne de livraison privée n'a pas déployé en dev et
+rejoué un rollback, ces éléments restent le seul chemin vers le VPS en service.
+
+Ordre de retrait :
+
+1. Qualifier le déploiement dev et le rollback de la nouvelle chaîne (CI-10).
+2. Retirer les workflows de la branche `dev` (ou la branche elle-même).
+3. Vérifier qu'aucun run récent ni aucune procédure manuelle ne lit un secret.
+4. Seulement alors, supprimer les secrets de dépôt, la variable et l'App
+   `silicium-vps-deployer`, en conservant d'abord ailleurs toute clé à garder :
+   un secret GitHub ne se relit pas.
+
+Sans consommateur identifié aujourd'hui : les clés de miroir des dépôts
+composants, les Apps de lecture d'Integration et de preuves CI (la doc dit
+qu'elles ne sont pas utilisées). Le retrait reste une action d'un propriétaire
+de l'organisation, après la même vérification. La double authentification doit
+être exigée. Le compte utilisé par l'agent n'a pas le droit `admin` sur les
+dépôts.
 
 ### D10. Un seul chemin de dépendances
 
