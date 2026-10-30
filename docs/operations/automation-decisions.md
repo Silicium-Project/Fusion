@@ -127,6 +127,25 @@ Un robot de mise à jour ne les modifie pas ailleurs : il créerait des PR qui
 échouent aux tests de registre. À remettre en cause : un format de registre que
 l'outil sait lire.
 
+### D11. Baseline des releases
+
+Constat du 30 octobre 2026 : 47 releases publiées, sans manifeste ni signature,
+avec des tags `dev-0.2.9-dev.28` et `dev-0.2.9-dev.29` dupliqués sous plusieurs
+SHA, et une stable `v0.2.17`. Le plan du 29 octobre demandait une décision
+humaine ; elle est prise ici et révisable par PR.
+
+- Les 47 releases restent telles quelles : pas de réécriture, pas de
+  suppression, pas de signature rétroactive. Elles ne figurent dans aucun
+  manifeste signé.
+- La première version signée est celle de `tools/config/delivery.json`,
+  `base_version` `0.3.0`, qui est au-dessus de toute la ligne `0.2.x`. Elle est
+  publiée sur le canal `dev`, sous forme de préversion, avant toute stable.
+- Un tag déjà publié n'est jamais réutilisé ni écrasé : une version rejouée est
+  refusée par la publication.
+
+À remettre en cause : si la clé de release change de custodie, ou si une
+version `0.3.0` existe déjà avant la première publication signée.
+
 ## Revue
 
 Réviser ces décisions à chaque fin d'essai Enterprise, à chaque ajout de
