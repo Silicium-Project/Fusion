@@ -1,6 +1,7 @@
 # Ordre de fusion du réalignement
 
-Relevé GitHub du 29 octobre 2026 (`gh`, `main` Workbench `b2cc2548`). Les états
+Relevé GitHub du 29 octobre 2026 (`gh`, `main` Workbench `b2cc2548`), complété
+par l'état du 30 octobre ci-dessous. Les états
 de PR changent vite : relire chacune avant de fusionner. Les dépendances entre
 PR sont déduites des fichiers touchés, pas vérifiées dans les branches.
 
@@ -9,6 +10,22 @@ Règles communes : un humain fusionne, en **Merge commit**, quand `ci/required`
 jour. Sur les dépôts privés Free, cette règle n'est pas imposée par GitHub.
 Une vague ne démarre qu'une fois la précédente fusionnée. Aucune étape ne
 fusionne seule, ne pose un secret, une clé ou un pin.
+
+## État au 30 octobre 2026
+
+Relevé `gh` du 30 octobre, `main` Workbench `f911ed89` ; ce qui suit remplace
+les états datés du 29 octobre ci-dessous.
+
+| Vague | État |
+| --- | --- |
+| 0 | Faite. `ci.yml` vert sur `main` ; preuve de stockage fraîche sur le SHA exact. |
+| 1 | Faite pour les docs et CODEOWNERS. Aucun runner auto-hébergé (organisation et sept dépôts). Reste : réglages de dépôt et de sécurité, humains. |
+| 2 | Faite. Les cinq `main` natifs sont restaurés et repinnés sur la politique `7808d0f8`. |
+| 3 | Faite : pins `f911ed89`, `components.lock.json` et gitlinks ensemble. |
+| 4 | En cours. Première qualification (`41069910230`) : 16 suites sur 17, `solana` bloquée puis annulée ; seconde tentative refusée au plan. Aucun reçu signé. |
+| 5 et 6 | Non commencées : décisions et clés humaines. |
+
+Le détail des blocages de la vague 4 est dans `docs/operations/automation-decisions.md`.
 
 ## Vague 0 : rendre `main` Workbench vert
 
