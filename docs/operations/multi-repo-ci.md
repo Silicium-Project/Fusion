@@ -46,6 +46,10 @@ restauration des sources et de routage ne sont pas intégrées, puis que la
 qualification complète ne passe pas depuis `Integration/main`. Les flags et le
 quota doivent aussi être revérifiés avant ce run.
 
+Les décisions d'automatisation (repin de la politique, preuves, retries, tests
+instables, qualification bornée) sont consignées dans
+[les décisions d'automatisation](automation-decisions.md).
+
 ## Routage des suites publiques
 
 Workbench sélectionne les suites publiques à partir des chemins réellement
