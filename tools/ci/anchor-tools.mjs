@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, writeFileSync, renameSync, rmSync } from 'node:f
 import { createHash } from 'node:crypto';
 import { root, readJson, run, Failure } from '../lib/process.mjs';
 import { verifyCachedTool } from '../lib/download.mjs';
+import { fetchBytes } from '../lib/fetch-bytes.mjs';
 export async function installAnchor(directory, version) {
   const pin = readJson(resolve(root, 'tools/config/anchor-tools.json'));
   const source = readJson(resolve(root, 'tools/config/upstreams.json')).anchor;
@@ -21,10 +22,7 @@ export async function installAnchor(directory, version) {
     executable = resolve(bin, 'anchor');
   mkdirSync(bin, { recursive: true });
   if (!existsSync(executable)) {
-    const response = await fetch(pin.url, { signal: AbortSignal.timeout(120_000) });
-    if (!response.ok)
-      throw new Failure(`Pinned Anchor binary unavailable: HTTP ${response.status}`, 4);
-    const bytes = Buffer.from(await response.arrayBuffer());
+    const bytes = await fetchBytes(pin.url);
     if (createHash('sha256').update(bytes).digest('hex') !== pin.sha256)
       throw new Failure('Anchor binary checksum mismatch', 3);
     const temporary = resolve(bin, `.anchor-${process.pid}.tmp`);
